@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiContabilidad</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --wine:#6D1831;--wine-light:#8B2245;--panel:#4E4E5E;
+  --chart-hdr:#575768;--neg:#C82020;--sel:#F6E9C2;
+  --border:#D5D5D5;--font:'Segoe UI',Arial,sans-serif;
+}
+html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;color:#333;background:#F0F0F0}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#F0F0F0}
+::-webkit-scrollbar-thumb{background:#BBB;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#999}
+
+/* ── SETUP SCREEN ── */
+#setup{
+  display:none;position:fixed;inset:0;background:#F0F0F0;
+  z-index:2000;align-items:center;justify-content:center;
+}
+#setup.show{display:flex}
+.setup-box{
+  background:#fff;border-radius:6px;padding:36px 40px;
+  max-width:480px;width:90%;box-shadow:0 6px 28px rgba(0,0,0,.18);
+}
+.setup-box h2{color:var(--wine);font-size:22px;margin-bottom:8px}
+.setup-box p{color:#666;font-size:13px;line-height:1.6;margin-bottom:20px}
+.setup-box label{display:block;font-size:11px;color:#777;margin-bottom:4px}
+.setup-box input{
+  width:100%;padding:8px 10px;border:1px solid #CCC;border-radius:3px;
+  font-size:13px;font-family:var(--font);margin-bottom:16px;
+}
+.setup-box input:focus{outline:none;border-color:var(--wine)}
+.setup-box .hint{font-size:11px;color:#999;margin-top:-12px;margin-bottom:16px;line-height:1.5}
+.btn-primary{
+  background:var(--wine);color:#fff;border:none;
+  padding:10px 28px;border-radius:3px;cursor:pointer;font-size:14px;width:100%;
+}
+.btn-primary:hover{background:var(--wine-light)}
+
+/* ── LOADING ── */
+#loading{
+  display:none;position:fixed;inset:0;background:rgba(255,255,255,.85);
+  z-index:1500;align-items:center;justify-content:center;flex-direction:column;gap:14px;
+}
+#loading.show{display:flex}
+.spinner{
+  width:36px;height:36px;border:3px solid #DDD;
+  border-top-color:var(--wine);border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading p{color:#777;font-size:14px}
+
+/* ── HEADER ── */
+#hdr{
+  background:var(--wine);height:38px;display:flex;align-items:center;
+  padding:0 8px;gap:3px;position:relative;user-select:none;flex-shrink:0;
+}
+#logo{color:#fff;font-size:17px;font-weight:700;margin-right:6px;letter-spacing:-.5px}
+#logo .o{color:#FF7BAC}
+.tab{
+  background:rgba(0,0,0,.25);color:#fff;border:none;padding:0 9px;
+  cursor:pointer;border-radius:3px;font-size:11.5px;height:27px;
+  display:flex;align-items:center;gap:5px;white-space:nowrap;
+}
+.tab:hover{background:var(--wine-light)}
+.tab.active{background:var(--wine-light);box-shadow:inset 0 -2px 0 rgba(255,255,255,.3)}
+.tab.dim{opacity:.45;cursor:default}
+#hambtn{
+  margin-left:auto;background:rgba(0,0,0,.25);color:#fff;border:none;
+  width:30px;height:27px;cursor:pointer;border-radius:3px;font-size:17px;
+  display:flex;align-items:center;justify-content:center;
+}
+#hambtn:hover{background:var(--wine-light)}
+#dropmenu{
+  display:none;position:absolute;top:38px;right:0;background:#fff;
+  border:1px solid var(--border);box-shadow:0 4px 14px rgba(0,0,0,.2);
+  z-index:600;min-width:220px;border-radius:0 0 4px 4px;
+}
+#dropmenu.show{display:block}
+.mi{padding:8px 16px;cursor:pointer;font-size:13px;color:#333;border-bottom:1px solid #F2F2F2}
+.mi:hover{background:#F5F5F5}
+.mi.off{color:#AAA;cursor:default;pointer-events:none}
+.msep{height:6px;background:#F8F8F8;border-bottom:1px solid #EBEBEB}
+
+/* ── LAYOUT ── */
+#main{display:flex;height:calc(100vh - 38px);overflow:hidden}
+#tab-cuentas{display:flex;flex:1;min-width:0;overflow:hidden}
+#tab-cuadro{
+  display:none;flex:1;align-items:center;justify-content:center;
+  flex-direction:column;gap:12px;color:#888;font-size:15px;
+}
+
+/* ── LEFT PANEL ── */
+#lpanel{
+  width:370px;min-width:260px;max-width:370px;border-right:1px solid var(--border);
+  display:flex;flex-direction:column;background:#fff;flex-shrink:0;
+}
+#lhdr{
+  background:var(--panel);color:#fff;padding:5px 8px;
+  display:flex;align-items:center;gap:6px;font-weight:700;font-size:11.5px;
+  letter-spacing:.5px;flex-shrink:0;
+}
+#filter-sel{
+  font-size:11px;padding:2px 4px;border-radius:3px;
+  border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.15);
+  color:#fff;cursor:pointer;
+}
+#filter-sel option{background:#fff;color:#333}
+.hbtn{
+  background:none;border:none;color:#fff;cursor:pointer;
+  font-size:15px;padding:2px 5px;border-radius:2px;opacity:.85;
+}
+.hbtn:hover{background:rgba(255,255,255,.2);opacity:1}
+#acclist{flex:1;overflow-y:auto}
+.acc-row{
+  display:flex;align-items:center;padding:5px 8px;cursor:pointer;
+  border-bottom:1px solid #EBEBEB;gap:8px;min-height:36px;
+}
+.acc-row:hover{background:#F7F7F7}
+.acc-row.sel{background:var(--sel)}
+.acc-row.inactive{opacity:.55}
+.acc-logo{
+  width:46px;height:22px;display:flex;align-items:center;justify-content:center;
+  font-size:8.5px;color:#aaa;background:#F2F2F2;border-radius:2px;
+  flex-shrink:0;text-align:center;line-height:1.2;overflow:hidden;padding:1px;
+}
+.acc-info{flex:1;min-width:0}
+.acc-name{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acc-desc{font-size:10px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.acc-bal{font-size:13px;text-align:right;white-space:nowrap;flex-shrink:0}
+.acc-bal.neg{color:var(--neg)}
+.sep-row{
+  background:#DEDEDE;padding:4px 8px;font-size:11px;font-weight:700;color:#555;
+  display:flex;justify-content:space-between;border-bottom:1px solid #C8C8C8;border-top:1px solid #C8C8C8;
+}
+
+/* ── RIGHT PANEL ── */
+#rpanel{flex:1;display:flex;flex-direction:column;min-width:0;background:#F8F8F8}
+#rhdr{
+  background:var(--panel);color:#fff;padding:5px 8px;
+  display:flex;align-items:center;gap:3px;flex-shrink:0;
+}
+#acc-title{flex:1;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rbtn{
+  background:none;border:none;color:#fff;cursor:pointer;
+  font-size:15px;padding:2px 5px;border-radius:2px;opacity:.85;
+}
+.rbtn:hover{background:rgba(255,255,255,.2);opacity:1}
+.rbtn.off{opacity:.3;cursor:default;pointer-events:none}
+
+/* ── MOVEMENTS ── */
+#movarea{flex:1;overflow-y:auto;background:#fff;min-height:0}
+.empty-msg{display:flex;align-items:center;justify-content:center;height:120px;color:#999;font-size:14px}
+.mrow{border-bottom:1px solid #EBEBEB;cursor:pointer;padding:3px 8px 2px}
+.mrow:hover{background:#F7F7F7}
+.mrow.sel{background:var(--sel)}
+.mrow-main{display:flex;align-items:baseline;gap:6px}
+.mdate{width:66px;flex-shrink:0;font-size:12.5px;font-weight:700}
+.mconcept{flex:1;font-size:12.5px;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mamount{width:88px;text-align:right;flex-shrink:0;font-size:12.5px;font-weight:600}
+.mamount.neg{color:var(--neg)}
+.mbal{width:88px;text-align:right;flex-shrink:0;font-size:12.5px}
+.mbal.neg{color:var(--neg)}
+.mrow-sub{display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
+.mperiod{width:66px;flex-shrink:0}
+.mcat{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+/* ── CHART ── */
+#chartbox{height:195px;border-top:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+#charthdr{
+  background:var(--chart-hdr);color:#fff;padding:5px 8px;font-size:12px;font-weight:700;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+#chartsvg{flex:1;background:#fff;overflow:hidden}
+
+/* ── MODAL ── */
+#overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.42);
+  z-index:1000;justify-content:center;align-items:center;
+}
+#overlay.show{display:flex}
+.modal{
+  background:#fff;border-radius:4px;padding:20px 22px;min-width:340px;max-width:500px;
+  box-shadow:0 6px 28px rgba(0,0,0,.32);position:relative;
+}
+.modal h3{font-size:15px;margin-bottom:16px;color:#222}
+.mcls{position:absolute;top:10px;right:12px;background:none;border:none;font-size:19px;cursor:pointer;color:#888}
+.mcls:hover{color:#333}
+.mhelp{
+  position:absolute;top:11px;right:36px;background:var(--wine);color:#fff;
+  border:none;border-radius:4px;width:22px;height:22px;font-size:12px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.fr{margin-bottom:12px}
+.fr label{display:block;font-size:11px;color:#777;margin-bottom:3px}
+.fr input,.fr select{
+  width:100%;padding:6px 7px;border:1px solid #CCC;border-radius:3px;
+  font-size:13px;font-family:var(--font);
+}
+.fr input:focus,.fr select:focus{outline:none;border-color:var(--wine)}
+.fi{display:flex;gap:8px}
+.fi .fr{flex:1}
+.mbtns{display:flex;gap:8px;justify-content:center;margin-top:16px}
+.bok{background:var(--wine);color:#fff;border:none;padding:8px 32px;border-radius:3px;cursor:pointer;font-size:13px}
+.bok:hover{background:var(--wine-light)}
+.bcan{background:#888;color:#fff;border:none;padding:8px 20px;border-radius:3px;cursor:pointer;font-size:13px}
+.bcan:hover{background:#666}
+
+/* ── TOAST ── */
+#toast{
+  position:fixed;bottom:18px;right:18px;background:#333;color:#fff;
+  padding:9px 16px;border-radius:4px;font-size:13px;z-index:9999;
+  opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px;
+}
+#dbx-status{
+  position:fixed;bottom:18px;left:18px;font-size:11px;color:#AAA;
+  z-index:100;
+}
+</style>
+</head>
+<body>
+
+<!-- SETUP (primera vez) -->
+<div id="setup">
+  <div class="setup-box">
+    <h2>MiContabilidad</h2>
+    <p>Para conectar con tu Dropbox necesitas el token de acceso de tu app.<br>
+    Solo se pide una vez — se guarda en este navegador.</p>
+    <label>Token de acceso de Dropbox</label>
+    <input id="inp-token" type="password" placeholder="sl.u.ABCD...">
+    <p class="hint">Consíguelo en dropbox.com/developers → tu app MiContabilidad → Settings → Generated access token → Generate</p>
+    <label>Ruta del CSV en Dropbox</label>
+    <input id="inp-path" value="/Aplicaciones/Contabilidad Claude/Xopard.csv">
+    <button class="btn-primary" onclick="setupConnect()">Conectar y cargar datos</button>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="spinner"></div>
+  <p id="loading-msg">Cargando datos desde Dropbox…</p>
+</div>
+
+<!-- HEADER -->
+<div id="hdr">
+  <div id="logo">X<span class="o">o</span>pard</div>
+  <button class="tab active" onclick="switchTab('cuentas',this)">🏠 CUENTAS</button>
+  <button class="tab" onclick="switchTab('cuadro',this)">⊞ CUADRO</button>
+  <button class="tab dim">📅 AGENDA</button>
+  <button class="tab dim">📄 INFORME</button>
+  <button class="tab dim">🔔 AVISOS</button>
+  <button id="hambtn" onclick="toggleMenu()">≡</button>
+  <div id="dropmenu">
+    <div class="mi" onclick="loadFromDropbox()">↓ Recargar desde Dropbox</div>
+    <div class="mi" onclick="saveToDropbox()">↑ Guardar en Dropbox (Ctrl+S)</div>
+    <div class="msep"></div>
+    <div class="mi" onclick="changeToken()">🔑 Cambiar token</div>
+    <div class="msep"></div>
+    <div class="mi" onclick="about()">Acerca de MiContabilidad</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="tab-cuentas">
+    <div id="lpanel">
+      <div id="lhdr">
+        <span>CUENTAS</span>
+        <select id="filter-sel" onchange="applyFilter(this.value)">
+          <option value="activas">Activas ▾</option>
+          <option value="todas">Todas ▾</option>
+        </select>
+        <button class="hbtn" onclick="showAddAcc()" title="Añadir cuenta">＋</button>
+        <button class="hbtn" onclick="delAcc()" title="Eliminar cuenta">🗑</button>
+        <button class="hbtn" title="Ayuda">?</button>
+      </div>
+      <div id="acclist"><div class="empty-msg">Conectando con Dropbox…</div></div>
+    </div>
+    <div id="rpanel">
+      <div id="rhdr">
+        <span id="acc-title">—</span>
+        <button class="rbtn off">📋</button>
+        <button class="rbtn" onclick="showAddMov()">＋</button>
+        <button class="rbtn" onclick="delMov()">🗑</button>
+        <button class="rbtn off">÷</button>
+        <button class="rbtn off">⇄</button>
+        <button class="rbtn off">🖨</button>
+        <button class="rbtn">?</button>
+      </div>
+      <div id="movarea"><div class="empty-msg">Selecciona una cuenta</div></div>
+      <div id="chartbox">
+        <div id="charthdr">
+          <span id="chart-title">Gráfico</span>
+          <div>
+            <button class="rbtn" onclick="chartNav(-1)">←</button>
+            <button class="rbtn" onclick="chartNav(+1)">→</button>
+          </div>
+        </div>
+        <div id="chartsvg"></div>
+      </div>
+    </div>
+  </div>
+  <div id="tab-cuadro">
+    <div style="font-size:48px;opacity:.15">⊞</div>
+    <div>Pestaña CUADRO — próximamente</div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div id="overlay" onclick="overlayClick(event)">
+  <div id="mdl-mov" class="modal" style="display:none">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <button class="mhelp">?</button>
+    <h3 id="mdl-mov-ttl">Añadir Movimiento</h3>
+    <div class="fr"><label>Cuenta</label><select id="fm-cuenta"></select></div>
+    <div class="fi">
+      <div class="fr" style="flex:0 0 110px"><label>Fecha</label><input id="fm-fecha" placeholder="DD-MM-AA" maxlength="8"></div>
+      <div class="fr"><label>Texto / Concepto</label><input id="fm-texto"></div>
+    </div>
+    <div class="fi">
+      <div class="fr" style="flex:0 0 90px"><label>Mes</label><input id="fm-mes" placeholder="MM-AA" maxlength="5"></div>
+      <div class="fr"><label>Categoría</label><select id="fm-cat"></select></div>
+    </div>
+    <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
+      <label style="white-space:nowrap;font-size:13px">Importe</label>
+      <input id="fm-imp" style="width:140px;text-align:right" placeholder="0,00">
+    </div>
+    <div class="mbtns">
+      <button class="bok" onclick="saveMov()">Ok</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+  <div id="mdl-acc" class="modal" style="display:none">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <button class="mhelp">?</button>
+    <h3 id="mdl-acc-ttl">Añadir Cuenta</h3>
+    <div class="fr" style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <input type="checkbox" id="fa-activa" checked style="width:auto;margin:0">
+      <label style="margin:0;font-size:13px;cursor:pointer" for="fa-activa">Activa</label>
+    </div>
+    <div class="fr"><label>Nombre</label><input id="fa-nombre"></div>
+    <div class="fr"><input id="fa-desc" placeholder="más datos (descripción opcional)"></div>
+    <div class="fr"><label>Banco / Entidad</label><input id="fa-banco"></div>
+    <div class="fr">
+      <label>Tipo</label>
+      <select id="fa-tipo">
+        <option value="1">CAJA: Efectivo, Cuentas corrientes, libretas</option>
+        <option value="2">AHORRO: Fondos, depósitos, inversión</option>
+        <option value="3">PRÉSTAMO</option>
+        <option value="4">TARJETA de crédito</option>
+      </select>
+    </div>
+    <div class="mbtns">
+      <button class="bok" onclick="saveAcc()">Ok</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="dbx-status"></div>
+
+<script>
+'use strict';
+const DBX_PATH = '/Aplicaciones/Contabilidad Claude/Xopard.csv';
+const $ = id => document.getElementById(id);
+
+const S = {
+  token: '',
+  meta0:'', extra:[], extra2:0, tail1:'', tail2:'',
+  cats:[], accs:[], movs:[],
+  selAcc:-1, selMov:-1, editMov:-1, editAcc:-1,
+  filter:'activas', chartOff:0, dirty:false,
+};
+
+// ── UTILS ──────────────────────────────────────────────────
+function fmtAmt(n) {
+  if (isNaN(n)||n==null) return '0,00';
+  const neg=n<0, s=Math.abs(n).toFixed(2), [i,d]=s.split('.');
+  return (neg?'-':'')+i.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+d;
+}
+function parseAmt(s) {
+  if (!s) return 0;
+  return parseFloat(String(s).trim().replace(/\./g,'').replace(',','.'))||0;
+}
+function dateSort(s) {
+  if (!s||s.length<8) return '00000000';
+  const [dd,mm,yy]=s.split('-');
+  return (parseInt(yy)<50?'20'+yy:'19'+yy)+mm.padStart(2,'0')+dd.padStart(2,'0');
+}
+function parsePeriod(p) {
+  if (!p||p.length<5) return 0;
+  const [mm,yy]=p.split('-');
+  return (parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy))*100+parseInt(mm);
+}
+function today() {
+  const d=new Date();
+  return String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getFullYear()).slice(-2);
+}
+function todayPeriod() {
+  const d=new Date();
+  return String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getFullYear()).slice(-2);
+}
+function showLoading(msg='Cargando…') { $('loading-msg').textContent=msg; $('loading').classList.add('show'); }
+function hideLoading() { $('loading').classList.remove('show'); }
+function toast(msg,ms=3000) {
+  const t=$('toast'); t.textContent=msg; t.style.opacity='1';
+  clearTimeout(t._to); t._to=setTimeout(()=>t.style.opacity='0',ms);
+}
+function setStatus(msg) { $('dbx-status').textContent=msg; }
+
+// ── DROPBOX API ────────────────────────────────────────────
+async function dbxDownload() {
+  const r = await fetch('https://content.dropboxapi.com/2/files/download', {
+    method:'POST',
+    headers:{
+      'Authorization':'Bearer '+S.token,
+      'Dropbox-API-Arg':JSON.stringify({path:DBX_PATH})
+    }
+  });
+  if (!r.ok) throw new Error('Error al descargar: '+r.status+' '+await r.text());
+  return await r.text();
+}
+
+async function dbxUpload(content) {
+  const r = await fetch('https://content.dropboxapi.com/2/files/upload', {
+    method:'POST',
+    headers:{
+      'Authorization':'Bearer '+S.token,
+      'Dropbox-API-Arg':JSON.stringify({path:DBX_PATH,mode:'overwrite',autorename:false}),
+      'Content-Type':'application/octet-stream'
+    },
+    body: content
+  });
+  if (!r.ok) throw new Error('Error al guardar: '+r.status+' '+await r.text());
+  return await r.json();
+}
+
+// ── SETUP ──────────────────────────────────────────────────
+function showSetup() { $('setup').classList.add('show'); }
+function hideSetup() { $('setup').classList.remove('show'); }
+
+async function setupConnect() {
+  const token = $('inp-token').value.trim();
+  if (!token) { alert('Introduce el token'); return; }
+  S.token = token;
+  localStorage.setItem('dbx_token', token);
+  hideSetup();
+  await loadFromDropbox();
+}
+
+function changeToken() {
+  closeMenu();
+  localStorage.removeItem('dbx_token');
+  S.token = '';
+  $('inp-token').value = '';
+  showSetup();
+}
+
+// ── LOAD / SAVE ────────────────────────────────────────────
+async function loadFromDropbox() {
+  closeMenu();
+  showLoading('Cargando datos desde Dropbox…');
+  try {
+    const csv = await dbxDownload();
+    parseCSV(csv);
+    const now = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    setStatus('Dropbox ✓ · Última carga: '+now);
+    toast('Datos cargados ✓');
+  } catch(e) {
+    hideLoading();
+    if (e.message.includes('401')||e.message.includes('400')) {
+      alert('Token inválido o caducado. Genera uno nuevo en la consola de Dropbox.');
+      changeToken();
+    } else {
+      alert('Error al cargar: '+e.message);
+    }
+  } finally { hideLoading(); }
+}
+
+async function saveToDropbox() {
+  closeMenu();
+  if (!S.accs.length) { toast('Sin datos que guardar'); return; }
+  showLoading('Guardando en Dropbox…');
+  try {
+    await dbxUpload(genCSV());
+    S.dirty = false;
+    const now = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    setStatus('Dropbox ✓ · Guardado: '+now);
+    toast('Guardado en Dropbox ✓');
+  } catch(e) {
+    alert('Error al guardar: '+e.message);
+  } finally { hideLoading(); }
+}
+
+// ── CSV PARSE ──────────────────────────────────────────────
+function parseCSV(txt) {
+  const lines = txt.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  let p=0;
+  S.meta0 = lines[p++];
+  const nc=parseInt(lines[p++]); S.cats=[];
+  for (let i=0;i<nc;i++) {
+    const f=lines[p++].split(';');
+    S.cats.push({id:f[0]||'',name:f[1]||'',level:parseInt(f[2])||1,expanded:f[3]==='t',c5:f[4]||''});
+  }
+  const na=parseInt(lines[p++]); S.accs=[];
+  for (let i=0;i<na;i++) {
+    const f=lines[p++].split(';');
+    S.accs.push({type:f[0]||'1',bank:f[1]||'',name:f[2]||'',desc:f[3]||'',
+      level:parseInt(f[4])||1,active:f[5]==='t',c7:f[6]||'0',c8:f[7]||'1',c9:f[8]||'20',c10:f[9]||'1'});
+  }
+  const ne=parseInt(lines[p++]); S.extra=[];
+  for (let i=0;i<ne;i++) S.extra.push(lines[p++]);
+  S.extra2=parseInt(lines[p++])||0;
+  const nm=parseInt(lines[p++]); S.movs=[];
+  for (let i=0;i<nm;i++) {
+    const f=lines[p++].split(';');
+    S.movs.push({c1:f[0]||'',ai:parseInt(f[1]||'0')-1,shaded:f[2]||'',div:f[3]||'',
+      period:f[4]||'',date:f[5]||'',concept:f[6]||'',c8:f[7]||'',
+      ci:parseInt(f[8]||'0')-1,amount:parseAmt(f[9]||'0')});
+  }
+  S.tail1=lines[p]||''; S.tail2=lines[p+1]||'';
+  S.selAcc=-1; S.selMov=-1; S.chartOff=0; S.dirty=false;
+  renderAll();
+}
+
+// ── CSV GENERATE ───────────────────────────────────────────
+function genCSV() {
+  const L=[];
+  L.push(S.meta0);
+  L.push(String(S.cats.length));
+  for (const c of S.cats) L.push([c.id,c.name,c.level,c.expanded?'t':'',c.c5].join(';'));
+  L.push(String(S.accs.length));
+  for (const a of S.accs) L.push([a.type,a.bank,a.name,a.desc,a.level,a.active?'t':'',a.c7,a.c8,a.c9,a.c10].join(';'));
+  L.push(String(S.extra.length));
+  for (const x of S.extra) L.push(x);
+  L.push(String(S.extra2));
+  L.push(String(S.movs.length));
+  for (const m of S.movs) L.push([m.c1,m.ai+1,m.shaded,m.div,m.period,m.date,m.concept,m.c8,m.ci+1,fmtAmt(m.amount)].join(';'));
+  L.push(S.tail1); L.push(S.tail2);
+  return L.join('\n');
+}
+
+// ── RENDER ─────────────────────────────────────────────────
+function renderAll() { renderAccs(); if (S.selAcc>=0){renderMovs(S.selAcc);renderChart(S.selAcc);} }
+
+function balances() {
+  const b=new Array(S.accs.length).fill(0);
+  for (const m of S.movs) if (m.ai>=0&&m.ai<b.length) b[m.ai]+=m.amount;
+  return b;
+}
+
+function renderAccs() {
+  const el=$('acclist');
+  if (!S.accs.length){el.innerHTML='<div class="empty-msg">Sin datos</div>';return;}
+  const bal=balances(), showAll=S.filter==='todas';
+  const frag=document.createDocumentFragment();
+  let sepDone=false, cajaTotal=0;
+  for (let i=0;i<S.accs.length;i++) if(S.accs[i].type==='1'&&S.accs[i].active) cajaTotal+=bal[i];
+  for (let i=0;i<S.accs.length;i++) {
+    const a=S.accs[i];
+    if (!showAll&&!a.active) continue;
+    if (!sepDone&&a.type!=='1') {
+      const sep=document.createElement('div'); sep.className='sep-row';
+      sep.innerHTML=`<span>TOTAL CAJA</span><span>${fmtAmt(cajaTotal)}</span>`;
+      frag.appendChild(sep); sepDone=true;
+    }
+    const row=document.createElement('div');
+    row.className='acc-row'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
+    row.dataset.idx=i; row.onclick=()=>selAcc(i); row.ondblclick=()=>showEditAcc(i);
+    const b=bal[i];
+    row.innerHTML=`<div class="acc-logo">${(a.bank||'?').substring(0,10)}</div>
+      <div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div>
+      <div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
+    frag.appendChild(row);
+  }
+  if (!sepDone){const sep=document.createElement('div');sep.className='sep-row';sep.innerHTML=`<span>TOTAL CAJA</span><span>${fmtAmt(cajaTotal)}</span>`;frag.appendChild(sep);}
+  el.innerHTML=''; el.appendChild(frag);
+}
+
+function selAcc(idx) {
+  S.selAcc=idx; S.selMov=-1; S.chartOff=0;
+  renderAccs();
+  $('acc-title').textContent=S.accs[idx].name;
+  $('chart-title').textContent='Gráfico de '+S.accs[idx].name;
+  renderMovs(idx); renderChart(idx);
+}
+
+function accMovs(ai) {
+  return S.movs.map((m,i)=>({...m,oi:i})).filter(m=>m.ai===ai)
+    .sort((a,b)=>{const da=dateSort(a.date),db=dateSort(b.date);return da<db?-1:da>db?1:a.oi-b.oi;});
+}
+
+function renderMovs(ai) {
+  const el=$('movarea'), list=accMovs(ai);
+  if (!list.length){el.innerHTML='<div class="empty-msg">Sin movimientos</div>';return;}
+  const frag=document.createDocumentFragment();
+  let run=0;
+  for (const m of list) {
+    run+=m.amount;
+    const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
+    const row=document.createElement('div');
+    row.className='mrow'+(m.oi===S.selMov?' sel':'');
+    row.dataset.oi=m.oi; row.onclick=()=>selMov(m.oi); row.ondblclick=()=>showEditMov(m.oi);
+    row.innerHTML=`<div class="mrow-main">
+      <span class="mdate">${m.date}</span>
+      <span class="mconcept">${m.concept||'—'}</span>
+      <span class="mamount${m.amount<0?' neg':''}">${fmtAmt(m.amount)}</span>
+      <span class="mbal${run<0?' neg':''}">${fmtAmt(run)}</span></div>
+      <div class="mrow-sub"><span class="mperiod">${m.period}</span><span class="mcat">${cat}</span></div>`;
+    frag.appendChild(row);
+  }
+  el.innerHTML=''; el.appendChild(frag);
+  el.scrollTop=el.scrollHeight;
+}
+
+function selMov(oi) {
+  S.selMov=oi;
+  document.querySelectorAll('.mrow').forEach(r=>r.classList.toggle('sel',parseInt(r.dataset.oi)===oi));
+}
+
+function renderChart(ai) {
+  const box=$('chartsvg'); box.innerHTML='';
+  const list=accMovs(ai);
+  if (list.length<2) return;
+  const monthly={};let run=0;
+  for (const m of list){run+=m.amount;if(m.period)monthly[m.period]=run;}
+  const all=Object.keys(monthly).sort((a,b)=>parsePeriod(a)-parsePeriod(b));
+  if (all.length<2) return;
+  const endIdx=Math.min(all.length-1,Math.max(12,all.length-1)+S.chartOff);
+  const startIdx=Math.max(0,endIdx-12);
+  const periods=all.slice(startIdx,endIdx+1);
+  const vals=periods.map(p=>monthly[p]);
+  const W=box.clientWidth||640,H=box.clientHeight||150;
+  const P={t:8,r:16,b:26,l:80},cW=W-P.l-P.r,cH=H-P.t-P.b;
+  const minV=Math.min(...vals),maxV=Math.max(...vals),span=maxV-minV||1;
+  const xp=i=>P.l+(i/(periods.length-1))*cW;
+  const yp=v=>P.t+cH-((v-minV)/span)*cH;
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('width','100%');svg.setAttribute('height','100%');svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  const mk=(tag,attrs,txt)=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(attrs))el.setAttribute(k,v);if(txt)el.textContent=txt;return el;};
+  for(let i=0;i<=4;i++){
+    const v=minV+(span*i/4),y=yp(v);
+    svg.appendChild(mk('line',{x1:P.l,y1:y,x2:W-P.r,y2:y,stroke:'#E4E4E4','stroke-width':'1'}));
+    svg.appendChild(mk('text',{x:P.l-5,y:y+4,'text-anchor':'end','font-size':'10',fill:'#999'},fmtAmt(Math.round(v))));
+  }
+  if(minV<0&&maxV>0){const y0=yp(0);svg.appendChild(mk('line',{x1:P.l,y1:y0,x2:W-P.r,y2:y0,stroke:'#AAA','stroke-width':'1','stroke-dasharray':'4,3'}));}
+  const MESES=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const xStep=Math.max(1,Math.ceil(periods.length/8));
+  for(let i=0;i<periods.length;i+=xStep){
+    const mm=parseInt(periods[i].split('-')[0]);
+    svg.appendChild(mk('text',{x:xp(i),y:H-7,'text-anchor':'middle','font-size':'10',fill:'#999'},MESES[mm]||periods[i]));
+  }
+  const ptsFill=[`${xp(0)},${P.t+cH}`].concat(vals.map((v,i)=>`${xp(i)},${yp(v)}`)).concat([`${xp(vals.length-1)},${P.t+cH}`]);
+  svg.appendChild(mk('polygon',{points:ptsFill.join(' '),fill:'rgba(160,20,60,.10)',stroke:'none'}));
+  svg.appendChild(mk('polyline',{points:vals.map((v,i)=>`${xp(i)},${yp(v)}`).join(' '),fill:'none',stroke:'#A01430','stroke-width':'2.5'}));
+  for(let i=0;i<vals.length;i++) svg.appendChild(mk('circle',{cx:xp(i),cy:yp(vals[i]),r:'3',fill:'#A01430'}));
+  box.appendChild(svg);
+}
+
+function chartNav(dir){S.chartOff=Math.min(0,S.chartOff+dir);if(S.selAcc>=0)renderChart(S.selAcc);}
+
+// ── MODALS ─────────────────────────────────────────────────
+function showModal(id){$('overlay').classList.add('show');['mdl-mov','mdl-acc'].forEach(m=>$(m).style.display='none');$(id).style.display='block';}
+function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
+function overlayClick(e){if(e.target===$('overlay'))closeModal();}
+function fillCatSel(id,sel){const s=$(id);s.innerHTML='';S.cats.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent='\u3000'.repeat(Math.max(0,c.level-2))+c.name;if(i===sel)o.selected=true;s.appendChild(o);});}
+function fillAccSel(id,sel){const s=$(id);s.innerHTML='';S.accs.forEach((a,i)=>{const o=document.createElement('option');o.value=i;o.textContent=a.name;if(i===sel)o.selected=true;s.appendChild(o);});}
+
+function showAddMov(){if(!S.accs.length)return;S.editMov=-1;$('mdl-mov-ttl').textContent='Añadir Movimiento';fillAccSel('fm-cuenta',S.selAcc>=0?S.selAcc:0);$('fm-fecha').value=today();$('fm-texto').value='';$('fm-mes').value=todayPeriod();fillCatSel('fm-cat',1);$('fm-imp').value='0,00';showModal('mdl-mov');setTimeout(()=>$('fm-texto').focus(),50);}
+function showEditMov(oi){S.editMov=oi;const m=S.movs[oi];$('mdl-mov-ttl').textContent='Editar Movimiento';fillAccSel('fm-cuenta',m.ai);$('fm-fecha').value=m.date;$('fm-texto').value=m.concept;$('fm-mes').value=m.period;fillCatSel('fm-cat',m.ci>=0?m.ci:0);$('fm-imp').value=fmtAmt(m.amount);showModal('mdl-mov');}
+function saveMov(){
+  const mov={c1:'',ai:parseInt($('fm-cuenta').value),shaded:'',div:'',period:$('fm-mes').value.trim(),date:$('fm-fecha').value.trim(),concept:$('fm-texto').value.trim(),c8:'',ci:parseInt($('fm-cat').value),amount:parseAmt($('fm-imp').value)};
+  if(S.editMov>=0)S.movs[S.editMov]=mov;else S.movs.push(mov);
+  closeModal();S.dirty=true;renderAll();saveToDropbox();
+}
+function delMov(){if(S.selMov<0){toast('Selecciona primero un movimiento');return;}if(!confirm('¿Eliminar este movimiento?'))return;S.movs.splice(S.selMov,1);S.selMov=-1;S.dirty=true;renderAll();saveToDropbox();}
+
+function showAddAcc(){S.editAcc=-1;$('mdl-acc-ttl').textContent='Añadir Cuenta';$('fa-activa').checked=true;$('fa-nombre').value='';$('fa-desc').value='';$('fa-banco').value='';$('fa-tipo').value='1';showModal('mdl-acc');setTimeout(()=>$('fa-nombre').focus(),50);}
+function showEditAcc(idx){S.editAcc=idx;const a=S.accs[idx];$('mdl-acc-ttl').textContent='Editar Cuenta';$('fa-activa').checked=a.active;$('fa-nombre').value=a.name;$('fa-desc').value=a.desc;$('fa-banco').value=a.bank;$('fa-tipo').value=a.type;showModal('mdl-acc');}
+function saveAcc(){const acc={type:$('fa-tipo').value,bank:$('fa-banco').value.trim(),name:$('fa-nombre').value.trim(),desc:$('fa-desc').value.trim(),level:1,active:$('fa-activa').checked,c7:'0',c8:'1',c9:'20',c10:'1'};if(S.editAcc>=0)S.accs[S.editAcc]=acc;else S.accs.push(acc);closeModal();renderAll();}
+function delAcc(){if(S.selAcc<0){toast('Selecciona primero una cuenta');return;}if(!confirm(`¿Eliminar la cuenta "${S.accs[S.selAcc].name}" y todos sus movimientos?`))return;const idx=S.selAcc;S.movs=S.movs.filter(m=>m.ai!==idx).map(m=>({...m,ai:m.ai>idx?m.ai-1:m.ai}));S.accs.splice(idx,1);S.selAcc=-1;S.selMov=-1;$('acc-title').textContent='—';$('movarea').innerHTML='<div class="empty-msg">Selecciona una cuenta</div>';$('chartsvg').innerHTML='';renderAccs();}
+
+// ── TABS & MENU ─────────────────────────────────────────────
+function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));if(b)b.classList.add('active');$('tab-cuentas').style.display=n==='cuentas'?'flex':'none';$('tab-cuadro').style.display=n==='cuadro'?'flex':'none';}
+function applyFilter(v){S.filter=v;renderAccs();}
+function toggleMenu(){$('dropmenu').classList.toggle('show');}
+function closeMenu(){$('dropmenu').classList.remove('show');}
+function about(){closeMenu();alert('MiContabilidad v1.1\nConectado con Dropbox vía API\nCompatible con el formato CSV de Xopard');}
+
+// ── KEYBOARD ────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape')closeModal();
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();saveToDropbox();}
+});
+document.addEventListener('click',e=>{if(!$('dropmenu').contains(e.target)&&e.target!==$('hambtn'))closeMenu();});
+window.addEventListener('resize',()=>{if(S.selAcc>=0)renderChart(S.selAcc);});
+
+// ── INIT ────────────────────────────────────────────────────
+(async()=>{
+  const token=localStorage.getItem('dbx_token');
+  if (token) { S.token=token; await loadFromDropbox(); }
+  else showSetup();
+})();
+</script>
+</body>
+</html>
