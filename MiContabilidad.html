@@ -125,6 +125,9 @@ body.no-sel-h{user-select:none;cursor:row-resize}
 #movarea{flex:1;overflow-y:auto;background:#fff;min-height:0}
 .empty-msg{display:flex;align-items:center;justify-content:center;height:120px;color:#999;font-size:14px}
 .mrow{border-bottom:1px solid #EBEBEB;cursor:pointer;padding:3px 8px 2px}
+.mrow.shaded{background:#EEF4FF}
+.mrow.shaded:hover{background:#E5EEFF}
+.mrow.shaded.sel-multi{background:#DDE8FF}
 .mrow:hover{background:#F7F7F7}
 .mrow.sel{background:var(--sel)}
 .mrow-main{display:flex;align-items:baseline;gap:6px}
@@ -977,18 +980,20 @@ function renderMovs(ai){
     const checked=S.selMovs.has(m.oi);
     const pending=m.ci===PENDING_CI;
     const divided=m.div==='t';
-    const catDisplay=(divided?'÷ ':'')+cat;
+    const shaded=m.shaded==='t';
+    const catDisplay=(divided?'<span style="color:#1A6EBD">÷</span> ':'')+cat;
     const row=document.createElement('div');
-    row.className='mrow'+(checked?' sel-multi':'');
+    row.className='mrow'+(checked?' sel-multi':'')+(shaded?' shaded':'');
     row.dataset.oi=m.oi;
     row.onclick=e=>{if(e.detail<2)clickMov(m.oi,e.shiftKey);};
     row.ondblclick=()=>showEditMov(m.oi);
+    row.oncontextmenu=e=>{e.preventDefault();toggleShaded(m.oi);};
     row.innerHTML=`
       <div class="mrow-main">
         <span class="mcheck"><input type="checkbox" ${checked?'checked':''}></span>
         <span class="mdate">${m.date}</span>
         <span class="mconcept">${m.concept||'—'}</span>
-        <span class="mamount${m.amount<0?' neg':''}">${fmtAmt(m.amount)}</span>
+        <span class="mamount${m.amount<0?' neg':''}">${fmtAmt(m.amount)}${shaded?' <span style="color:#1A6EBD;font-size:11px">✓</span>':''}</span>
         <span class="mbal${run<0?' neg':''}">${fmtAmt(run)}</span>
       </div>
       <div class="mrow-sub">
@@ -999,6 +1004,13 @@ function renderMovs(ai){
   }
   el.innerHTML='';el.appendChild(frag);el.scrollTop=el.scrollHeight;
   updateSelCount();
+}
+
+function toggleShaded(oi) {
+  saveUndo(S.movs[oi].shaded==='t' ? 'Tick eliminado' : 'Tick añadido');
+  S.movs[oi] = {...S.movs[oi], shaded: S.movs[oi].shaded==='t' ? '' : 't'};
+  renderMovs(S.selAcc);
+  saveToDropbox();
 }
 
 function selMov(oi){S.selMov=oi;document.querySelectorAll('.mrow').forEach(r=>r.classList.toggle('sel',parseInt(r.dataset.oi)===oi));}
