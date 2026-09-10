@@ -246,7 +246,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="rbtn" onclick="showAddMov()">＋</button>
         <button class="rbtn" onclick="delMov()">🗑</button>
         <button class="rbtn off">÷</button>
-        <button class="rbtn off">⇄</button>
+        <button class="rbtn" onclick="showTransferModal()" title="Traspasar movimiento a otra cuenta">⇄</button>
         <button class="rbtn off">🖨</button>
         <button class="rbtn">?</button>
       </div>
@@ -374,6 +374,19 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="bok" id="paste-ok" onclick="confirmPaste()">Añadir movimientos</button>
         <button class="bcan" onclick="pastBack()">← Atrás</button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Traspasar movimiento -->
+  <div id="mdl-transfer" class="modal" style="display:none;max-width:360px">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <h3>Traspasar a</h3>
+    <div class="fr">
+      <select id="transfer-cuenta" style="font-size:13px;padding:7px"></select>
+    </div>
+    <div class="mbtns">
+      <button class="bok" onclick="confirmTransfer()">Ok</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
     </div>
   </div>
 
@@ -1147,7 +1160,7 @@ function _renderChartFromDaily(daily){
 // ── MODALS ───────────────────────────────────────────────────
 function showModal(id){
   $('overlay').classList.add('show');
-  ['mdl-mov','mdl-acc','mdl-paste','mdl-info'].forEach(m=>$(m).style.display='none');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer'].forEach(m=>$(m).style.display='none');
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
@@ -1239,6 +1252,53 @@ function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList
 function applyFilter(v){S.filter=v;renderAccs();}
 function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
+function showTransferModal() {
+  if (S.selMovs.size !== 1) { toast('Selecciona primero exactamente un movimiento'); return; }
+  const oi = [...S.selMovs][0];
+  const m = S.movs[oi];
+  const showAll = S.filter === 'todas';
+  const sel = $('transfer-cuenta');
+  sel.innerHTML = '';
+  S.accs.forEach((a, i) => {
+    if (i === m.ai) return;
+    if (!showAll && !a.active) return;
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = a.name;
+    sel.appendChild(opt);
+  });
+  if (!sel.options.length) { toast('No hay otras cuentas disponibles'); return; }
+  showModal('mdl-transfer');
+}
+
+function confirmTransfer() {
+  if (S.selMovs.size !== 1) return;
+  const oi = [...S.selMovs][0];
+  const m = S.movs[oi];
+  const destAi = parseInt($('transfer-cuenta').value);
+  const srcAcc = S.accs[m.ai];
+  const destAcc = S.accs[destAi];
+  // Buscar categoría de traspasos
+  let trasCi = PENDING_CI;
+  for (let i = 0; i < S.cats.length; i++) {
+    const n = S.cats[i].name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if (n.includes('traspaso')) { trasCi = i; break; }
+  }
+  saveUndo('Traspaso a ' + destAcc.name);
+  // Actualizar concepto del movimiento origen
+  S.movs[oi] = { ...m, concept: m.concept + ' Traspasado a ' + destAcc.name, ci: trasCi };
+  // Crear movimiento espejo en cuenta destino con importe negado
+  S.movs.push({
+    c1:'', ai:destAi, shaded:'', div:'',
+    period:m.period, date:m.date,
+    concept: m.concept + ' Traspasado desde ' + srcAcc.name,
+    c8:'', ci:trasCi, amount:-m.amount
+  });
+  S.selMovs.clear();
+  closeModal();
+  renderAll();
+  saveToDropbox();
+}
+
 function downloadBackup() {
   closeMenu();
   if (!S.accs.length) { toast('Sin datos que guardar'); return; }
