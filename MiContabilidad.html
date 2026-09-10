@@ -195,8 +195,8 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
       <div id="lhdr">
         <span>CUENTAS</span>
         <select id="filter-sel" onchange="applyFilter(this.value)">
-          <option value="activas">Activas ▾</option>
-          <option value="todas">Todas ▾</option>
+          <option value="activas">Activas</option>
+          <option value="todas">Todas</option>
         </select>
         <button class="hbtn" onclick="showAddAcc()" title="Añadir cuenta">＋</button>
         <button class="hbtn" onclick="delAcc()" title="Eliminar cuenta">🗑</button>
@@ -551,8 +551,8 @@ function renderAccs(){
       row.innerHTML=`<div class="acc-logo">${(a.bank||'?').substring(0,10)}</div><div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
       frag.appendChild(row);
     }
-    // Separador con total del grupo (solo activas)
-    const total=grupo.filter(x=>x.a.active).reduce((s,x)=>s+x.b,0);
+    // Total del grupo según filtro activo
+    const total=grupo.filter(x=>showAll||x.a.active).reduce((s,x)=>s+x.b,0);
     posicionGlobal+=total;
     const sep=document.createElement('div');sep.className='sep-row';
     sep.innerHTML=`<span>${TIPO_LABEL[tipo]||'TOTAL'}</span><span class="${total<0?'neg':''}">${fmtAmt(total)}</span>`;
