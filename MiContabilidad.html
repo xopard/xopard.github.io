@@ -68,13 +68,25 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 .mi.off{color:#AAA;cursor:default;pointer-events:none}
 .msep{height:6px;background:#F8F8F8;border-bottom:1px solid #EBEBEB}
 
-/* ── LAYOUT ── */
+.divider-v{
+  width:5px;background:#D5D5D5;cursor:col-resize;flex-shrink:0;
+  transition:background .15s;position:relative;
+}
+.divider-v:hover,.divider-v.drag{background:var(--wine)}
+.divider-h{
+  height:5px;background:#D5D5D5;cursor:row-resize;flex-shrink:0;
+  transition:background .15s;
+}
+.divider-h:hover,.divider-h.drag{background:var(--wine)}
+body.no-sel{user-select:none;cursor:col-resize}
+body.no-sel-h{user-select:none;cursor:row-resize}
+
 #main{display:flex;height:calc(100vh - 38px);overflow:hidden}
 #tab-cuentas{display:flex;flex:1;min-width:0;overflow:hidden}
 #tab-cuadro{display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#888;font-size:15px}
 
 /* ── LEFT PANEL ── */
-#lpanel{width:370px;min-width:260px;max-width:370px;border-right:1px solid var(--border);display:flex;flex-direction:column;background:#fff;flex-shrink:0}
+#lpanel{width:370px;min-width:180px;display:flex;flex-direction:column;background:#fff;flex-shrink:0}
 #lhdr{background:var(--panel);color:#fff;padding:5px 8px;display:flex;align-items:center;gap:6px;font-weight:700;font-size:11.5px;letter-spacing:.5px;flex-shrink:0}
 #filter-sel{font-size:11px;padding:2px 4px;border-radius:3px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.15);color:#fff;cursor:pointer}
 #filter-sel option{background:#fff;color:#333}
@@ -224,6 +236,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       </div>
       <div id="acclist"><div class="empty-msg">Conectando…</div></div>
     </div>
+    <div class="divider-v" id="divider-v" title="Arrastra para redimensionar"></div>
     <div id="rpanel">
       <div id="rhdr">
         <span id="acc-title">—</span>
@@ -238,6 +251,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="rbtn">?</button>
       </div>
       <div id="movarea"><div class="empty-msg">Selecciona una cuenta</div></div>
+      <div class="divider-h" id="divider-h" title="Arrastra para redimensionar"></div>
       <div id="chartbox">
         <div id="charthdr">
           <span id="chart-title">Gráfico</span>
@@ -1554,7 +1568,82 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.c
 document.addEventListener('click',e=>{if(!$('dropmenu').contains(e.target)&&e.target!==$('hambtn'))closeMenu();});
 window.addEventListener('resize',()=>{if(S.selAcc>=0)renderChart(S.selAcc);});
 
-// ── INIT ─────────────────────────────────────────────────────
+// ── DIVISORES ARRASTRABLES ───────────────────────────────────
+(function(){
+  let drag=null, x0, y0, w0, h0;
+
+  function onMove(e){
+    if(!drag) return;
+    const cx=e.touches?e.touches[0].clientX:e.clientX;
+    const cy=e.touches?e.touches[0].clientY:e.clientY;
+    if(drag==='v'){
+      const lp=$('lpanel');
+      const nw=Math.max(180,Math.min(window.innerWidth*0.6, w0+(cx-x0)));
+      lp.style.width=nw+'px';
+      localStorage.setItem('pref_lw',nw);
+      if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
+    } else {
+      const cb=$('chartbox');
+      const nh=Math.max(80,Math.min(window.innerHeight*0.6, h0-(cy-y0)));
+      cb.style.height=nh+'px';
+      localStorage.setItem('pref_ch',nh);
+      if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
+    }
+  }
+
+  function onUp(){
+    if(!drag) return;
+    $('divider-'+drag)?.classList.remove('drag');
+    document.body.classList.remove('no-sel','no-sel-h');
+    drag=null;
+    if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
+  }
+
+  $('divider-v').addEventListener('mousedown', e=>{
+    drag='v'; x0=e.clientX; w0=$('lpanel').getBoundingClientRect().width;
+    $('divider-v').classList.add('drag');
+    document.body.classList.add('no-sel'); e.preventDefault();
+  });
+  $('divider-h').addEventListener('mousedown', e=>{
+    drag='h'; y0=e.clientY; h0=$('chartbox').getBoundingClientRect().height;
+    $('divider-h').classList.add('drag');
+    document.body.classList.add('no-sel-h'); e.preventDefault();
+  });
+  // Touch
+  $('divider-v').addEventListener('touchstart', e=>{
+    drag='v'; x0=e.touches[0].clientX; w0=$('lpanel').getBoundingClientRect().width;
+    $('divider-v').classList.add('drag'); e.preventDefault();
+  },{passive:false});
+  $('divider-h').addEventListener('touchstart', e=>{
+    drag='h'; y0=e.touches[0].clientY; h0=$('chartbox').getBoundingClientRect().height;
+    $('divider-h').classList.add('drag'); e.preventDefault();
+  },{passive:false});
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchmove', onMove, {passive:false});
+  document.addEventListener('touchend', onUp);
+
+  // Restaurar tamaños guardados
+  window.addEventListener('load', ()=>{
+    const lw=localStorage.getItem('pref_lw');
+    const ch=localStorage.getItem('pref_ch');
+    if(lw) $('lpanel').style.width=lw+'px';
+    if(ch) $('chartbox').style.height=ch+'px';
+  });
+
+  // Doble clic para resetear al tamaño por defecto
+  $('divider-v').addEventListener('dblclick', ()=>{
+    $('lpanel').style.width='370px';
+    localStorage.removeItem('pref_lw');
+    if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
+  });
+  $('divider-h').addEventListener('dblclick', ()=>{
+    $('chartbox').style.height='195px';
+    localStorage.removeItem('pref_ch');
+    if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
+  });
+})();
 (async()=>{
   // ¿Viene de Dropbox con código OAuth?
   if(window.location.search.includes('code=')){
