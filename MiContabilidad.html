@@ -688,12 +688,32 @@ function redo() {
   toast('Rehecho: ' + next.desc);
 }
 
+function _prevVisiblePos(di) {
+  const showAll = S.filter === 'todas';
+  const tipo = S.accs[S.selAcc].type;
+  for (let i = di - 1; i >= 0; i--) {
+    const idx = S.displayOrder[i];
+    if (S.accs[idx].type === tipo && (showAll || S.accs[idx].active)) return i;
+  }
+  return -1;
+}
+function _nextVisiblePos(di) {
+  const showAll = S.filter === 'todas';
+  const tipo = S.accs[S.selAcc].type;
+  for (let i = di + 1; i < S.displayOrder.length; i++) {
+    const idx = S.displayOrder[i];
+    if (S.accs[idx].type === tipo && (showAll || S.accs[idx].active)) return i;
+  }
+  return -1;
+}
+
 function moveAccUp() {
   if (S.selAcc < 0) return;
   const di = S.displayOrder.indexOf(S.selAcc);
-  if (di <= 0) return;
+  const diPrev = _prevVisiblePos(di);
+  if (diPrev < 0) return;
   saveUndo('Cuenta subida: ' + S.accs[S.selAcc].name);
-  [S.displayOrder[di-1], S.displayOrder[di]] = [S.displayOrder[di], S.displayOrder[di-1]];
+  [S.displayOrder[diPrev], S.displayOrder[di]] = [S.displayOrder[di], S.displayOrder[diPrev]];
   renderAccs();
   saveToDropbox();
 }
@@ -701,9 +721,10 @@ function moveAccUp() {
 function moveAccDown() {
   if (S.selAcc < 0) return;
   const di = S.displayOrder.indexOf(S.selAcc);
-  if (di < 0 || di >= S.displayOrder.length - 1) return;
+  const diNext = _nextVisiblePos(di);
+  if (diNext < 0) return;
   saveUndo('Cuenta bajada: ' + S.accs[S.selAcc].name);
-  [S.displayOrder[di], S.displayOrder[di+1]] = [S.displayOrder[di+1], S.displayOrder[di]];
+  [S.displayOrder[di], S.displayOrder[diNext]] = [S.displayOrder[diNext], S.displayOrder[di]];
   renderAccs();
   saveToDropbox();
 }
@@ -712,15 +733,17 @@ function updateMoveButtons() {
   const bu = $('btn-up'), bd = $('btn-dn');
   if (!bu || !bd) return;
   if (S.selAcc < 0) {
-    bu.style.opacity = '0.3'; bd.style.opacity = '0.3';
-    bu.style.pointerEvents = 'none'; bd.style.pointerEvents = 'none';
-  } else {
-    const di = S.displayOrder.indexOf(S.selAcc);
-    bu.style.opacity = di <= 0 ? '0.3' : '0.85';
-    bd.style.opacity = di >= S.displayOrder.length-1 ? '0.3' : '0.85';
-    bu.style.pointerEvents = di <= 0 ? 'none' : 'auto';
-    bd.style.pointerEvents = di >= S.displayOrder.length-1 ? 'none' : 'auto';
+    bu.style.opacity='0.3'; bd.style.opacity='0.3';
+    bu.style.pointerEvents='none'; bd.style.pointerEvents='none';
+    return;
   }
+  const di = S.displayOrder.indexOf(S.selAcc);
+  const hasPrev = _prevVisiblePos(di) >= 0;
+  const hasNext = _nextVisiblePos(di) >= 0;
+  bu.style.opacity = hasPrev ? '0.85' : '0.3';
+  bd.style.opacity = hasNext ? '0.85' : '0.3';
+  bu.style.pointerEvents = hasPrev ? 'auto' : 'none';
+  bd.style.pointerEvents = hasNext ? 'auto' : 'none';
 }
 
 function updateSelCount() {
@@ -938,6 +961,54 @@ function renderChart(ai){
   svg.appendChild(mk('polygon',{points:ptsFill.join(' '),fill:'rgba(160,20,60,.10)',stroke:'none'}));
   svg.appendChild(mk('polyline',{points:vals.map((v,i)=>`${xp(i)},${yp(v)}`).join(' '),fill:'none',stroke:'#A01430','stroke-width':'2'}));
   if(wd.length<=120){const r=wd.length>60?'1.5':'2.5';for(let i=0;i<vals.length;i++)svg.appendChild(mk('circle',{cx:xp(i),cy:yp(vals[i]),r,fill:'#A01430'}));}
+
+  // ── TOOLTIP interactivo ──────────────────────────────────
+  // Capa transparente para capturar el movimiento del ratón
+  const overlay=mk('rect',{x:P.l,y:P.t,width:cW,height:cH,fill:'transparent',style:'cursor:crosshair'});
+
+  // Elementos del tooltip (inicialmente ocultos)
+  const ttGroup=mk('g',{'opacity':'0','pointer-events':'none'});
+  const ttRect=mk('rect',{rx:'4',ry:'4',fill:'rgba(40,40,40,0.88)',stroke:'none'});
+  const ttDate=mk('text',{'font-size':'11','fill':'#FFF','font-weight':'bold'});
+  const ttVal =mk('text',{'font-size':'11','fill':'#FFF'});
+  const ttLine=mk('line',{stroke:'rgba(160,20,60,0.5)','stroke-width':'1','stroke-dasharray':'3,2',y1:P.t,y2:P.t+cH});
+  const ttDot =mk('circle',{r:'4',fill:'#A01430',stroke:'#FFF','stroke-width':'1.5'});
+  ttGroup.appendChild(ttLine);ttGroup.appendChild(ttRect);
+  ttGroup.appendChild(ttDate);ttGroup.appendChild(ttVal);ttGroup.appendChild(ttDot);
+
+  const MESES_L=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  overlay.addEventListener('mousemove', e => {
+    const rect=svg.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(W/rect.width);
+    if(mx<P.l||mx>W-P.r){ttGroup.setAttribute('opacity','0');return;}
+    // Encontrar el punto más cercano
+    const frac=(mx-P.l)/cW;
+    const raw=frac*(wd.length-1);
+    const idx=Math.max(0,Math.min(wd.length-1,Math.round(raw)));
+    const cx=xp(idx),cy=yp(vals[idx]);
+    // Formatear fecha "DD-MM-YY" → "Mes DD, YYYY"
+    const [dd,mm,yy]=wd[idx].split('-');
+    const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);
+    const dateStr=MESES_L[parseInt(mm)-1]+' '+parseInt(dd)+', '+yyyy;
+    const valStr=fmtAmt(vals[idx]);
+    // Dimensionar el rectángulo
+    const pad=6,tw=Math.max(dateStr.length,valStr.length)*6.2+pad*2;
+    const th=36;
+    let tx=cx+8; if(tx+tw>W-P.r) tx=cx-tw-8;
+    const ty=Math.max(P.t,Math.min(cy-th/2,P.t+cH-th));
+    ttRect.setAttribute('x',tx);ttRect.setAttribute('y',ty);
+    ttRect.setAttribute('width',tw);ttRect.setAttribute('height',th);
+    ttDate.setAttribute('x',tx+pad);ttDate.setAttribute('y',ty+14);ttDate.textContent=dateStr;
+    ttVal.setAttribute('x',tx+pad);ttVal.setAttribute('y',ty+28);ttVal.textContent=valStr+' €';
+    ttLine.setAttribute('x1',cx);ttLine.setAttribute('x2',cx);
+    ttDot.setAttribute('cx',cx);ttDot.setAttribute('cy',cy);
+    ttGroup.setAttribute('opacity','1');
+  });
+  overlay.addEventListener('mouseleave',()=>ttGroup.setAttribute('opacity','0'));
+
+  svg.appendChild(ttGroup);
+  svg.appendChild(overlay);
   box.appendChild(svg);
 }
 
