@@ -950,20 +950,41 @@ function renderChart(ai){
   const W=box.clientWidth||640,H=box.clientHeight||150;
   const P={t:8,r:16,b:26,l:80},cW=W-P.l-P.r,cH=H-P.t-P.b;
   const minV=Math.min(...vals),maxV=Math.max(...vals),span=maxV-minV||1;
-  const xp=i=>P.l+(i/(wd.length-1))*cW;
+
+  // ── Posicionamiento por fecha real (no por índice) ────────
+  function d2ms(d){const[dd,mm,yy]=d.split('-');const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);return new Date(yyyy,parseInt(mm)-1,parseInt(dd)).getTime();}
+  const tStart=d2ms(wd[0]), tEnd=d2ms(wd[wd.length-1]), tSpan=tEnd-tStart||1;
+  const xpt=d=>P.l+((d2ms(d)-tStart)/tSpan)*cW;   // x por fecha
+  const xPos=wd.map(xpt);                            // posiciones precalculadas
   const yp=v=>P.t+cH-((v-minV)/span)*cH;
+
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.setAttribute('width','100%');svg.setAttribute('height','100%');svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   const mk=(tag,at,txt)=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(at))el.setAttribute(k,v);if(txt)el.textContent=txt;return el;};
+
+  // Grid horizontal
   for(let i=0;i<=4;i++){const v=minV+(span*i/4),y=yp(v);svg.appendChild(mk('line',{x1:P.l,y1:y,x2:W-P.r,y2:y,stroke:'#E4E4E4','stroke-width':'1'}));svg.appendChild(mk('text',{x:P.l-5,y:y+4,'text-anchor':'end','font-size':'10',fill:'#999'},fmtAmt(Math.round(v))));}
   if(minV<0&&maxV>0){const y0=yp(0);svg.appendChild(mk('line',{x1:P.l,y1:y0,x2:W-P.r,y2:y0,stroke:'#AAA','stroke-width':'1','stroke-dasharray':'4,3'}));}
+
+  // Etiquetas de mes: posicionadas en el 1º de cada mes calendario
   const MESES=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  let lastP=-1;
-  for(let i=0;i<wd.length;i++){const p=dpn(wd[i]);if(p!==lastP){lastP=p;svg.appendChild(mk('text',{x:xp(i),y:H-7,'text-anchor':'middle','font-size':'10',fill:'#999'},MESES[p%100]||''));}}
-  const ptsFill=[`${xp(0)},${P.t+cH}`].concat(vals.map((v,i)=>`${xp(i)},${yp(v)}`)).concat([`${xp(vals.length-1)},${P.t+cH}`]);
+  const seenMonths=new Set();
+  for(const d of wd){
+    const[dd,mm,yy]=d.split('-');const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);
+    const key=yyyy*100+parseInt(mm);
+    if(!seenMonths.has(key)){
+      seenMonths.add(key);
+      const monthStartMs=new Date(yyyy,parseInt(mm)-1,1).getTime();
+      const x=P.l+((monthStartMs-tStart)/tSpan)*cW;
+      if(x>=P.l-2&&x<=W-P.r+2) svg.appendChild(mk('text',{x:Math.max(P.l,x),y:H-7,'text-anchor':'middle','font-size':'10',fill:'#999'},MESES[parseInt(mm)]||''));
+    }
+  }
+
+  // Área rellena
+  const ptsFill=[`${xPos[0]},${P.t+cH}`].concat(vals.map((v,i)=>`${xPos[i]},${yp(v)}`)).concat([`${xPos[vals.length-1]},${P.t+cH}`]);
   svg.appendChild(mk('polygon',{points:ptsFill.join(' '),fill:'rgba(160,20,60,.10)',stroke:'none'}));
-  svg.appendChild(mk('polyline',{points:vals.map((v,i)=>`${xp(i)},${yp(v)}`).join(' '),fill:'none',stroke:'#A01430','stroke-width':'2'}));
-  if(wd.length<=120){const r=wd.length>60?'1.5':'2.5';for(let i=0;i<vals.length;i++)svg.appendChild(mk('circle',{cx:xp(i),cy:yp(vals[i]),r,fill:'#A01430'}));}
+  svg.appendChild(mk('polyline',{points:vals.map((v,i)=>`${xPos[i]},${yp(v)}`).join(' '),fill:'none',stroke:'#A01430','stroke-width':'2'}));
+  if(wd.length<=120){const r=wd.length>60?'1.5':'2.5';for(let i=0;i<vals.length;i++)svg.appendChild(mk('circle',{cx:xPos[i],cy:yp(vals[i]),r,fill:'#A01430'}));}
 
   // ── TOOLTIP interactivo ──────────────────────────────────
   // Capa transparente para capturar el movimiento del ratón
@@ -985,11 +1006,10 @@ function renderChart(ai){
     const rect=svg.getBoundingClientRect();
     const mx=(e.clientX-rect.left)*(W/rect.width);
     if(mx<P.l||mx>W-P.r){ttGroup.setAttribute('opacity','0');return;}
-    // Encontrar el punto más cercano
-    const frac=(mx-P.l)/cW;
-    const raw=frac*(wd.length-1);
-    const idx=Math.max(0,Math.min(wd.length-1,Math.round(raw)));
-    const cx=xp(idx),cy=yp(vals[idx]);
+    // Encontrar el punto más cercano por posición X real
+    let idx=0,minDist=Infinity;
+    for(let i=0;i<xPos.length;i++){const d=Math.abs(xPos[i]-mx);if(d<minDist){minDist=d;idx=i;}}
+    const cx=xPos[idx],cy=yp(vals[idx]);
     // Formatear fecha "DD-MM-YY" → "Mes DD, YYYY"
     const [dd,mm,yy]=wd[idx].split('-');
     const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);
