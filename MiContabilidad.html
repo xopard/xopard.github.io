@@ -694,6 +694,7 @@ function clearSelMovs() {
 }
 
 
+function updateUndoMenu() {
   const eu = $('menu-undo'), er = $('menu-redo');
   if (!eu || !er) return;
   if (UNDO.stack.length) {
