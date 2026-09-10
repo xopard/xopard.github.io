@@ -1164,7 +1164,15 @@ function showModal(id){
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
-function overlayClick(e){if(e.target===$('overlay'))closeModal();}
+// Detectar si el clic en el overlay fue un clic real (no arrastre)
+let _overlayMouseDownTarget = null;
+document.addEventListener('mousedown', e => {
+  _overlayMouseDownTarget = e.target;
+});
+function overlayClick(e) {
+  // Solo cerrar si el mousedown Y el mouseup ocurrieron en el overlay (no arrastre)
+  if (e.target === $('overlay') && _overlayMouseDownTarget === $('overlay')) closeModal();
+}
 function fillCatSel(id,sel){const s=$(id);s.innerHTML='';S.cats.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent='\u3000'.repeat(Math.max(0,c.level-2))+c.name;if(i===sel)o.selected=true;s.appendChild(o);});}
 function fillAccSel(id,sel){const s=$(id);s.innerHTML='';S.accs.forEach((a,i)=>{const o=document.createElement('option');o.value=i;o.textContent=a.name;if(i===sel)o.selected=true;s.appendChild(o);});}
 function showAddMov(){if(!S.accs.length)return;S.editMov=-1;$('mdl-mov-ttl').textContent='Añadir Movimiento';fillAccSel('fm-cuenta',S.selAcc>=0?S.selAcc:0);$('fm-fecha').value=today();$('fm-texto').value='';$('fm-mes').value=todayPeriod();fillCatSel('fm-cat',1);$('fm-imp').value='0,00';showModal('mdl-mov');setTimeout(()=>$('fm-texto').focus(),50);}
@@ -1259,13 +1267,17 @@ function showTransferModal() {
   const showAll = S.filter === 'todas';
   const sel = $('transfer-cuenta');
   sel.innerHTML = '';
-  // Usar displayOrder para que el orden coincida con el listado en pantalla
-  for (const i of S.displayOrder) {
-    if (i === m.ai) continue;
-    if (!showAll && !S.accs[i].active) continue;
-    const opt = document.createElement('option');
-    opt.value = i; opt.textContent = S.accs[i].name;
-    sel.appendChild(opt);
+  // Mismo orden que el panel: agrupar por tipo, dentro de cada tipo respetar displayOrder
+  const TIPO_ORDER = ['1','2','3','4'];
+  for (const tipo of TIPO_ORDER) {
+    for (const i of S.displayOrder) {
+      if (S.accs[i].type !== tipo) continue;
+      if (i === m.ai) continue;
+      if (!showAll && !S.accs[i].active) continue;
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = S.accs[i].name;
+      sel.appendChild(opt);
+    }
   }
   if (!sel.options.length) { toast('No hay otras cuentas disponibles'); return; }
   showModal('mdl-transfer');
