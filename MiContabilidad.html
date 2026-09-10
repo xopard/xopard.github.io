@@ -115,7 +115,11 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 .mamount.neg{color:var(--neg)}
 .mbal{width:88px;text-align:right;flex-shrink:0;font-size:12.5px}
 .mbal.neg{color:var(--neg)}
-.mrow-sub{display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
+.mcheck{width:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.mcheck input{cursor:pointer;width:13px;height:13px;accent-color:var(--wine);pointer-events:none}
+.mrow.sel-multi{background:#EDF3FF}
+.mrow.sel-multi:hover{background:#E0ECFF}
+display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
 .mperiod{width:66px;flex-shrink:0}
 .mcat{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 
@@ -181,6 +185,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
   <button id="hambtn" onclick="toggleMenu()">≡</button>
   <div id="dropmenu">
     <div class="mi off" id="menu-undo">↩ Deshacer</div>
+    <div class="mi off" id="menu-redo">↪ Rehacer</div>
     <div class="msep"></div>
     <div class="mi" onclick="loadFromDropbox()">↓ Recargar desde Dropbox</div>
     <div class="mi" onclick="saveToDropbox()">↑ Guardar en Dropbox (Ctrl+S)</div>
@@ -210,6 +215,8 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
     <div id="rpanel">
       <div id="rhdr">
         <span id="acc-title">—</span>
+        <span id="sel-count" style="display:none;font-size:11px;opacity:.85;white-space:nowrap"></span>
+        <button class="rbtn off" id="btn-selall" onclick="selectAllMovs()" title="Seleccionar todos">☑</button>
         <button class="rbtn off">📋</button>
         <button class="rbtn" onclick="showAddMov()">＋</button>
         <button class="rbtn" onclick="delMov()">🗑</button>
@@ -316,6 +323,7 @@ const S = {
   cats:[], accs:[], movs:[],
   selAcc:-1, selMov:-1, editMov:-1, editAcc:-1,
   filter:'activas', chartOff:0,
+  selMovs: new Set(), lastMovClick: -1,
 };
 
 // ── UTILS ───────────────────────────────────────────────────
@@ -573,8 +581,8 @@ function logoHtml(bank) {
   }
   return `<div class="acc-logo">${initials(bank)}</div>`;
 }
-// ── DESHACER (5 niveles) ────────────────────────────────────
-const UNDO = { stack: [], max: 5 };
+// ── DESHACER / REHACER (5 niveles) ─────────────────────────
+const UNDO = { stack: [], redo: [], max: 5 };
 
 function saveUndo(desc) {
   UNDO.stack.push({
@@ -583,12 +591,20 @@ function saveUndo(desc) {
     accs: JSON.parse(JSON.stringify(S.accs)),
   });
   if (UNDO.stack.length > UNDO.max) UNDO.stack.shift();
+  UNDO.redo = []; // nueva acción vacía la pila de rehacer
   updateUndoMenu();
 }
 
 function undo() {
   closeMenu();
   if (!UNDO.stack.length) { toast('Nada que deshacer'); return; }
+  // Guardar estado actual en pila de rehacer
+  UNDO.redo.push({
+    desc: UNDO.stack[UNDO.stack.length - 1].desc,
+    movs: JSON.parse(JSON.stringify(S.movs)),
+    accs: JSON.parse(JSON.stringify(S.accs)),
+  });
+  if (UNDO.redo.length > UNDO.max) UNDO.redo.shift();
   const prev = UNDO.stack.pop();
   S.movs = prev.movs;
   S.accs = prev.accs;
@@ -599,18 +615,100 @@ function undo() {
   toast('Deshecho: ' + prev.desc);
 }
 
-function updateUndoMenu() {
-  const el = $('menu-undo');
-  if (!el) return;
-  if (UNDO.stack.length) {
-    const last = UNDO.stack[UNDO.stack.length - 1];
-    el.textContent = '↩ Deshacer: ' + last.desc;
-    el.classList.remove('off');
-    el.onclick = undo;
+function redo() {
+  closeMenu();
+  if (!UNDO.redo.length) { toast('Nada que rehacer'); return; }
+  // Guardar estado actual en pila de deshacer
+  const next = UNDO.redo.pop();
+  UNDO.stack.push({
+    desc: next.desc,
+    movs: JSON.parse(JSON.stringify(S.movs)),
+    accs: JSON.parse(JSON.stringify(S.accs)),
+  });
+  S.movs = next.movs;
+  S.accs = next.accs;
+  S.selMov = -1;
+  updateUndoMenu();
+  renderAll();
+  saveToDropbox();
+  toast('Rehecho: ' + next.desc);
+}
+
+function updateSelCount() {
+  const n = S.selMovs.size;
+  const sc = $('sel-count'), sb = $('btn-selall');
+  if (!sc) return;
+  if (n > 0) {
+    sc.textContent = n + ' seleccionado' + (n!==1?'s':'');
+    sc.style.display = 'inline';
+    if (sb) { sb.classList.remove('off'); sb.title = 'Deseleccionar todos'; sb.textContent = '☒'; sb.onclick = clearSelMovs; }
   } else {
-    el.textContent = '↩ Deshacer';
-    el.classList.add('off');
-    el.onclick = null;
+    sc.style.display = 'none';
+    if (sb) { sb.classList.add('off'); sb.title = 'Seleccionar todos'; sb.textContent = '☑'; sb.onclick = selectAllMovs; }
+  }
+}
+
+function clickMov(oi, shiftKey) {
+  if (shiftKey && S.lastMovClick >= 0) {
+    const list = accMovs(S.selAcc);
+    const ois = list.map(m => m.oi);
+    const from = ois.indexOf(S.lastMovClick);
+    const to = ois.indexOf(oi);
+    const [a, b] = [Math.min(from,to), Math.max(from,to)];
+    for (let i=a; i<=b; i++) S.selMovs.add(ois[i]);
+  } else {
+    if (S.selMovs.has(oi)) S.selMovs.delete(oi);
+    else S.selMovs.add(oi);
+    S.lastMovClick = oi;
+  }
+  // Actualizar checkboxes sin re-renderizar todo
+  document.querySelectorAll('.mrow').forEach(r => {
+    const idx = parseInt(r.dataset.oi);
+    const cb = r.querySelector('input[type=checkbox]');
+    const checked = S.selMovs.has(idx);
+    if (cb) cb.checked = checked;
+    r.classList.toggle('sel-multi', checked);
+  });
+  updateSelCount();
+}
+
+function selectAllMovs() {
+  if (S.selAcc < 0) return;
+  accMovs(S.selAcc).forEach(m => S.selMovs.add(m.oi));
+  document.querySelectorAll('.mrow').forEach(r => {
+    const cb = r.querySelector('input[type=checkbox]');
+    if (cb) cb.checked = true;
+    r.classList.add('sel-multi');
+  });
+  updateSelCount();
+}
+
+function clearSelMovs() {
+  S.selMovs.clear(); S.lastMovClick = -1;
+  document.querySelectorAll('.mrow').forEach(r => {
+    const cb = r.querySelector('input[type=checkbox]');
+    if (cb) cb.checked = false;
+    r.classList.remove('sel-multi');
+  });
+  updateSelCount();
+}
+
+
+  const eu = $('menu-undo'), er = $('menu-redo');
+  if (!eu || !er) return;
+  if (UNDO.stack.length) {
+    eu.textContent = '↩ Deshacer: ' + UNDO.stack[UNDO.stack.length-1].desc;
+    eu.classList.remove('off'); eu.onclick = undo;
+  } else {
+    eu.textContent = '↩ Deshacer';
+    eu.classList.add('off'); eu.onclick = null;
+  }
+  if (UNDO.redo.length) {
+    er.textContent = '↪ Rehacer: ' + UNDO.redo[UNDO.redo.length-1].desc;
+    er.classList.remove('off'); er.onclick = redo;
+  } else {
+    er.textContent = '↪ Rehacer';
+    er.classList.add('off'); er.onclick = null;
   }
 }
 
@@ -672,7 +770,10 @@ function renderAccs(){
 }
 
 function selAcc(idx){
-  S.selAcc=idx;S.selMov=-1;S.chartOff=0;renderAccs();
+  S.selAcc=idx;S.selMov=-1;S.chartOff=0;
+  S.selMovs.clear();S.lastMovClick=-1;
+  updateSelCount();
+  renderAccs();
   $('acc-title').textContent=S.accs[idx].name;
   $('chart-title').textContent='Gráfico de '+S.accs[idx].name;
   renderMovs(idx);renderChart(idx);
@@ -682,18 +783,33 @@ function accMovs(ai){return S.movs.map((m,i)=>({...m,oi:i})).filter(m=>m.ai===ai
 
 function renderMovs(ai){
   const el=$('movarea'),list=accMovs(ai);
-  if(!list.length){el.innerHTML='<div class="empty-msg">Sin movimientos</div>';return;}
+  if(!list.length){el.innerHTML='<div class="empty-msg">Sin movimientos</div>';updateSelCount();return;}
   const frag=document.createDocumentFragment();let run=0;
   for(const m of list){
     run+=m.amount;
     const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
+    const checked=S.selMovs.has(m.oi);
     const row=document.createElement('div');
-    row.className='mrow'+(m.oi===S.selMov?' sel':'');
-    row.dataset.oi=m.oi;row.onclick=()=>selMov(m.oi);row.ondblclick=()=>showEditMov(m.oi);
-    row.innerHTML=`<div class="mrow-main"><span class="mdate">${m.date}</span><span class="mconcept">${m.concept||'—'}</span><span class="mamount${m.amount<0?' neg':''}">${fmtAmt(m.amount)}</span><span class="mbal${run<0?' neg':''}">${fmtAmt(run)}</span></div><div class="mrow-sub"><span class="mperiod">${m.period}</span><span class="mcat">${cat}</span></div>`;
+    row.className='mrow'+(checked?' sel-multi':'');
+    row.dataset.oi=m.oi;
+    row.onclick=e=>{if(e.detail<2)clickMov(m.oi,e.shiftKey);};
+    row.ondblclick=()=>showEditMov(m.oi);
+    row.innerHTML=`
+      <div class="mrow-main">
+        <span class="mcheck"><input type="checkbox" ${checked?'checked':''}></span>
+        <span class="mdate">${m.date}</span>
+        <span class="mconcept">${m.concept||'—'}</span>
+        <span class="mamount${m.amount<0?' neg':''}">${fmtAmt(m.amount)}</span>
+        <span class="mbal${run<0?' neg':''}">${fmtAmt(run)}</span>
+      </div>
+      <div class="mrow-sub">
+        <span class="mperiod" style="padding-left:22px">${m.period}</span>
+        <span class="mcat">${cat}</span>
+      </div>`;
     frag.appendChild(row);
   }
   el.innerHTML='';el.appendChild(frag);el.scrollTop=el.scrollHeight;
+  updateSelCount();
 }
 
 function selMov(oi){S.selMov=oi;document.querySelectorAll('.mrow').forEach(r=>r.classList.toggle('sel',parseInt(r.dataset.oi)===oi));}
@@ -746,10 +862,13 @@ function saveMov(){
   closeModal();renderAll();saveToDropbox();
 }
 function delMov(){
-  if(S.selMov<0){toast('Selecciona primero un movimiento');return;}
-  if(!confirm('¿Eliminar este movimiento?'))return;
-  saveUndo('Movimiento eliminado');
-  S.movs.splice(S.selMov,1);S.selMov=-1;renderAll();saveToDropbox();
+  if(S.selMovs.size===0){toast('Selecciona primero uno o varios movimientos');return;}
+  const n=S.selMovs.size;
+  if(!confirm(`¿Eliminar ${n} movimiento${n!==1?'s':''}?`))return;
+  saveUndo(`${n} movimiento${n!==1?'s':''} eliminado${n!==1?'s':''}`);
+  S.movs=S.movs.filter((_,i)=>!S.selMovs.has(i));
+  S.selMovs.clear();S.lastMovClick=-1;
+  renderAll();saveToDropbox();
 }
 function toggleTarjetaFields(){
   const isTarjeta=$('fa-tipo').value==='4';
@@ -802,8 +921,14 @@ function saveAcc(){
 }
 function delAcc(){
   if(S.selAcc<0){toast('Selecciona primero una cuenta');return;}
-  if(!confirm(`¿Eliminar "${S.accs[S.selAcc].name}" y todos sus movimientos?`))return;
-  saveUndo('Cuenta eliminada: '+S.accs[S.selAcc].name);
+  const nombre=S.accs[S.selAcc].name;
+  const nMovs=S.movs.filter(m=>m.ai===S.selAcc).length;
+  if(nMovs>0){
+    alert(`No es posible eliminar "${nombre}" porque tiene ${nMovs} movimiento${nMovs!==1?'s':''}.\nElimínalos primero usando la selección múltiple.`);
+    return;
+  }
+  if(!confirm(`¿Eliminar la cuenta "${nombre}"?`))return;
+  saveUndo('Cuenta eliminada: '+nombre);
   const idx=S.selAcc;S.movs=S.movs.filter(m=>m.ai!==idx).map(m=>({...m,ai:m.ai>idx?m.ai-1:m.ai}));S.accs.splice(idx,1);S.selAcc=-1;S.selMov=-1;$('acc-title').textContent='—';$('movarea').innerHTML='<div class="empty-msg">Selecciona una cuenta</div>';$('chartsvg').innerHTML='';renderAccs();
 }
 
@@ -813,7 +938,7 @@ function applyFilter(v){S.filter=v;renderAccs();}
 function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
 function about(){closeMenu();alert('MiContabilidad v1.2\nConectado con Dropbox OAuth\nCompatible con el formato CSV de Xopard');}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();saveToDropbox();}if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undo();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();saveToDropbox();}if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undo();}if((e.ctrlKey||e.metaKey)&&e.key==='y'){e.preventDefault();redo();}});
 document.addEventListener('click',e=>{if(!$('dropmenu').contains(e.target)&&e.target!==$('hambtn'))closeMenu();});
 window.addEventListener('resize',()=>{if(S.selAcc>=0)renderChart(S.selAcc);});
 
