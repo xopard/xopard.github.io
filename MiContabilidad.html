@@ -190,6 +190,9 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="mi" onclick="loadFromDropbox()">↓ Recargar desde Dropbox</div>
     <div class="mi" onclick="saveToDropbox()">↑ Guardar en Dropbox (Ctrl+S)</div>
     <div class="msep"></div>
+    <div class="mi" onclick="downloadBackup()">💾 Descargar copia de seguridad</div>
+    <div class="mi" onclick="restoreBackup()">📂 Restaurar copia de seguridad…</div>
+    <div class="msep"></div>
     <div class="mi" onclick="disconnect()">🔌 Desconectar Dropbox</div>
     <div class="msep"></div>
     <div class="mi" onclick="about()">Acerca de MiContabilidad</div>
@@ -1109,7 +1112,42 @@ function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList
 function applyFilter(v){S.filter=v;renderAccs();}
 function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
-function about(){closeMenu();alert('MiContabilidad v1.3\nConectado con Dropbox OAuth\nCompatible con el formato CSV de Xopard');}
+function downloadBackup() {
+  closeMenu();
+  if (!S.accs.length) { toast('Sin datos que guardar'); return; }
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  const name = `MiContabilidad_Backup_(${dd}_${mm}_${yyyy}).csv`;
+  const blob = new Blob([genCSV()], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  toast('Copia descargada: ' + name);
+}
+
+function restoreBackup() {
+  closeMenu();
+  if (!confirm('¿Restaurar una copia de seguridad?\n\nEsto sobreescribirá los datos actuales en Dropbox con el fichero que selecciones.')) return;
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.csv';
+  inp.onchange = async () => {
+    if (!inp.files[0]) return;
+    const text = await inp.files[0].text();
+    try {
+      parseCSV(text);
+      await saveToDropbox();
+      toast('Copia restaurada y guardada en Dropbox ✓');
+    } catch(e) {
+      alert('Error al restaurar: ' + e.message);
+    }
+  };
+  inp.click();
+}
 
 // ── AUTO-CATEGORIZACIÓN ─────────────────────────────────────
 
