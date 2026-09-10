@@ -245,7 +245,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="rbtn" onclick="showPasteModal()" title="Pegar movimientos del banco">📋</button>
         <button class="rbtn" onclick="showAddMov()">＋</button>
         <button class="rbtn" onclick="delMov()">🗑</button>
-        <button class="rbtn off">÷</button>
+        <button class="rbtn" onclick="showDivideModal()" title="Dividir movimiento">÷</button>
         <button class="rbtn" onclick="showTransferModal()" title="Traspasar movimiento a otra cuenta">⇄</button>
         <button class="rbtn off">🖨</button>
         <button class="rbtn">?</button>
@@ -374,6 +374,31 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="bok" id="paste-ok" onclick="confirmPaste()">Añadir movimientos</button>
         <button class="bcan" onclick="pastBack()">← Atrás</button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Dividir movimiento -->
+  <div id="mdl-divide" class="modal" style="display:none">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <button class="mhelp">?</button>
+    <h3>Dividir Movimiento</h3>
+    <div class="fr"><label>Cuenta</label><select id="dv-cuenta" disabled></select></div>
+    <div class="fi">
+      <div class="fr" style="flex:0 0 110px"><label>Fecha</label><input id="dv-fecha" disabled></div>
+      <div class="fr"><label>Texto</label><input id="dv-texto"></div>
+    </div>
+    <div class="fi">
+      <div class="fr" style="flex:0 0 90px"><label>Mes</label><input id="dv-mes" maxlength="5"></div>
+      <div class="fr"><label>Categoría</label><select id="dv-cat"></select></div>
+    </div>
+    <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
+      <label style="white-space:nowrap;font-size:13px">Importe</label>
+      <input id="dv-imp" style="width:140px;text-align:right" placeholder="0,00">
+      <span id="dv-resto" style="font-size:11px;color:#888"></span>
+    </div>
+    <div class="mbtns">
+      <button class="bok" onclick="confirmDivide()">Ok</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
     </div>
   </div>
 
@@ -951,6 +976,8 @@ function renderMovs(ai){
     const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
     const checked=S.selMovs.has(m.oi);
     const pending=m.ci===PENDING_CI;
+    const divided=m.div==='t';
+    const catDisplay=(divided?'÷ ':'')+cat;
     const row=document.createElement('div');
     row.className='mrow'+(checked?' sel-multi':'');
     row.dataset.oi=m.oi;
@@ -966,7 +993,7 @@ function renderMovs(ai){
       </div>
       <div class="mrow-sub">
         <span class="mperiod" style="padding-left:22px">${m.period}</span>
-        <span class="mcat"${pending?' style="color:#1A6EBD;font-weight:600"':''}>${cat}</span>
+        <span class="mcat"${pending?' style="color:#1A6EBD;font-weight:600"':''}>${catDisplay}</span>
       </div>`;
     frag.appendChild(row);
   }
@@ -1160,7 +1187,7 @@ function _renderChartFromDaily(daily){
 // ── MODALS ───────────────────────────────────────────────────
 function showModal(id){
   $('overlay').classList.add('show');
-  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer'].forEach(m=>$(m).style.display='none');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide'].forEach(m=>$(m).style.display='none');
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
@@ -1260,6 +1287,60 @@ function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList
 function applyFilter(v){S.filter=v;renderAccs();}
 function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
+function showDivideModal() {
+  if (S.selMovs.size !== 1) { toast('Selecciona primero un movimiento'); return; }
+  const oi = [...S.selMovs][0];
+  const m = S.movs[oi];
+  // Cuenta (bloqueada)
+  const cSel = $('dv-cuenta'); cSel.innerHTML = '';
+  const opt = document.createElement('option');
+  opt.textContent = S.accs[m.ai]?.name || ''; cSel.appendChild(opt);
+  // Rellenar campos
+  $('dv-fecha').value = m.date;
+  $('dv-texto').value = m.concept;
+  $('dv-mes').value = m.period;
+  fillCatSel('dv-cat', m.ci >= 0 ? m.ci : 0);
+  $('dv-imp').value = '';
+  $('dv-resto').textContent = 'Original: ' + fmtAmt(m.amount) + ' €';
+  // Actualizar resto al cambiar importe
+  $('dv-imp').oninput = () => {
+    const split = parseAmt($('dv-imp').value);
+    const rest = m.amount - split;
+    $('dv-resto').textContent = 'Resto: ' + fmtAmt(rest) + ' €';
+    $('dv-resto').style.color = Math.abs(split) > Math.abs(m.amount) ? 'var(--neg)' : '#888';
+  };
+  showModal('mdl-divide');
+  setTimeout(() => $('dv-texto').focus(), 50);
+}
+
+function confirmDivide() {
+  if (S.selMovs.size !== 1) return;
+  const oi = [...S.selMovs][0];
+  const m = S.movs[oi];
+  const split = parseAmt($('dv-imp').value);
+  if (!split || split === 0) { alert('Introduce un importe para dividir'); return; }
+  if (Math.abs(split) > Math.abs(m.amount)) {
+    alert('El importe a dividir no puede superar el original'); return;
+  }
+  const resto = m.amount - split;
+  const ci = parseInt($('dv-cat').value);
+  saveUndo('Movimiento dividido');
+  // Actualizar original: mismo texto, importe = resto, marcar como dividido
+  S.movs[oi] = { ...m, amount: resto, div: 't' };
+  // Crear movimiento dividido
+  S.movs.push({
+    c1:'', ai: m.ai, shaded:'', div:'t',
+    period: $('dv-mes').value.trim(),
+    date: m.date,
+    concept: $('dv-texto').value.trim(),
+    c8:'', ci, amount: split
+  });
+  S.selMovs.clear();
+  closeModal();
+  renderAll();
+  saveToDropbox();
+}
+
 function showTransferModal() {
   if (S.selMovs.size !== 1) { toast('Selecciona primero exactamente un movimiento'); return; }
   const oi = [...S.selMovs][0];
