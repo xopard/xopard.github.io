@@ -208,6 +208,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         </select>
         <button class="hbtn" onclick="showAddAcc()" title="Añadir cuenta">＋</button>
         <button class="hbtn" onclick="delAcc()" title="Eliminar cuenta">🗑</button>
+        <button class="hbtn" id="btn-up" onclick="moveAccUp()" title="Subir cuenta">▲</button>
+        <button class="hbtn" id="btn-dn" onclick="moveAccDown()" title="Bajar cuenta">▼</button>
         <button class="hbtn" title="Ayuda">?</button>
       </div>
       <div id="acclist"><div class="empty-msg">Conectando…</div></div>
@@ -371,6 +373,7 @@ const S = {
   selAcc:-1, selMov:-1, editMov:-1, editAcc:-1,
   filter:'activas', chartOff:0,
   selMovs: new Set(), lastMovClick: -1,
+  displayOrder: [],  // orden de visualización de cuentas (índices 0-based)
 };
 
 // ── UTILS ───────────────────────────────────────────────────
@@ -553,6 +556,9 @@ function parseCSV(txt){
   const nm=parseInt(lines[p++]);S.movs=[];
   for(let i=0;i<nm;i++){const f=lines[p++].split(';');S.movs.push({c1:f[0]||'',ai:parseInt(f[1]||'0')-1,shaded:f[2]||'',div:f[3]||'',period:f[4]||'',date:f[5]||'',concept:f[6]||'',c8:f[7]||'',ci:parseInt(f[8]||'0')-1,amount:parseAmt(f[9]||'0')});}
   S.tail1=lines[p]||'';S.tail2=lines[p+1]||'';
+  // Orden de visualización desde tail2
+  const _t2 = S.tail2.split(';').map(v=>parseInt(v)).filter(v=>!isNaN(v)&&v>=0&&v<S.accs.length);
+  S.displayOrder = _t2.length===S.accs.length ? _t2 : S.accs.map((_,i)=>i);
   S.selAcc=-1;S.selMov=-1;S.chartOff=0;
   renderAll();
 }
@@ -566,7 +572,8 @@ function genCSV(){
   L.push(String(S.extra.length));for(const x of S.extra)L.push(x);L.push(String(S.extra2));
   L.push(String(S.movs.length));
   for(const m of S.movs)L.push([m.c1,m.ai+1,m.shaded,m.div,m.period,m.date,m.concept,m.c8,m.ci+1,fmtAmt(m.amount)].join(';'));
-  L.push(S.tail1);L.push(S.tail2);
+  L.push(S.tail1);
+  L.push(S.displayOrder.length === S.accs.length ? S.displayOrder.join(';') : S.tail2);
   return L.join('\n');
 }
 
@@ -681,6 +688,41 @@ function redo() {
   toast('Rehecho: ' + next.desc);
 }
 
+function moveAccUp() {
+  if (S.selAcc < 0) return;
+  const di = S.displayOrder.indexOf(S.selAcc);
+  if (di <= 0) return;
+  saveUndo('Cuenta subida: ' + S.accs[S.selAcc].name);
+  [S.displayOrder[di-1], S.displayOrder[di]] = [S.displayOrder[di], S.displayOrder[di-1]];
+  renderAccs();
+  saveToDropbox();
+}
+
+function moveAccDown() {
+  if (S.selAcc < 0) return;
+  const di = S.displayOrder.indexOf(S.selAcc);
+  if (di < 0 || di >= S.displayOrder.length - 1) return;
+  saveUndo('Cuenta bajada: ' + S.accs[S.selAcc].name);
+  [S.displayOrder[di], S.displayOrder[di+1]] = [S.displayOrder[di+1], S.displayOrder[di]];
+  renderAccs();
+  saveToDropbox();
+}
+
+function updateMoveButtons() {
+  const bu = $('btn-up'), bd = $('btn-dn');
+  if (!bu || !bd) return;
+  if (S.selAcc < 0) {
+    bu.style.opacity = '0.3'; bd.style.opacity = '0.3';
+    bu.style.pointerEvents = 'none'; bd.style.pointerEvents = 'none';
+  } else {
+    const di = S.displayOrder.indexOf(S.selAcc);
+    bu.style.opacity = di <= 0 ? '0.3' : '0.85';
+    bd.style.opacity = di >= S.displayOrder.length-1 ? '0.3' : '0.85';
+    bu.style.pointerEvents = di <= 0 ? 'none' : 'auto';
+    bd.style.pointerEvents = di >= S.displayOrder.length-1 ? 'none' : 'auto';
+  }
+}
+
 function updateSelCount() {
   const n = S.selMovs.size;
   const sc = $('sel-count'), sb = $('btn-selall');
@@ -778,14 +820,15 @@ function renderAccs(){
   const bal=balances(), showAll=S.filter==='todas';
   const frag=document.createDocumentFragment();
 
-  // Agrupar cuentas por tipo manteniendo orden original
+  // Agrupar cuentas usando displayOrder (preserva el orden dentro de cada grupo)
   const grupos = {'1':[],'2':[],'3':[],'4':[]};
-  for(let i=0;i<S.accs.length;i++){
-    const a=S.accs[i];
-    if(!showAll&&!a.active)continue;
-    const t=a.type||'1';
-    if(!grupos[t])grupos[t]=[];
-    grupos[t].push({a,i,b:bal[i]});
+  for (const idx of S.displayOrder) {
+    if (idx >= S.accs.length) continue;
+    const a = S.accs[idx];
+    if (!showAll && !a.active) continue;
+    const t = a.type || '1';
+    if (!grupos[t]) grupos[t] = [];
+    grupos[t].push({a, i: idx, b: bal[idx]});
   }
 
   let posicionGlobal=0;
@@ -820,7 +863,7 @@ function renderAccs(){
 function selAcc(idx){
   S.selAcc=idx;S.selMov=-1;S.chartOff=0;
   S.selMovs.clear();S.lastMovClick=-1;
-  updateSelCount();
+  updateSelCount();updateMoveButtons();
   renderAccs();
   $('acc-title').textContent=S.accs[idx].name;
   $('chart-title').textContent='Gráfico de '+S.accs[idx].name;
