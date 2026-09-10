@@ -1525,7 +1525,8 @@ function analyzePaste() {
   if (!text.trim()) { alert('Pega primero el texto del extracto.'); return; }
   const ai = parseInt($('paste-cuenta').value);
   const bankHint = (ai >= 0 && ai < S.accs.length) ? S.accs[ai].bank : '';
-  const result = detectAndParse(text, bankHint);
+  const accHint  = (ai >= 0 && ai < S.accs.length) ? S.accs[ai].name : '';
+  const result = detectAndParse(text, bankHint, accHint);
   if (!result.movs.length) {
     alert('No se han podido detectar movimientos.\nComprueba que el texto es un extracto bancario copiado directamente del navegador.');
     return;
@@ -1605,10 +1606,16 @@ const BANK_PARSERS = [
   ['bbva',       parseGeneric,    'Formato genérico'],
 ];
 
-function tryParserHint(text, bankName) {
-  const lower = (bankName||'').toLowerCase();
+function tryParserHint(text, bankName, accName) {
+  const lBank = (bankName||'').toLowerCase();
+  const lAcc  = (accName||'').toLowerCase();
+  // Via T: detectar por nombre de cuenta
+  if (lAcc.includes('via') || lAcc.includes('telepe')) {
+    const movs = parseViaT(text);
+    if (movs.length > 0) return { bank: 'Formato Via T (cuenta seleccionada)', movs };
+  }
   for (const [key, parser, label] of BANK_PARSERS) {
-    if (lower.includes(key)) {
+    if (lBank.includes(key) || lAcc.includes(key)) {
       const movs = parser(text);
       if (movs.length > 0) return { bank: label + ' (banco de la cuenta)', movs };
     }
@@ -1616,10 +1623,10 @@ function tryParserHint(text, bankName) {
   return null;
 }
 
-function detectAndParse(text, bankHint) {
+function detectAndParse(text, bankHint, accHint) {
   // 1. Intentar con el banco de la cuenta seleccionada
-  if (bankHint) {
-    const hint = tryParserHint(text, bankHint);
+  if (bankHint || accHint) {
+    const hint = tryParserHint(text, bankHint, accHint);
     if (hint) return hint;
   }
   // 2. Mediolanum: "Solicitar Devolución" exclusivo, o fecha+TAB (tab obligatorio)
@@ -1631,7 +1638,12 @@ function detectAndParse(text, bankHint) {
   if (text.includes('\t') && /\d{2}\/\d{2}\/\d{4}\t.+/.test(text)) {
     return { bank: 'Formato Eroski detectado', movs: parseEroski(text) };
   }
-  // 4. CaixaBank: fechas "D Mes YYYY"
+  // 4a. Via T: fechas "D Mes AA" (2 dígitos de año, sin saldo)
+  if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{2}\b/.test(text) &&
+      !/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text)) {
+    return { bank: 'Formato Via T detectado', movs: parseViaT(text) };
+  }
+  // 4b. CaixaBank: fechas "D Mes YYYY" (4 dígitos)
   if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text)) {
     return { bank: 'Formato CaixaBank detectado', movs: parseCaixaBank(text) };
   }
@@ -1642,6 +1654,33 @@ function detectAndParse(text, bankHint) {
   }
   // 6. Fallback genérico
   return { bank: 'Formato genérico (revisa los importes)', movs: parseGeneric(text) };
+}
+
+// ── PARSER VIA T ────────────────────────────────────────────
+// Estructura: concepto / fecha(D Mes AA) / importe(sin signo, siempre gasto)
+// Sin saldo, sin separadores, 3 líneas por movimiento.
+
+function parseViaT(text) {
+  const MES = {'Ene':1,'Feb':2,'Mar':3,'Abr':4,'May':5,'Jun':6,
+               'Jul':7,'Ago':8,'Sep':9,'Oct':10,'Nov':11,'Dic':12};
+  const movs = [];
+  const lines = text.split('\n').map(l=>l.trim()).filter(l=>l);
+  const dateRe = /^(\d{1,2})\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+(\d{2})$/;
+  const amtRe  = /^[\d.]+,\d{2}\s*€$/;
+  let i = 0;
+  while (i < lines.length) {
+    if (dateRe.test(lines[i]) || amtRe.test(lines[i])) { i++; continue; }
+    const concept = lines[i]; i++;
+    if (i >= lines.length) break;
+    const dm = lines[i].match(dateRe);
+    if (!dm) continue;
+    const day=dm[1].padStart(2,'0'), month=String(MES[dm[2]]).padStart(2,'0');
+    const date=`${day}-${month}-${dm[3].padStart(2,'0')}`; i++;
+    if (i >= lines.length || !amtRe.test(lines[i])) continue;
+    const amount = -parseSpAmt(lines[i]); i++;
+    if (concept && !isNaN(amount)) movs.push({ date, concept, amount });
+  }
+  return movs;
 }
 
 // ── PARSER MEDIOLANUM ───────────────────────────────────────
