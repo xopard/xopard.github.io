@@ -515,27 +515,32 @@ function genCSV(){
 
 // ── LOGOS DE BANCOS (favicons) ──────────────────────────────
 const BANK_DOMAINS = [
-  ['kutxabank',    'kutxabank.es'],
-  ['mediolanum',   'mediolanum.es'],
-  ['otras gestoras','mediolanum.es'],
-  ['best brands',  'mediolanum.es'],
-  ['caixabank',    'caixabank.es'],
-  ['la caixa',     'caixabank.es'],
-  ['selfbank',     'selfbank.es'],
-  ['self bank',    'selfbank.es'],
-  ['bbva',         'bbva.es'],
-  ['eroski',       'eroski.es'],
-  ['uno-e',        'uno-e.com'],
-  ['unoe',         'uno-e.com'],
-  ['orange',       'orangebank.es'],
-  ['ing',          'ing.es'],
-  ['santander',    'bancosantander.es'],
-  ['openbank',     'openbank.es'],
-  ['n26',          'n26.com'],
-  ['revolut',      'revolut.com'],
-  ['wizink',       'wizink.es'],
-  ['cofidis',      'cofidis.es'],
+  ['kutxabank',      'kutxabank.es'],
+  ['mediolanum',     'mediolanum.es'],
+  ['otras gestoras', 'mediolanum.es'],
+  ['best brands',    'mediolanum.es'],
+  ['caixabank',      'caixabank.es'],
+  ['la caixa',       'caixabank.es'],
+  ['caixa',          'caixabank.es'],
+  ['selfbank',       'selfbank.es'],
+  ['self bank',      'selfbank.es'],
+  ['bbva',           'bbva.es'],
+  ['eroski',         'eroski.es'],
+  ['corte ingles',   'elcorteingles.es'],
+  ['corte inglés',   'elcorteingles.es'],
+  ['uno-e',          'uno-e.com'],
+  ['orange bank',    'orangebank.es'],
+  ['ing direct',     'ing.es'],
+  ['ing ',           'ing.es'],
+  ['n26',            'n26.com'],
+  ['revolut',        'revolut.com'],
+  ['wizink',         'wizink.es'],
+  ['cofidis',        'cofidis.es'],
+  ['openbank',       'openbank.es'],
+  ['santander',      'bancosantander.es'],
 ];
+
+const CASH_BANKS = ['bolsillo','efectivo','cash','wallet'];
 
 function faviconUrl(bank) {
   if (!bank) return null;
@@ -554,12 +559,15 @@ function initials(bank) {
 }
 
 function logoHtml(bank) {
+  // Cuentas de efectivo → icono de monedas
+  if (bank && CASH_BANKS.some(k => bank.toLowerCase().includes(k))) {
+    return `<div class="acc-logo" style="font-size:20px;background:none;color:#888">💰</div>`;
+  }
   const url = faviconUrl(bank);
   if (url) {
     return `<img src="${url}" class="acc-logo-img"
       onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
-      loading="lazy">
-      <div class="acc-logo" style="display:none">${initials(bank)}</div>`;
+      loading="lazy"><div class="acc-logo" style="display:none">${initials(bank)}</div>`;
   }
   return `<div class="acc-logo">${initials(bank)}</div>`;
 }
