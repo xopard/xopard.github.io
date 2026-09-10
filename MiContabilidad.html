@@ -1589,16 +1589,51 @@ function detectAndParse(text) {
   if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text)) {
     return { bank: 'Formato CaixaBank detectado', movs: parseCaixaBank(text) };
   }
+  // Mediolanum: fecha seguida de TAB, estructura de 5 líneas sin separadores
+  if (/\d{2}\/\d{2}\/\d{4}\t/.test(text)) {
+    return { bank: 'Formato Mediolanum detectado', movs: parseMediolanum(text) };
+  }
   // Kutxabank: grupos con DD/MM/YYYY + importe con € y signo
   if (/\d{2}\/\d{2}\/\d{4}/.test(text) && /[+-]?[\d.]+,\d{2}\s*€/.test(text)) {
-    const movs = parseKutxabank(text);
     if (movs.length) return { bank: 'Formato Kutxabank detectado', movs };
   }
   // Fallback genérico
   return { bank: 'Formato genérico (revisa los importes)', movs: parseGeneric(text) };
 }
 
-// ── PARSER KUTXABANK ────────────────────────────────────────
+// ── PARSER MEDIOLANUM ───────────────────────────────────────
+// Estructura: fecha+TAB / concepto / acción(ignorar) / importe / saldo(ignorar)
+// Sin líneas en blanco entre movimientos. Importe ya lleva signo.
+
+function parseMediolanum(text) {
+  const movs = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  const dateRe = /^\d{2}\/\d{2}\/\d{4}$/;
+  const amtRe  = /^-?[\d.]+,\d{2}\s*€$/;
+  const SKIP   = ['solicitar devolucion', '-']; // líneas a ignorar
+
+  let i = 0;
+  while (i < lines.length) {
+    if (!dateRe.test(lines[i])) { i++; continue; }
+    const date = slashDateToDDMMYY(lines[i]); i++;
+
+    if (i >= lines.length) break;
+    const concept = lines[i]; i++;
+
+    // Línea de acción web (skip)
+    if (i < lines.length && !amtRe.test(lines[i]) && !dateRe.test(lines[i])) i++;
+
+    // Importe
+    if (i >= lines.length || !amtRe.test(lines[i])) continue;
+    const amount = parseSpAmt(lines[i]); i++;
+
+    // Saldo (skip)
+    if (i < lines.length && amtRe.test(lines[i]) && !lines[i].startsWith('-')) i++;
+
+    if (!isNaN(amount) && concept) movs.push({ date, concept, amount });
+  }
+  return movs;
+}
 // Estructura: grupos de 5 líneas separados por línea en blanco
 // fecha / concepto / fecha_valor / importe / saldo
 
