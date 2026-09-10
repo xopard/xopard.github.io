@@ -390,10 +390,10 @@ function dateSort(s){if(!s||s.length<8)return'00000000';const[dd,mm,yy]=s.split(
 function parsePeriod(p){if(!p||p.length<5)return 0;const[mm,yy]=p.split('-');return(parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy))*100+parseInt(mm);}
 function today(){const d=new Date();return String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getFullYear()).slice(-2);}
 function todayPeriod(){const d=new Date();return String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getFullYear()).slice(-2);}
-function showLoading(msg='Cargando…'){$('loading-msg').textContent=msg;$('loading').classList.add('show');}
-function hideLoading(){$('loading').classList.remove('show');}
-function toast(msg,ms=3000){const t=$('toast');t.textContent=msg;t.style.opacity='1';clearTimeout(t._to);t._to=setTimeout(()=>t.style.opacity='0',ms);}
-function setStatus(msg){$('dbx-status').textContent=msg;}
+function showLoading(msg='Cargando…'){const el=$('loading-msg');if(el)el.textContent=msg;const ld=$('loading');if(ld)ld.classList.add('show');}
+function hideLoading(){const ld=$('loading');if(ld)ld.classList.remove('show');}
+function toast(msg,ms=3000){const t=$('toast');if(!t)return;t.textContent=msg;t.style.opacity='1';clearTimeout(t._to);t._to=setTimeout(()=>t.style.opacity='0',ms);}
+function setStatus(msg){const el=$('dbx-status');if(el)el.textContent=msg;}
 
 // ── OAUTH PKCE ─────────────────────────────────────────────
 function rndVerifier(){
@@ -1134,16 +1134,24 @@ function restoreBackup() {
   closeMenu();
   if (!confirm('¿Restaurar una copia de seguridad?\n\nEsto sobreescribirá los datos actuales en Dropbox con el fichero que selecciones.')) return;
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = '.csv';
+  inp.type = 'file'; inp.accept = '.csv'; inp.style.display = 'none';
+  document.body.appendChild(inp);
   inp.onchange = async () => {
-    if (!inp.files[0]) return;
-    const text = await inp.files[0].text();
+    if (!inp.files[0]) { document.body.removeChild(inp); return; }
+    const file = inp.files[0];
+    document.body.removeChild(inp);
+    showLoading('Restaurando copia de seguridad…');
     try {
+      const text = await file.text();
       parseCSV(text);
-      await saveToDropbox();
-      toast('Copia restaurada y guardada en Dropbox ✓');
+      await callDropbox(() => dbxUpload(genCSV()));
+      const h = new Date().toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
+      setStatus('Dropbox ✓ · Restaurado: ' + h);
+      toast('Copia restaurada en Dropbox ✓');
     } catch(e) {
-      alert('Error al restaurar: ' + e.message);
+      alert('Error al restaurar: ' + (e.message || e));
+    } finally {
+      hideLoading();
     }
   };
   inp.click();
