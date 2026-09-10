@@ -900,7 +900,7 @@ function renderAccs(){
     posicionGlobal+=total;
     const sep=document.createElement('div');sep.className='sep-row';
     sep.title='Clic para ver gráfico del total';
-    sep.onclick=()=>showGroupChart(tipo);
+    sep.onclick=e=>{e.stopPropagation();showGroupChart(tipo);};
     sep.innerHTML=`<span>${TIPO_LABEL[tipo]||'TOTAL'}</span><span class="${total<0?'neg':''}">${fmtAmt(total)}</span>`;
     frag.appendChild(sep);
   }
@@ -910,7 +910,7 @@ function renderAccs(){
   global.className='sep-row';
   global.style.cssText='background:#C8C8C8;font-size:12px;border-top:2px solid #AAA';
   global.title='Clic para ver gráfico de posición global';
-  global.onclick=()=>showGroupChart('global');
+  global.onclick=e=>{e.stopPropagation();showGroupChart('global');};
   global.innerHTML=`<span>POSICION GLOBAL</span><span class="${posicionGlobal<0?'neg':''}">${fmtAmt(posicionGlobal)}</span>`;
   frag.appendChild(global);
 
@@ -1024,7 +1024,9 @@ function _updateYearButtons() {
 }
 
 function chartNav(dir){
-  S.chartOff=Math.min(0, S.chartOff + dir * Math.max(1, S.chartYears));
+  // ← va al pasado (negativo), → va al presente (hacia 0)
+  // Sin límite inferior para poder llegar al inicio del histórico
+  S.chartOff = Math.min(0, S.chartOff + dir * Math.max(1, S.chartYears));
   renderCurrentChart();
 }
 
@@ -1060,19 +1062,31 @@ function _renderChartFromDaily(daily){
   for(let i=0;i<=4;i++){const v=minV+(span*i/4),y=yp(v);svg.appendChild(mk('line',{x1:P.l,y1:y,x2:W-P.r,y2:y,stroke:'#E4E4E4','stroke-width':'1'}));svg.appendChild(mk('text',{x:P.l-5,y:y+4,'text-anchor':'end','font-size':'10',fill:'#999'},fmtAmt(Math.round(v))));}
   if(minV<0&&maxV>0){const y0=yp(0);svg.appendChild(mk('line',{x1:P.l,y1:y0,x2:W-P.r,y2:y0,stroke:'#AAA','stroke-width':'1','stroke-dasharray':'4,3'}));}
 
-  // Etiquetas de mes: posicionadas en el 1º de cada mes calendario
+  // Recopilar etiquetas de mes con posición X real
   const MESES=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const monthEntries=[];
   const seenMonths=new Set();
   for(const d of wd){
     const[dd,mm,yy]=d.split('-');const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);
     const key=yyyy*100+parseInt(mm);
     if(!seenMonths.has(key)){
       seenMonths.add(key);
-      const monthStartMs=new Date(yyyy,parseInt(mm)-1,1).getTime();
-      const x=P.l+((monthStartMs-tStart)/tSpan)*cW;
-      if(x>=P.l-2&&x<=W-P.r+2) svg.appendChild(mk('text',{x:Math.max(P.l,x),y:H-7,'text-anchor':'middle','font-size':'10',fill:'#999'},MESES[parseInt(mm)]||''));
+      const ms=new Date(yyyy,parseInt(mm)-1,1).getTime();
+      const x=P.l+((ms-tStart)/tSpan)*cW;
+      if(x>=P.l-4&&x<=W-P.r+4) monthEntries.push({mm:parseInt(mm),yyyy,x:Math.max(P.l,x)});
     }
   }
+  // Paso de etiquetas: ~8 visibles máximo
+  const lStep=Math.max(1,Math.ceil(monthEntries.length/8));
+  let lastYr=-1;
+  monthEntries.forEach((e,i)=>{
+    if(i%lStep!==0)return;
+    const newYr=e.yyyy!==lastYr;
+    if(newYr)lastYr=e.yyyy;
+    // Si hay año nuevo: "Ene'26", si no: "Ene"
+    const lbl=newYr?MESES[e.mm]+"'"+String(e.yyyy).slice(-2):MESES[e.mm];
+    svg.appendChild(mk('text',{x:e.x,y:H-7,'text-anchor':'middle','font-size':'9.5',fill:newYr?'#777':'#AAA'},lbl));
+  });
 
   // Área rellena
   const ptsFill=[`${xPos[0]},${P.t+cH}`].concat(vals.map((v,i)=>`${xPos[i]},${yp(v)}`)).concat([`${xPos[vals.length-1]},${P.t+cH}`]);
