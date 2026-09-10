@@ -217,7 +217,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <span id="acc-title">—</span>
         <span id="sel-count" style="display:none;font-size:11px;opacity:.85;white-space:nowrap"></span>
         <button class="rbtn off" id="btn-selall" onclick="selectAllMovs()" title="Seleccionar todos">☑</button>
-        <button class="rbtn off">📋</button>
+        <button class="rbtn" onclick="showPasteModal()" title="Pegar movimientos del banco">📋</button>
         <button class="rbtn" onclick="showAddMov()">＋</button>
         <button class="rbtn" onclick="delMov()">🗑</button>
         <button class="rbtn off">÷</button>
@@ -302,9 +302,55 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <button class="bcan" onclick="closeModal()">Cancelar</button>
     </div>
   </div>
-</div>
+  <!-- MODAL: Pegar movimientos del banco -->
+  <div id="mdl-paste" class="modal" style="display:none;max-width:680px;width:95vw">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <h3>Pegar movimientos del banco</h3>
+    <!-- Paso 1: entrada de texto -->
+    <div id="paste-s1">
+      <div class="fi" style="margin-bottom:4px">
+        <div class="fr"><label>Cuenta destino</label><select id="paste-cuenta"></select></div>
+        <div class="fr"><label>Categoría por defecto</label><select id="paste-cat"></select></div>
+      </div>
+      <div class="fr">
+        <label>Pega aquí el texto copiado del extracto bancario</label>
+        <textarea id="paste-txt" rows="9" style="width:100%;font-size:11px;font-family:monospace;border:1px solid #CCC;padding:6px;border-radius:3px;resize:vertical"></textarea>
+      </div>
+      <div class="mbtns">
+        <button class="bok" onclick="analyzePaste()">Analizar</button>
+        <button class="bcan" onclick="closeModal()">Cancelar</button>
+      </div>
+    </div>
+    <!-- Paso 2: previsualización -->
+    <div id="paste-s2" style="display:none">
+      <p id="paste-info" style="font-size:12px;color:#666;margin-bottom:8px"></p>
+      <div style="max-height:280px;overflow-y:auto;border:1px solid #DDD;border-radius:3px">
+        <table id="paste-tbl" style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead style="background:#F0F0F0;position:sticky;top:0">
+            <tr>
+              <th style="padding:5px 6px;width:20px"><input type="checkbox" id="paste-all" onchange="pasteToggleAll(this)" checked></th>
+              <th style="padding:5px 6px;text-align:left;white-space:nowrap">Fecha</th>
+              <th style="padding:5px 6px;text-align:left">Concepto</th>
+              <th style="padding:5px 6px;text-align:right;white-space:nowrap">Importe</th>
+            </tr>
+          </thead>
+          <tbody id="paste-body"></tbody>
+        </table>
+      </div>
+      <div class="mbtns" style="margin-top:12px">
+        <button class="bok" id="paste-ok" onclick="confirmPaste()">Añadir movimientos</button>
+        <button class="bcan" onclick="pastBack()">← Atrás</button>
+      </div>
+    </div>
+  </div>
 
-<div id="toast"></div>
+  <!-- MODAL: Confirmación simple -->
+  <div id="mdl-info" class="modal" style="display:none;max-width:360px;text-align:center">
+    <p id="mdl-info-msg" style="font-size:15px;margin:10px 0 20px"></p>
+    <button class="bok" style="min-width:100px" onclick="closeModal()">Ok</button>
+  </div>
+
+</div>
 <div id="dbx-status"></div>
 
 <script>
@@ -848,7 +894,11 @@ function renderChart(ai){
 function chartNav(dir){S.chartOff=Math.min(0,S.chartOff+dir);if(S.selAcc>=0)renderChart(S.selAcc);}
 
 // ── MODALS ───────────────────────────────────────────────────
-function showModal(id){$('overlay').classList.add('show');['mdl-mov','mdl-acc'].forEach(m=>$(m).style.display='none');$(id).style.display='block';}
+function showModal(id){
+  $('overlay').classList.add('show');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info'].forEach(m=>$(m).style.display='none');
+  $(id).style.display='block';
+}
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
 function overlayClick(e){if(e.target===$('overlay'))closeModal();}
 function fillCatSel(id,sel){const s=$(id);s.innerHTML='';S.cats.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent='\u3000'.repeat(Math.max(0,c.level-2))+c.name;if(i===sel)o.selected=true;s.appendChild(o);});}
@@ -938,7 +988,242 @@ function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList
 function applyFilter(v){S.filter=v;renderAccs();}
 function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
-function about(){closeMenu();alert('MiContabilidad v1.2\nConectado con Dropbox OAuth\nCompatible con el formato CSV de Xopard');}
+function about(){closeMenu();alert('MiContabilidad v1.3\nConectado con Dropbox OAuth\nCompatible con el formato CSV de Xopard');}
+
+// ── PARSERS DE EXTRACTOS BANCARIOS ─────────────────────────
+
+function showPasteModal() {
+  if (S.accs.length === 0) { toast('Carga primero el fichero'); return; }
+  fillAccSel('paste-cuenta', S.selAcc >= 0 ? S.selAcc : 0);
+  fillCatSel('paste-cat', 1);
+  $('paste-txt').value = '';
+  $('paste-s1').style.display = 'block';
+  $('paste-s2').style.display = 'none';
+  showModal('mdl-paste');
+  setTimeout(() => $('paste-txt').focus(), 50);
+}
+
+function analyzePaste() {
+  const text = $('paste-txt').value;
+  if (!text.trim()) { alert('Pega primero el texto del extracto.'); return; }
+  const result = detectAndParse(text);
+  if (!result.movs.length) {
+    alert('No se han podido detectar movimientos.\nComprueba que el texto es un extracto bancario copiado directamente del navegador.');
+    return;
+  }
+  $('paste-info').textContent = result.bank + ' — ' + result.movs.length + ' movimiento' + (result.movs.length !== 1 ? 's' : '') + ' detectado' + (result.movs.length !== 1 ? 's' : '');
+  const tbody = $('paste-body');
+  tbody.innerHTML = '';
+  result.movs.forEach((m, i) => {
+    const neg = m.amount < 0;
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid #F0F0F0';
+    tr.innerHTML = `<td style="padding:4px 6px"><input type="checkbox" class="pcb" data-i="${i}" checked></td>
+      <td style="padding:4px 6px;white-space:nowrap">${m.date}</td>
+      <td style="padding:4px 6px">${m.concept}</td>
+      <td style="padding:4px 6px;text-align:right;color:${neg?'var(--neg)':'#333'};white-space:nowrap">${fmtAmt(m.amount)}</td>`;
+    tbody.appendChild(tr);
+  });
+  $('paste-all').checked = true;
+  window._pasteMovs = result.movs;
+  $('paste-s1').style.display = 'none';
+  $('paste-s2').style.display = 'block';
+}
+
+function pastBack() {
+  $('paste-s1').style.display = 'block';
+  $('paste-s2').style.display = 'none';
+}
+
+function pasteToggleAll(cb) {
+  document.querySelectorAll('.pcb').forEach(c => c.checked = cb.checked);
+}
+
+function confirmPaste() {
+  const sel = Array.from(document.querySelectorAll('.pcb:checked')).map(c => parseInt(c.dataset.i));
+  if (!sel.length) { alert('Selecciona al menos un movimiento.'); return; }
+  const ai = parseInt($('paste-cuenta').value);
+  const ci = parseInt($('paste-cat').value);
+  saveUndo('Pegar ' + sel.length + ' movimiento' + (sel.length !== 1 ? 's' : ''));
+  for (const i of sel) {
+    const m = window._pasteMovs[i];
+    S.movs.push({ c1:'', ai, shaded:'', div:'', period: dateToPeriod(m.date),
+      date: m.date, concept: m.concept, c8:'', ci, amount: m.amount });
+  }
+  closeModal();
+  renderAll();
+  saveToDropbox();
+  setTimeout(() => {
+    $('mdl-info-msg').textContent = sel.length + ' movimiento' + (sel.length !== 1 ? 's' : '') + ' añadido' + (sel.length !== 1 ? 's' : '') + '.';
+    showModal('mdl-info');
+  }, 200);
+}
+
+// ── DETECCIÓN DE BANCO ──────────────────────────────────────
+
+function detectAndParse(text) {
+  // Eroski: tabuladores + fecha DD/MM/YYYY al inicio de línea
+  if (text.includes('\t') && /\d{2}\/\d{2}\/\d{4}\t/.test(text)) {
+    return { bank: 'Formato Eroski detectado', movs: parseEroski(text) };
+  }
+  // CaixaBank: fechas "D Mes YYYY" con saldos "+ X.XXX,XX €"
+  if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text)) {
+    return { bank: 'Formato CaixaBank detectado', movs: parseCaixaBank(text) };
+  }
+  // Kutxabank: grupos con DD/MM/YYYY + importe con € y signo
+  if (/\d{2}\/\d{2}\/\d{4}/.test(text) && /[+-]?[\d.]+,\d{2}\s*€/.test(text)) {
+    const movs = parseKutxabank(text);
+    if (movs.length) return { bank: 'Formato Kutxabank detectado', movs };
+  }
+  // Fallback genérico
+  return { bank: 'Formato genérico (revisa los importes)', movs: parseGeneric(text) };
+}
+
+// ── PARSER KUTXABANK ────────────────────────────────────────
+// Estructura: grupos de 5 líneas separados por línea en blanco
+// fecha / concepto / fecha_valor / importe / saldo
+
+function parseKutxabank(text) {
+  const movs = [];
+  const dateRe = /^\d{2}\/\d{2}\/\d{4}$/;
+  const amountRe = /^-?[\d.]+,\d{2}\s*€$/;
+  const groups = text.split(/\n\s*\n/).map(g =>
+    g.split('\n').map(l => l.trim()).filter(l => l));
+  for (const lines of groups) {
+    if (lines.length < 4) continue;
+    if (!dateRe.test(lines[0])) continue;
+    if (!amountRe.test(lines[3])) continue;
+    const date = slashDateToDDMMYY(lines[0]);
+    const concept = lines[1];
+    const amount = parseSpAmt(lines[3]);
+    if (!isNaN(amount) && concept) movs.push({ date, concept, amount });
+  }
+  return movs;
+}
+
+// ── PARSER CAIXABANK ────────────────────────────────────────
+// Estructura: concept / date(D Mes YYYY) / [subconcept] / amount / +balance
+// Importes sin signo → se deduce comparando saldos consecutivos
+
+function parseCaixaBank(text) {
+  const MES = {'Ene':1,'Feb':2,'Mar':3,'Abr':4,'May':5,'Jun':6,
+               'Jul':7,'Ago':8,'Sep':9,'Oct':10,'Nov':11,'Dic':12};
+  const SKIP = ['Este mes','Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const lines = text.split('\n').map(l=>l.trim()).filter(l=>l&&!SKIP.includes(l));
+  const dateRe = /^(\d{1,2})\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+(\d{4})$/;
+  const amtRe  = /^([\d.]+),(\d{2})\s*€$/;
+  const balRe  = /^\+\s*([\d.]+),(\d{2})\s*€$/;
+  const entries = [];
+  for (let i = 0; i < lines.length; i++) {
+    const dm = lines[i].match(dateRe);
+    if (!dm || i === 0) continue;
+    const prev = lines[i-1];
+    if (amtRe.test(prev) || balRe.test(prev) || dateRe.test(prev)) continue;
+    const concept = prev;
+    const day   = dm[1].padStart(2,'0');
+    const month = String(MES[dm[2]]).padStart(2,'0');
+    const date  = `${day}-${month}-${dm[3].slice(-2)}`;
+    let j = i+1, sub='', amount=null, balance=null;
+    while (j < lines.length) {
+      const bm = lines[j].match(balRe);
+      const am = lines[j].match(amtRe);
+      if (bm) {
+        balance = parseFloat(bm[1].replace(/\./g,'')+'.'+bm[2]); break;
+      } else if (am) {
+        amount = parseFloat(am[1].replace(/\./g,'')+'.'+am[2]);
+      } else if (dateRe.test(lines[j])) {
+        break;
+      } else if (amount === null) { sub = lines[j]; }
+      j++;
+    }
+    if (amount !== null) {
+      entries.push({ date, concept: sub ? concept+' / '+sub : concept,
+                     absAmount: amount, balance });
+    }
+  }
+  // Deducir signo por diferencia de saldos consecutivos
+  return entries.map((e, i) => {
+    let signed;
+    if (i < entries.length-1 && e.balance!=null && entries[i+1].balance!=null) {
+      const delta = Math.round((e.balance - entries[i+1].balance)*100)/100;
+      signed = (Math.abs(Math.abs(delta)-e.absAmount) < 0.02) ? delta : guessSign(e.concept, e.absAmount);
+    } else {
+      signed = guessSign(e.concept, e.absAmount);
+    }
+    return { date: e.date, concept: e.concept, amount: signed };
+  });
+}
+
+// ── PARSER EROSKI ───────────────────────────────────────────
+// Estructura: fecha\tconcepto\t[fraccionar]\timporte\tExterno\tHABITUAL...
+// Todos los importes son gastos (negativos)
+
+function parseEroski(text) {
+  const movs = [];
+  const dateRe = /^\d{2}\/\d{2}\/\d{4}$/;
+  const amtRe  = /^[\d.]+,\d{2}\s*€$/;
+  for (const line of text.split('\n').filter(l=>l.trim())) {
+    const cols = line.split('\t').map(c=>c.trim()).filter(c=>c);
+    if (cols.length < 3 || !dateRe.test(cols[0])) continue;
+    const date = slashDateToDDMMYY(cols[0]);
+    const concept = cols[1];
+    let amount = null;
+    for (let i=2; i<cols.length; i++) {
+      if (amtRe.test(cols[i])) { amount = -parseSpAmt(cols[i]); break; }
+    }
+    if (amount !== null && concept) movs.push({ date, concept, amount });
+  }
+  return movs;
+}
+
+// ── PARSER GENÉRICO ─────────────────────────────────────────
+// Intenta extraer fecha + importe de cualquier línea
+
+function parseGeneric(text) {
+  const movs = [];
+  const dateRe = /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b/;
+  const amtRe  = /-?[\d.]+,\d{2}\s*€?/;
+  for (const line of text.split('\n').map(l=>l.trim()).filter(l=>l)) {
+    const dm = line.match(dateRe);
+    const am = line.match(amtRe);
+    if (!dm || !am) continue;
+    const y = dm[3].length===4 ? dm[3].slice(-2) : dm[3].padStart(2,'0');
+    const date = dm[1].padStart(2,'0')+'-'+dm[2].padStart(2,'0')+'-'+y;
+    const amount = parseSpAmt(am[0]);
+    const concept = line.replace(dm[0],'').replace(am[0],'').replace(/[€\t]+/g,' ').trim() || '(sin concepto)';
+    if (!isNaN(amount)) movs.push({ date, concept, amount });
+  }
+  return movs;
+}
+
+// ── HELPERS PARSERS ─────────────────────────────────────────
+
+function slashDateToDDMMYY(s) {
+  // "27/08/2026" → "27-08-26"
+  const [d,m,y] = s.split('/');
+  return `${d.padStart(2,'0')}-${m.padStart(2,'0')}-${y.slice(-2)}`;
+}
+
+function parseSpAmt(s) {
+  const c = String(s).replace(/[€+\s]/g,'');
+  const neg = c.startsWith('-');
+  const val = parseFloat(c.replace('-','').replace(/\./g,'').replace(',','.'));
+  return neg ? -val : val;
+}
+
+function guessSign(concept, amount) {
+  const l = concept.toLowerCase();
+  const income = ['nomina','nómina','ingr','a su favor','pagare','pagaré',
+                  'abono','traspaso recibido','reembolso','transf. a su favor'];
+  for (const w of income) { if (l.includes(w)) return Math.abs(amount); }
+  return -Math.abs(amount);
+}
+
+function dateToPeriod(date) {
+  const p = date.split('-');
+  return p[1]+'-'+p[2]; // "MM-YY"
+}
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();saveToDropbox();}if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undo();}if((e.ctrlKey||e.metaKey)&&e.key==='y'){e.preventDefault();redo();}});
 document.addEventListener('click',e=>{if(!$('dropmenu').contains(e.target)&&e.target!==$('hambtn'))closeMenu();});
 window.addEventListener('resize',()=>{if(S.selAcc>=0)renderChart(S.selAcc);});
