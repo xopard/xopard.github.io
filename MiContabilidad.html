@@ -518,7 +518,7 @@ function balances(){const b=new Array(S.accs.length).fill(0);for(const m of S.mo
 
 const TIPO_LABEL = {
   '1':'TOTAL CAJA',
-  '2':'TOTAL AHORROS/INVERSIONES',
+  '2':'TOTAL AHORROS E INVERSIONES',
   '3':'TOTAL PRÉSTAMOS',
   '4':'TOTAL TARJETAS'
 };
@@ -540,6 +540,7 @@ function renderAccs(){
     grupos[t].push({a,i,b:bal[i]});
   }
 
+  let posicionGlobal=0;
   for(const tipo of TIPO_ORDER){
     const grupo=grupos[tipo];
     if(!grupo||!grupo.length)continue;
@@ -552,10 +553,19 @@ function renderAccs(){
     }
     // Separador con total del grupo (solo activas)
     const total=grupo.filter(x=>x.a.active).reduce((s,x)=>s+x.b,0);
+    posicionGlobal+=total;
     const sep=document.createElement('div');sep.className='sep-row';
-    sep.innerHTML=`<span>${TIPO_LABEL[tipo]||'TOTAL'}</span><span>${fmtAmt(total)}</span>`;
+    sep.innerHTML=`<span>${TIPO_LABEL[tipo]||'TOTAL'}</span><span class="${total<0?'neg':''}">${fmtAmt(total)}</span>`;
     frag.appendChild(sep);
   }
+
+  // POSICION GLOBAL al final
+  const global=document.createElement('div');
+  global.className='sep-row';
+  global.style.cssText='background:#C8C8C8;font-size:12px;border-top:2px solid #AAA';
+  global.innerHTML=`<span>POSICION GLOBAL</span><span class="${posicionGlobal<0?'neg':''}">${fmtAmt(posicionGlobal)}</span>`;
+  frag.appendChild(global);
+
   el.innerHTML='';el.appendChild(frag);
 }
 
