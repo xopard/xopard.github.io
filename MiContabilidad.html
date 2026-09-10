@@ -1581,17 +1581,19 @@ function confirmPaste() {
 // ── DETECCIÓN DE BANCO ──────────────────────────────────────
 
 function detectAndParse(text) {
-  // Eroski: tabuladores + fecha DD/MM/YYYY al inicio de línea
-  if (text.includes('\t') && /\d{2}\/\d{2}\/\d{4}\t/.test(text)) {
+  // Mediolanum: "Solicitar Devolución" es exclusivo de su web,
+  // o fecha sola en su línea (tab al final sin contenido)
+  if (/Solicitar\s+Devoluci/i.test(text) ||
+      (/^\d{2}\/\d{2}\/\d{4}\t?\s*$/m.test(text) && /[\d.]+,\d{2}\s*€/.test(text))) {
+    return { bank: 'Formato Mediolanum detectado', movs: parseMediolanum(text) };
+  }
+  // Eroski: tabuladores + fecha Y concepto en la misma línea separados por tab
+  if (text.includes('\t') && /\d{2}\/\d{2}\/\d{4}\t.+/.test(text)) {
     return { bank: 'Formato Eroski detectado', movs: parseEroski(text) };
   }
   // CaixaBank: fechas "D Mes YYYY" con saldos "+ X.XXX,XX €"
   if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text)) {
     return { bank: 'Formato CaixaBank detectado', movs: parseCaixaBank(text) };
-  }
-  // Mediolanum: fecha seguida de TAB, estructura de 5 líneas sin separadores
-  if (/\d{2}\/\d{2}\/\d{4}\t/.test(text)) {
-    return { bank: 'Formato Mediolanum detectado', movs: parseMediolanum(text) };
   }
   // Kutxabank: grupos con DD/MM/YYYY + importe con € y signo
   if (/\d{2}\/\d{2}\/\d{4}/.test(text) && /[+-]?[\d.]+,\d{2}\s*€/.test(text)) {
