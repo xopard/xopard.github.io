@@ -1259,13 +1259,14 @@ function showTransferModal() {
   const showAll = S.filter === 'todas';
   const sel = $('transfer-cuenta');
   sel.innerHTML = '';
-  S.accs.forEach((a, i) => {
-    if (i === m.ai) return;
-    if (!showAll && !a.active) return;
+  // Usar displayOrder para que el orden coincida con el listado en pantalla
+  for (const i of S.displayOrder) {
+    if (i === m.ai) continue;
+    if (!showAll && !S.accs[i].active) continue;
     const opt = document.createElement('option');
-    opt.value = i; opt.textContent = a.name;
+    opt.value = i; opt.textContent = S.accs[i].name;
     sel.appendChild(opt);
-  });
+  }
   if (!sel.options.length) { toast('No hay otras cuentas disponibles'); return; }
   showModal('mdl-transfer');
 }
@@ -1285,12 +1286,12 @@ function confirmTransfer() {
   }
   saveUndo('Traspaso a ' + destAcc.name);
   // Actualizar concepto del movimiento origen
-  S.movs[oi] = { ...m, concept: m.concept + ' Traspasado a ' + destAcc.name, ci: trasCi };
+  S.movs[oi] = { ...m, concept: m.concept + '. Traspasado a ' + destAcc.name, ci: trasCi };
   // Crear movimiento espejo en cuenta destino con importe negado
   S.movs.push({
     c1:'', ai:destAi, shaded:'', div:'',
     period:m.period, date:m.date,
-    concept: m.concept + ' Traspasado desde ' + srcAcc.name,
+    concept: m.concept + '. Traspasado desde ' + srcAcc.name,
     c8:'', ci:trasCi, amount:-m.amount
   });
   S.selMovs.clear();
