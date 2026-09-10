@@ -981,7 +981,7 @@ function renderMovs(ai){
     const pending=m.ci===PENDING_CI;
     const divided=m.div==='t';
     const shaded=m.shaded==='t';
-    const catDisplay=(divided?'<span style="color:#1A6EBD">÷</span> ':'')+cat;
+    const catDisplay=(divided?'<span style="color:#1A6EBD;font-weight:700;font-size:13px">÷</span> ':'')+cat;
     const row=document.createElement('div');
     row.className='mrow'+(checked?' sel-multi':'')+(shaded?' shaded':'');
     row.dataset.oi=m.oi;
@@ -993,7 +993,7 @@ function renderMovs(ai){
         <span class="mcheck"><input type="checkbox" ${checked?'checked':''}></span>
         <span class="mdate">${m.date}</span>
         <span class="mconcept">${m.concept||'—'}</span>
-        <span class="mamount${m.amount<0?' neg':''}">${fmtAmt(m.amount)}${shaded?' <span style="color:#1A6EBD;font-size:11px">✓</span>':''}</span>
+        <span class="mamount${m.amount<0?' neg':''}">${fmtAmt(m.amount)}${shaded?' <span style="color:#1A6EBD;font-weight:700;font-size:13px">✓</span>':''}</span>
         <span class="mbal${run<0?' neg':''}">${fmtAmt(run)}</span>
       </div>
       <div class="mrow-sub">
