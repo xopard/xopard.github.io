@@ -1483,14 +1483,24 @@ function buildCatMap() {
 }
 
 function autoCategory(concept, catMap) {
+  // Buscar índice de "Traspasos entre cuentas propias" (nunca se auto-asigna)
+  let trasCi = -1;
+  for (let i = 0; i < S.cats.length; i++) {
+    const n = S.cats[i].name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if (n.includes('traspaso')) { trasCi = i; break; }
+  }
   const norm = normConc(concept);
-  // 1. Coincidencia exacta
-  if (catMap.has(norm)) return catMap.get(norm);
-  // 2. Coincidencia parcial: palabras significativas (≥4 chars)
+  // Coincidencia exacta
+  if (catMap.has(norm)) {
+    const ci = catMap.get(norm);
+    return (ci === trasCi) ? PENDING_CI : ci;
+  }
+  // Coincidencia parcial
   const words = norm.split(' ').filter(w=>w.length>=4);
   if (!words.length) return PENDING_CI;
   let bestCi=PENDING_CI, bestScore=0;
   for (const [key, ci] of catMap) {
+    if (ci === trasCi) continue; // nunca sugerir traspasos
     const kw = key.split(' ').filter(w=>w.length>=4);
     const matches = words.filter(w=>kw.includes(w)).length;
     const score = matches / Math.max(words.length, kw.length);
@@ -1513,7 +1523,9 @@ function showPasteModal() {
 function analyzePaste() {
   const text = $('paste-txt').value;
   if (!text.trim()) { alert('Pega primero el texto del extracto.'); return; }
-  const result = detectAndParse(text);
+  const ai = parseInt($('paste-cuenta').value);
+  const bankHint = (ai >= 0 && ai < S.accs.length) ? S.accs[ai].bank : '';
+  const result = detectAndParse(text, bankHint);
   if (!result.movs.length) {
     alert('No se han podido detectar movimientos.\nComprueba que el texto es un extracto bancario copiado directamente del navegador.');
     return;
@@ -1580,26 +1592,55 @@ function confirmPaste() {
 
 // ── DETECCIÓN DE BANCO ──────────────────────────────────────
 
-function detectAndParse(text) {
-  // Mediolanum: "Solicitar Devolución" es exclusivo de su web,
-  // o fecha sola en su línea (tab al final sin contenido)
+// Mapa de parsers por banco (para detección por cuenta seleccionada)
+const BANK_PARSERS = [
+  ['kutxabank',  parseKutxabank,  'Formato Kutxabank'],
+  ['mediolanum', parseMediolanum, 'Formato Mediolanum'],
+  ['otras gestoras', parseMediolanum, 'Formato Mediolanum'],
+  ['best brands',    parseMediolanum, 'Formato Mediolanum'],
+  ['caixa',      parseCaixaBank,  'Formato CaixaBank'],
+  ['lacaixa',    parseCaixaBank,  'Formato CaixaBank'],
+  ['eroski',     parseEroski,     'Formato Eroski'],
+  ['selfbank',   parseGeneric,    'Formato genérico'],
+  ['bbva',       parseGeneric,    'Formato genérico'],
+];
+
+function tryParserHint(text, bankName) {
+  const lower = (bankName||'').toLowerCase();
+  for (const [key, parser, label] of BANK_PARSERS) {
+    if (lower.includes(key)) {
+      const movs = parser(text);
+      if (movs.length > 0) return { bank: label + ' (banco de la cuenta)', movs };
+    }
+  }
+  return null;
+}
+
+function detectAndParse(text, bankHint) {
+  // 1. Intentar con el banco de la cuenta seleccionada
+  if (bankHint) {
+    const hint = tryParserHint(text, bankHint);
+    if (hint) return hint;
+  }
+  // 2. Mediolanum: "Solicitar Devolución" exclusivo, o fecha+TAB (tab obligatorio)
   if (/Solicitar\s+Devoluci/i.test(text) ||
-      (/^\d{2}\/\d{2}\/\d{4}\t?\s*$/m.test(text) && /[\d.]+,\d{2}\s*€/.test(text))) {
+      /^\d{2}\/\d{2}\/\d{4}\t\s*$/m.test(text)) {
     return { bank: 'Formato Mediolanum detectado', movs: parseMediolanum(text) };
   }
-  // Eroski: tabuladores + fecha Y concepto en la misma línea separados por tab
+  // 3. Eroski: fecha y concepto en la misma línea separados por tab
   if (text.includes('\t') && /\d{2}\/\d{2}\/\d{4}\t.+/.test(text)) {
     return { bank: 'Formato Eroski detectado', movs: parseEroski(text) };
   }
-  // CaixaBank: fechas "D Mes YYYY" con saldos "+ X.XXX,XX €"
+  // 4. CaixaBank: fechas "D Mes YYYY"
   if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text)) {
     return { bank: 'Formato CaixaBank detectado', movs: parseCaixaBank(text) };
   }
-  // Kutxabank: grupos con DD/MM/YYYY + importe con € y signo
+  // 5. Kutxabank: grupos separados por líneas en blanco con DD/MM/YYYY
   if (/\d{2}\/\d{2}\/\d{4}/.test(text) && /[+-]?[\d.]+,\d{2}\s*€/.test(text)) {
+    const movs = parseKutxabank(text);
     if (movs.length) return { bank: 'Formato Kutxabank detectado', movs };
   }
-  // Fallback genérico
+  // 6. Fallback genérico
   return { bank: 'Formato genérico (revisa los importes)', movs: parseGeneric(text) };
 }
 
