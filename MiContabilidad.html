@@ -271,12 +271,21 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
     <div class="fr"><label>Banco / Entidad</label><input id="fa-banco"></div>
     <div class="fr">
       <label>Tipo</label>
-      <select id="fa-tipo">
+      <select id="fa-tipo" onchange="toggleTarjetaFields()">
         <option value="1">CAJA: Efectivo, Cuentas corrientes, libretas</option>
-        <option value="2">AHORRO: Fondos, depósitos, inversión</option>
-        <option value="3">PRÉSTAMO</option>
-        <option value="4">TARJETA de crédito</option>
+        <option value="2">AHORROS/INVERSIONES: Depositos, Fondos de Inversion, acciones</option>
+        <option value="3">PRESTAMOS: Hipotecas, Prestamos personales</option>
+        <option value="4">TARJETAS DE CREDITO: VISA, MasterCard, AMEX, etc.</option>
       </select>
+    </div>
+    <!-- Campos extra para tarjetas -->
+    <div id="tarjeta-fields" style="display:none;border-top:1px solid #EEE;padding-top:10px;margin-top:4px">
+      <div class="fr"><label>Cuenta de cargo</label><select id="fa-cargo"></select></div>
+      <div class="fi">
+        <div class="fr"><label>Día cierre</label><input id="fa-dcierre" type="number" min="1" max="31" style="width:70px"></div>
+        <div class="fr"><label>Día cargo</label><input id="fa-dcargo" type="number" min="1" max="31" style="width:70px"></div>
+        <div class="fr"><label>Amortización mensual</label><input id="fa-amort" placeholder="0,00" style="text-align:right"></div>
+      </div>
     </div>
     <div class="mbtns">
       <button class="bok" onclick="saveAcc()">Ok</button>
@@ -507,24 +516,46 @@ function genCSV(){
 function renderAll(){renderAccs();if(S.selAcc>=0){renderMovs(S.selAcc);renderChart(S.selAcc);}}
 function balances(){const b=new Array(S.accs.length).fill(0);for(const m of S.movs)if(m.ai>=0&&m.ai<b.length)b[m.ai]+=m.amount;return b;}
 
+const TIPO_LABEL = {
+  '1':'TOTAL CAJA',
+  '2':'TOTAL AHORROS/INVERSIONES',
+  '3':'TOTAL PRÉSTAMOS',
+  '4':'TOTAL TARJETAS'
+};
+const TIPO_ORDER = ['1','2','3','4'];
+
 function renderAccs(){
   const el=$('acclist');
   if(!S.accs.length){el.innerHTML='<div class="empty-msg">Sin datos</div>';return;}
-  const bal=balances(),showAll=S.filter==='todas';
+  const bal=balances(), showAll=S.filter==='todas';
   const frag=document.createDocumentFragment();
-  let sepDone=false,cajaTotal=0;
-  for(let i=0;i<S.accs.length;i++)if(S.accs[i].type==='1'&&S.accs[i].active)cajaTotal+=bal[i];
+
+  // Agrupar cuentas por tipo manteniendo orden original
+  const grupos = {'1':[],'2':[],'3':[],'4':[]};
   for(let i=0;i<S.accs.length;i++){
-    const a=S.accs[i];if(!showAll&&!a.active)continue;
-    if(!sepDone&&a.type!=='1'){const sep=document.createElement('div');sep.className='sep-row';sep.innerHTML=`<span>TOTAL CAJA</span><span>${fmtAmt(cajaTotal)}</span>`;frag.appendChild(sep);sepDone=true;}
-    const row=document.createElement('div');
-    row.className='acc-row'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
-    row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
-    const b=bal[i];
-    row.innerHTML=`<div class="acc-logo">${(a.bank||'?').substring(0,10)}</div><div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
-    frag.appendChild(row);
+    const a=S.accs[i];
+    if(!showAll&&!a.active)continue;
+    const t=a.type||'1';
+    if(!grupos[t])grupos[t]=[];
+    grupos[t].push({a,i,b:bal[i]});
   }
-  if(!sepDone){const sep=document.createElement('div');sep.className='sep-row';sep.innerHTML=`<span>TOTAL CAJA</span><span>${fmtAmt(cajaTotal)}</span>`;frag.appendChild(sep);}
+
+  for(const tipo of TIPO_ORDER){
+    const grupo=grupos[tipo];
+    if(!grupo||!grupo.length)continue;
+    for(const{a,i,b} of grupo){
+      const row=document.createElement('div');
+      row.className='acc-row'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
+      row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
+      row.innerHTML=`<div class="acc-logo">${(a.bank||'?').substring(0,10)}</div><div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
+      frag.appendChild(row);
+    }
+    // Separador con total del grupo (solo activas)
+    const total=grupo.filter(x=>x.a.active).reduce((s,x)=>s+x.b,0);
+    const sep=document.createElement('div');sep.className='sep-row';
+    sep.innerHTML=`<span>${TIPO_LABEL[tipo]||'TOTAL'}</span><span>${fmtAmt(total)}</span>`;
+    frag.appendChild(sep);
+  }
   el.innerHTML='';el.appendChild(frag);
 }
 
@@ -597,9 +628,54 @@ function showAddMov(){if(!S.accs.length)return;S.editMov=-1;$('mdl-mov-ttl').tex
 function showEditMov(oi){S.editMov=oi;const m=S.movs[oi];$('mdl-mov-ttl').textContent='Editar Movimiento';fillAccSel('fm-cuenta',m.ai);$('fm-fecha').value=m.date;$('fm-texto').value=m.concept;$('fm-mes').value=m.period;fillCatSel('fm-cat',m.ci>=0?m.ci:0);$('fm-imp').value=fmtAmt(m.amount);showModal('mdl-mov');}
 function saveMov(){const mov={c1:'',ai:parseInt($('fm-cuenta').value),shaded:'',div:'',period:$('fm-mes').value.trim(),date:$('fm-fecha').value.trim(),concept:$('fm-texto').value.trim(),c8:'',ci:parseInt($('fm-cat').value),amount:parseAmt($('fm-imp').value)};if(S.editMov>=0)S.movs[S.editMov]=mov;else S.movs.push(mov);closeModal();renderAll();saveToDropbox();}
 function delMov(){if(S.selMov<0){toast('Selecciona primero un movimiento');return;}if(!confirm('¿Eliminar este movimiento?'))return;S.movs.splice(S.selMov,1);S.selMov=-1;renderAll();saveToDropbox();}
-function showAddAcc(){S.editAcc=-1;$('mdl-acc-ttl').textContent='Añadir Cuenta';$('fa-activa').checked=true;$('fa-nombre').value='';$('fa-desc').value='';$('fa-banco').value='';$('fa-tipo').value='1';showModal('mdl-acc');setTimeout(()=>$('fa-nombre').focus(),50);}
-function showEditAcc(idx){S.editAcc=idx;const a=S.accs[idx];$('mdl-acc-ttl').textContent='Editar Cuenta';$('fa-activa').checked=a.active;$('fa-nombre').value=a.name;$('fa-desc').value=a.desc;$('fa-banco').value=a.bank;$('fa-tipo').value=a.type;showModal('mdl-acc');}
-function saveAcc(){const acc={type:$('fa-tipo').value,bank:$('fa-banco').value.trim(),name:$('fa-nombre').value.trim(),desc:$('fa-desc').value.trim(),level:1,active:$('fa-activa').checked,c7:'0',c8:'1',c9:'20',c10:'1'};if(S.editAcc>=0)S.accs[S.editAcc]=acc;else S.accs.push(acc);closeModal();renderAll();}
+function toggleTarjetaFields(){
+  const isTarjeta=$('fa-tipo').value==='4';
+  $('tarjeta-fields').style.display=isTarjeta?'block':'none';
+  if(isTarjeta){
+    // Rellenar selector de cuenta de cargo
+    const sel=$('fa-cargo');sel.innerHTML='';
+    S.accs.forEach((a,i)=>{const o=document.createElement('option');o.value=i+1;o.textContent=a.name;sel.appendChild(o);});
+  }
+}
+function showAddAcc(){
+  S.editAcc=-1;$('mdl-acc-ttl').textContent='Añadir Cuenta';
+  $('fa-activa').checked=true;$('fa-nombre').value='';$('fa-desc').value='';
+  $('fa-banco').value='';$('fa-tipo').value='1';
+  $('tarjeta-fields').style.display='none';
+  $('fa-dcierre').value='31';$('fa-dcargo').value='1';$('fa-amort').value='0,00';
+  showModal('mdl-acc');setTimeout(()=>$('fa-nombre').focus(),50);
+}
+function showEditAcc(idx){
+  S.editAcc=idx;const a=S.accs[idx];
+  $('mdl-acc-ttl').textContent='Editar Cuenta';
+  $('fa-activa').checked=a.active;$('fa-nombre').value=a.name;
+  $('fa-desc').value=a.desc;$('fa-banco').value=a.bank;$('fa-tipo').value=a.type;
+  toggleTarjetaFields();
+  if(a.type==='4'){
+    $('fa-cargo').value=a.c10||'1';
+    $('fa-dcierre').value=a.c9||'20';
+    $('fa-dcargo').value=a.c8||'1';
+    $('fa-amort').value=fmtAmt(parseFloat(a.c7)||0);
+  }
+  showModal('mdl-acc');
+}
+function saveAcc(){
+  const tipo=$('fa-tipo').value;
+  // Preservar campos originales si no es tarjeta y estamos editando
+  const orig = S.editAcc>=0 ? S.accs[S.editAcc] : null;
+  const acc={
+    type:tipo, bank:$('fa-banco').value.trim(),
+    name:$('fa-nombre').value.trim(), desc:$('fa-desc').value.trim(),
+    level: orig ? orig.level : 1,
+    active:$('fa-activa').checked,
+    c7:  tipo==='4' ? String(Math.round(parseAmt($('fa-amort').value)||0)) : (orig?orig.c7:'0'),
+    c8:  tipo==='4' ? ($('fa-dcargo').value||'1')   : (orig?orig.c8:'1'),
+    c9:  tipo==='4' ? ($('fa-dcierre').value||'20') : (orig?orig.c9:'20'),
+    c10: tipo==='4' ? ($('fa-cargo').value||'1')    : (orig?orig.c10:'1')
+  };
+  if(S.editAcc>=0)S.accs[S.editAcc]=acc;else S.accs.push(acc);
+  closeModal();renderAll();
+}
 function delAcc(){if(S.selAcc<0){toast('Selecciona primero una cuenta');return;}if(!confirm(`¿Eliminar "${S.accs[S.selAcc].name}" y todos sus movimientos?`))return;const idx=S.selAcc;S.movs=S.movs.filter(m=>m.ai!==idx).map(m=>({...m,ai:m.ai>idx?m.ai-1:m.ai}));S.accs.splice(idx,1);S.selAcc=-1;S.selMov=-1;$('acc-title').textContent='—';$('movarea').innerHTML='<div class="empty-msg">Selecciona una cuenta</div>';$('chartsvg').innerHTML='';renderAccs();}
 
 // ── TABS & MENU ──────────────────────────────────────────────
