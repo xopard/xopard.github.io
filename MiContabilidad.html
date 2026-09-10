@@ -908,17 +908,23 @@ function selMov(oi){S.selMov=oi;document.querySelectorAll('.mrow').forEach(r=>r.
 function renderChart(ai){
   const box=$('chartsvg');box.innerHTML='';
   const list=accMovs(ai);if(list.length<2)return;
-  const monthly={};let run=0;
-  for(const m of list){run+=m.amount;if(m.period)monthly[m.period]=run;}
-  const all=Object.keys(monthly).sort((a,b)=>parsePeriod(a)-parsePeriod(b));if(all.length<2)return;
-  const endIdx=Math.min(all.length-1,Math.max(12,all.length-1)+S.chartOff);
-  const startIdx=Math.max(0,endIdx-12);
-  const periods=all.slice(startIdx,endIdx+1);
-  const vals=periods.map(p=>monthly[p]);
+  // Saldo acumulado por fecha (un punto por día con movimiento)
+  const daily=new Map();let run=0;
+  for(const m of list){run+=m.amount;if(m.date)daily.set(m.date,run);}
+  const sortedDates=[...daily.keys()].sort((a,b)=>dateSort(a)<dateSort(b)?-1:1);
+  if(sortedDates.length<2)return;
+  function dpn(d){const[dd,mm,yy]=d.split('-');const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);return yyyy*100+parseInt(mm);}
+  const allP=[...new Set(sortedDates.map(dpn))].sort((a,b)=>a-b);
+  const ce=Math.min(allP.length-1,Math.max(12,allP.length-1)+S.chartOff);
+  const cs=Math.max(0,ce-12);
+  const pS=allP[cs],pE=allP[ce];
+  const wd=sortedDates.filter(d=>{const p=dpn(d);return p>=pS&&p<=pE;});
+  if(wd.length<2)return;
+  const vals=wd.map(d=>daily.get(d));
   const W=box.clientWidth||640,H=box.clientHeight||150;
   const P={t:8,r:16,b:26,l:80},cW=W-P.l-P.r,cH=H-P.t-P.b;
   const minV=Math.min(...vals),maxV=Math.max(...vals),span=maxV-minV||1;
-  const xp=i=>P.l+(i/(periods.length-1))*cW;
+  const xp=i=>P.l+(i/(wd.length-1))*cW;
   const yp=v=>P.t+cH-((v-minV)/span)*cH;
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.setAttribute('width','100%');svg.setAttribute('height','100%');svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
@@ -926,12 +932,12 @@ function renderChart(ai){
   for(let i=0;i<=4;i++){const v=minV+(span*i/4),y=yp(v);svg.appendChild(mk('line',{x1:P.l,y1:y,x2:W-P.r,y2:y,stroke:'#E4E4E4','stroke-width':'1'}));svg.appendChild(mk('text',{x:P.l-5,y:y+4,'text-anchor':'end','font-size':'10',fill:'#999'},fmtAmt(Math.round(v))));}
   if(minV<0&&maxV>0){const y0=yp(0);svg.appendChild(mk('line',{x1:P.l,y1:y0,x2:W-P.r,y2:y0,stroke:'#AAA','stroke-width':'1','stroke-dasharray':'4,3'}));}
   const MESES=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  const xStep=Math.max(1,Math.ceil(periods.length/8));
-  for(let i=0;i<periods.length;i+=xStep){const mm=parseInt(periods[i].split('-')[0]);svg.appendChild(mk('text',{x:xp(i),y:H-7,'text-anchor':'middle','font-size':'10',fill:'#999'},MESES[mm]||periods[i]));}
+  let lastP=-1;
+  for(let i=0;i<wd.length;i++){const p=dpn(wd[i]);if(p!==lastP){lastP=p;svg.appendChild(mk('text',{x:xp(i),y:H-7,'text-anchor':'middle','font-size':'10',fill:'#999'},MESES[p%100]||''));}}
   const ptsFill=[`${xp(0)},${P.t+cH}`].concat(vals.map((v,i)=>`${xp(i)},${yp(v)}`)).concat([`${xp(vals.length-1)},${P.t+cH}`]);
   svg.appendChild(mk('polygon',{points:ptsFill.join(' '),fill:'rgba(160,20,60,.10)',stroke:'none'}));
-  svg.appendChild(mk('polyline',{points:vals.map((v,i)=>`${xp(i)},${yp(v)}`).join(' '),fill:'none',stroke:'#A01430','stroke-width':'2.5'}));
-  for(let i=0;i<vals.length;i++)svg.appendChild(mk('circle',{cx:xp(i),cy:yp(vals[i]),r:'3',fill:'#A01430'}));
+  svg.appendChild(mk('polyline',{points:vals.map((v,i)=>`${xp(i)},${yp(v)}`).join(' '),fill:'none',stroke:'#A01430','stroke-width':'2'}));
+  if(wd.length<=120){const r=wd.length>60?'1.5':'2.5';for(let i=0;i<vals.length;i++)svg.appendChild(mk('circle',{cx:xp(i),cy:yp(vals[i]),r,fill:'#A01430'}));}
   box.appendChild(svg);
 }
 
