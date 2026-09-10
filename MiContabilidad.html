@@ -85,6 +85,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 .acc-row:hover{background:#F7F7F7}
 .acc-row.sel{background:var(--sel)}
 .acc-row.inactive{opacity:.55}
+.acc-logo-img{width:46px;height:22px;object-fit:contain;flex-shrink:0;padding:1px}
 .acc-logo{width:46px;height:22px;display:flex;align-items:center;justify-content:center;font-size:8.5px;color:#aaa;background:#F2F2F2;border-radius:2px;flex-shrink:0;text-align:center;line-height:1.2;overflow:hidden;padding:1px}
 .acc-info{flex:1;min-width:0}
 .acc-name{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -512,7 +513,56 @@ function genCSV(){
   return L.join('\n');
 }
 
-// ── RENDER ───────────────────────────────────────────────────
+// ── LOGOS DE BANCOS (favicons) ──────────────────────────────
+const BANK_DOMAINS = [
+  ['kutxabank',    'kutxabank.es'],
+  ['mediolanum',   'mediolanum.es'],
+  ['otras gestoras','mediolanum.es'],
+  ['best brands',  'mediolanum.es'],
+  ['caixabank',    'caixabank.es'],
+  ['la caixa',     'caixabank.es'],
+  ['selfbank',     'selfbank.es'],
+  ['self bank',    'selfbank.es'],
+  ['bbva',         'bbva.es'],
+  ['eroski',       'eroski.es'],
+  ['uno-e',        'uno-e.com'],
+  ['unoe',         'uno-e.com'],
+  ['orange',       'orangebank.es'],
+  ['ing',          'ing.es'],
+  ['santander',    'bancosantander.es'],
+  ['openbank',     'openbank.es'],
+  ['n26',          'n26.com'],
+  ['revolut',      'revolut.com'],
+  ['wizink',       'wizink.es'],
+  ['cofidis',      'cofidis.es'],
+];
+
+function faviconUrl(bank) {
+  if (!bank) return null;
+  const lower = bank.toLowerCase();
+  for (const [key, domain] of BANK_DOMAINS) {
+    if (lower.includes(key)) {
+      return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+    }
+  }
+  return null;
+}
+
+function initials(bank) {
+  if (!bank) return '?';
+  return bank.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+}
+
+function logoHtml(bank) {
+  const url = faviconUrl(bank);
+  if (url) {
+    return `<img src="${url}" class="acc-logo-img"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+      loading="lazy">
+      <div class="acc-logo" style="display:none">${initials(bank)}</div>`;
+  }
+  return `<div class="acc-logo">${initials(bank)}</div>`;
+}
 function renderAll(){renderAccs();if(S.selAcc>=0){renderMovs(S.selAcc);renderChart(S.selAcc);}}
 function balances(){const b=new Array(S.accs.length).fill(0);for(const m of S.movs)if(m.ai>=0&&m.ai<b.length)b[m.ai]+=m.amount;return b;}
 
@@ -548,7 +598,7 @@ function renderAccs(){
       const row=document.createElement('div');
       row.className='acc-row'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
       row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
-      row.innerHTML=`<div class="acc-logo">${(a.bank||'?').substring(0,10)}</div><div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
+      row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
       frag.appendChild(row);
     }
     // Total del grupo según filtro activo
