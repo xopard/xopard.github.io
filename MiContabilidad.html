@@ -92,7 +92,14 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 .acc-desc{font-size:10px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .acc-bal{font-size:13px;text-align:right;white-space:nowrap;flex-shrink:0}
 .acc-bal.neg{color:var(--neg)}
-.sep-row{background:#DEDEDE;padding:4px 8px;font-size:11px;font-weight:700;color:#555;display:flex;justify-content:space-between;border-bottom:1px solid #C8C8C8;border-top:1px solid #C8C8C8}
+.yr-btn{font-size:10px!important;padding:2px 5px!important;opacity:.6}
+.yr-btn.active-yr{opacity:1;background:rgba(255,255,255,.25);border-radius:2px}
+.sep-row{
+  background:#DEDEDE;padding:4px 8px;font-size:11px;font-weight:700;color:#555;
+  display:flex;justify-content:space-between;border-bottom:1px solid #C8C8C8;border-top:1px solid #C8C8C8;
+  cursor:pointer;
+}
+.sep-row:hover{background:#D0D0D0;}
 
 /* ── RIGHT PANEL ── */
 #rpanel{flex:1;display:flex;flex-direction:column;min-width:0;background:#F8F8F8}
@@ -234,7 +241,13 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div id="chartbox">
         <div id="charthdr">
           <span id="chart-title">Gráfico</span>
-          <div>
+          <div style="display:flex;align-items:center;gap:2px">
+            <button class="rbtn yr-btn" data-y="1"  onclick="setChartYears(1)">1A</button>
+            <button class="rbtn yr-btn" data-y="2"  onclick="setChartYears(2)">2A</button>
+            <button class="rbtn yr-btn" data-y="3"  onclick="setChartYears(3)">3A</button>
+            <button class="rbtn yr-btn" data-y="5"  onclick="setChartYears(5)">5A</button>
+            <button class="rbtn yr-btn" data-y="10" onclick="setChartYears(10)">10A</button>
+            <span style="color:rgba(255,255,255,.25);margin:0 3px">│</span>
             <button class="rbtn" onclick="chartNav(-1)">←</button>
             <button class="rbtn" onclick="chartNav(+1)">→</button>
           </div>
@@ -374,7 +387,7 @@ const S = {
   token:'', meta0:'', extra:[], extra2:0, tail1:'', tail2:'',
   cats:[], accs:[], movs:[],
   selAcc:-1, selMov:-1, editMov:-1, editAcc:-1,
-  filter:'activas', chartOff:0,
+  filter:'activas', chartOff:0, chartYears:1, chartGroup:null,
   selMovs: new Set(), lastMovClick: -1,
   displayOrder: [],  // orden de visualización de cuentas (índices 0-based)
 };
@@ -829,7 +842,7 @@ function updateUndoMenu() {
 }
 
 // ── RENDER ───────────────────────────────────────────────────
-function renderAll(){renderAccs();if(S.selAcc>=0){renderMovs(S.selAcc);renderChart(S.selAcc);}}
+function renderAll(){renderAccs();if(S.selAcc>=0||S.chartGroup){renderMovs(S.selAcc>=0?S.selAcc:-1);renderCurrentChart();}}
 function balances(){const b=new Array(S.accs.length).fill(0);for(const m of S.movs)if(m.ai>=0&&m.ai<b.length)b[m.ai]+=m.amount;return b;}
 
 const TIPO_LABEL = {
@@ -872,6 +885,8 @@ function renderAccs(){
     const total=grupo.filter(x=>showAll||x.a.active).reduce((s,x)=>s+x.b,0);
     posicionGlobal+=total;
     const sep=document.createElement('div');sep.className='sep-row';
+    sep.title='Clic para ver gráfico del total';
+    sep.onclick=()=>showGroupChart(tipo);
     sep.innerHTML=`<span>${TIPO_LABEL[tipo]||'TOTAL'}</span><span class="${total<0?'neg':''}">${fmtAmt(total)}</span>`;
     frag.appendChild(sep);
   }
@@ -880,6 +895,8 @@ function renderAccs(){
   const global=document.createElement('div');
   global.className='sep-row';
   global.style.cssText='background:#C8C8C8;font-size:12px;border-top:2px solid #AAA';
+  global.title='Clic para ver gráfico de posición global';
+  global.onclick=()=>showGroupChart('global');
   global.innerHTML=`<span>POSICION GLOBAL</span><span class="${posicionGlobal<0?'neg':''}">${fmtAmt(posicionGlobal)}</span>`;
   frag.appendChild(global);
 
@@ -887,13 +904,13 @@ function renderAccs(){
 }
 
 function selAcc(idx){
-  S.selAcc=idx;S.selMov=-1;S.chartOff=0;
+  S.selAcc=idx;S.selMov=-1;S.chartOff=0;S.chartGroup=null;
   S.selMovs.clear();S.lastMovClick=-1;
   updateSelCount();updateMoveButtons();
   renderAccs();
   $('acc-title').textContent=S.accs[idx].name;
   $('chart-title').textContent='Gráfico de '+S.accs[idx].name;
-  renderMovs(idx);renderChart(idx);
+  renderMovs(idx);renderCurrentChart();
 }
 
 function accMovs(ai){return S.movs.map((m,i)=>({...m,oi:i})).filter(m=>m.ai===ai).sort((a,b)=>{const da=dateSort(a.date),db=dateSort(b.date);return da<db?-1:da>db?1:a.oi-b.oi;});}
@@ -931,18 +948,81 @@ function renderMovs(ai){
 
 function selMov(oi){S.selMov=oi;document.querySelectorAll('.mrow').forEach(r=>r.classList.toggle('sel',parseInt(r.dataset.oi)===oi));}
 
+// ── GRÁFICO ──────────────────────────────────────────────────
+
+function renderCurrentChart() {
+  if (S.chartGroup) {
+    _renderGroupChart(S.chartGroup);
+  } else if (S.selAcc >= 0) {
+    renderChart(S.selAcc);
+  }
+  _updateYearButtons();
+}
+
 function renderChart(ai){
-  const box=$('chartsvg');box.innerHTML='';
-  const list=accMovs(ai);if(list.length<2)return;
-  // Saldo acumulado por fecha (un punto por día con movimiento)
+  const list=accMovs(ai);
   const daily=new Map();let run=0;
   for(const m of list){run+=m.amount;if(m.date)daily.set(m.date,run);}
+  _renderChartFromDaily(daily);
+}
+
+function showGroupChart(type) {
+  S.chartGroup = type;
+  S.chartOff = 0;
+  S.selAcc = -1;
+  S.selMov = -1;
+  const labels = {'1':'TOTAL CAJA','2':'TOTAL AHORROS E INVERSIONES',
+                  '3':'TOTAL PRÉSTAMOS','4':'TOTAL TARJETAS','global':'POSICION GLOBAL'};
+  $('chart-title').textContent = labels[type] || 'Gráfico';
+  $('acc-title').textContent = '—';
+  $('movarea').innerHTML = '<div class="empty-msg">Selecciona una cuenta para ver movimientos</div>';
+  renderAccs();
+  _renderGroupChart(type);
+  _updateYearButtons();
+}
+
+function _renderGroupChart(type) {
+  let indices;
+  if (type === 'global') {
+    indices = S.accs.map((_,i)=>i);
+  } else {
+    indices = S.accs.map((_,i)=>i).filter(i=>S.accs[i].type===type);
+  }
+  // Sumar todos los movimientos del grupo cronológicamente
+  const movs = S.movs
+    .filter(m=>indices.includes(m.ai)&&m.date)
+    .sort((a,b)=>dateSort(a.date)<dateSort(b.date)?-1:1);
+  const daily=new Map();let run=0;
+  for(const m of movs){run+=m.amount;daily.set(m.date,run);}
+  _renderChartFromDaily(daily);
+}
+
+function setChartYears(y) {
+  S.chartYears = y;
+  S.chartOff = 0;
+  renderCurrentChart();
+}
+
+function _updateYearButtons() {
+  document.querySelectorAll('.yr-btn').forEach(b => {
+    b.classList.toggle('active-yr', parseInt(b.dataset.y) === S.chartYears);
+  });
+}
+
+function chartNav(dir){
+  S.chartOff=Math.min(0, S.chartOff + dir * Math.max(1, S.chartYears));
+  renderCurrentChart();
+}
+
+function _renderChartFromDaily(daily){
+  const box=$("chartsvg");box.innerHTML="";
   const sortedDates=[...daily.keys()].sort((a,b)=>dateSort(a)<dateSort(b)?-1:1);
   if(sortedDates.length<2)return;
-  function dpn(d){const[dd,mm,yy]=d.split('-');const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);return yyyy*100+parseInt(mm);}
+  function dpn(d){const[dd,mm,yy]=d.split("-");const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);return yyyy*100+parseInt(mm);}
   const allP=[...new Set(sortedDates.map(dpn))].sort((a,b)=>a-b);
-  const ce=Math.min(allP.length-1,Math.max(12,allP.length-1)+S.chartOff);
-  const cs=Math.max(0,ce-12);
+  const months=S.chartYears*12;
+  const ce=Math.min(allP.length-1,Math.max(months,allP.length-1)+S.chartOff);
+  const cs=Math.max(0,ce-months);
   const pS=allP[cs],pE=allP[ce];
   const wd=sortedDates.filter(d=>{const p=dpn(d);return p>=pS&&p<=pE;});
   if(wd.length<2)return;
