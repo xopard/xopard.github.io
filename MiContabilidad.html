@@ -331,6 +331,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
               <th style="padding:5px 6px;width:20px"><input type="checkbox" id="paste-all" onchange="pasteToggleAll(this)" checked></th>
               <th style="padding:5px 6px;text-align:left;white-space:nowrap">Fecha</th>
               <th style="padding:5px 6px;text-align:left">Concepto</th>
+              <th style="padding:5px 6px;text-align:left">Categoría</th>
               <th style="padding:5px 6px;text-align:right;white-space:nowrap">Importe</th>
             </tr>
           </thead>
@@ -990,7 +991,54 @@ function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
 function about(){closeMenu();alert('MiContabilidad v1.3\nConectado con Dropbox OAuth\nCompatible con el formato CSV de Xopard');}
 
-// ── PARSERS DE EXTRACTOS BANCARIOS ─────────────────────────
+// ── AUTO-CATEGORIZACIÓN ─────────────────────────────────────
+
+const PENDING_CI = 1; // posición 0-based de "Pendiente de asignacion"
+
+function normConc(s) {
+  if (!s) return '';
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9\s]/g,' ')
+    .replace(/\s+/g,' ').trim();
+}
+
+function buildCatMap() {
+  // Construye mapa: concepto_normalizado → categoría más frecuente
+  const freq = new Map(); // key → Map(ci → count)
+  for (const m of S.movs) {
+    if (m.ci <= 1 || m.ci >= S.cats.length) continue; // skip Pendiente y Total
+    const key = normConc(m.concept);
+    if (!key) continue;
+    if (!freq.has(key)) freq.set(key, new Map());
+    const c = freq.get(key);
+    c.set(m.ci, (c.get(m.ci)||0)+1);
+  }
+  const map = new Map();
+  for (const [key, counts] of freq) {
+    let bestCi=PENDING_CI, best=0;
+    for (const [ci,n] of counts) { if(n>best){best=n;bestCi=ci;} }
+    map.set(key, bestCi);
+  }
+  return map;
+}
+
+function autoCategory(concept, catMap) {
+  const norm = normConc(concept);
+  // 1. Coincidencia exacta
+  if (catMap.has(norm)) return catMap.get(norm);
+  // 2. Coincidencia parcial: palabras significativas (≥4 chars)
+  const words = norm.split(' ').filter(w=>w.length>=4);
+  if (!words.length) return PENDING_CI;
+  let bestCi=PENDING_CI, bestScore=0;
+  for (const [key, ci] of catMap) {
+    const kw = key.split(' ').filter(w=>w.length>=4);
+    const matches = words.filter(w=>kw.includes(w)).length;
+    const score = matches / Math.max(words.length, kw.length);
+    if (score > 0.6 && score > bestScore) { bestScore=score; bestCi=ci; }
+  }
+  return bestCi;
+}
 
 function showPasteModal() {
   if (S.accs.length === 0) { toast('Carga primero el fichero'); return; }
@@ -1011,16 +1059,29 @@ function analyzePaste() {
     alert('No se han podido detectar movimientos.\nComprueba que el texto es un extracto bancario copiado directamente del navegador.');
     return;
   }
-  $('paste-info').textContent = result.bank + ' — ' + result.movs.length + ' movimiento' + (result.movs.length !== 1 ? 's' : '') + ' detectado' + (result.movs.length !== 1 ? 's' : '');
+  // Auto-categorizar usando el histórico
+  const catMap = buildCatMap();
+  const defaultCi = parseInt($('paste-cat').value);
+  result.movs = result.movs.map(m => ({
+    ...m,
+    ci: catMap.size > 0 ? autoCategory(m.concept, catMap) : defaultCi
+  }));
+  const autoCount = result.movs.filter(m => m.ci !== PENDING_CI).length;
+  $('paste-info').textContent = result.bank + ' — ' + result.movs.length +
+    ' movimiento' + (result.movs.length!==1?'s':'') + ' detectado' + (result.movs.length!==1?'s':'') +
+    (autoCount > 0 ? ' · ' + autoCount + ' categorizados automáticamente' : '');
   const tbody = $('paste-body');
   tbody.innerHTML = '';
   result.movs.forEach((m, i) => {
     const neg = m.amount < 0;
+    const catName = (m.ci>=0&&m.ci<S.cats.length) ? S.cats[m.ci].name : 'Pendiente';
+    const isPending = m.ci === PENDING_CI;
     const tr = document.createElement('tr');
     tr.style.borderBottom = '1px solid #F0F0F0';
     tr.innerHTML = `<td style="padding:4px 6px"><input type="checkbox" class="pcb" data-i="${i}" checked></td>
       <td style="padding:4px 6px;white-space:nowrap">${m.date}</td>
       <td style="padding:4px 6px">${m.concept}</td>
+      <td style="padding:4px 6px;font-size:11px;color:${isPending?'#AAA':'#555'}">${catName}</td>
       <td style="padding:4px 6px;text-align:right;color:${neg?'var(--neg)':'#333'};white-space:nowrap">${fmtAmt(m.amount)}</td>`;
     tbody.appendChild(tr);
   });
@@ -1043,12 +1104,11 @@ function confirmPaste() {
   const sel = Array.from(document.querySelectorAll('.pcb:checked')).map(c => parseInt(c.dataset.i));
   if (!sel.length) { alert('Selecciona al menos un movimiento.'); return; }
   const ai = parseInt($('paste-cuenta').value);
-  const ci = parseInt($('paste-cat').value);
   saveUndo('Pegar ' + sel.length + ' movimiento' + (sel.length !== 1 ? 's' : ''));
   for (const i of sel) {
     const m = window._pasteMovs[i];
     S.movs.push({ c1:'', ai, shaded:'', div:'', period: dateToPeriod(m.date),
-      date: m.date, concept: m.concept, c8:'', ci, amount: m.amount });
+      date: m.date, concept: m.concept, c8:'', ci: m.ci, amount: m.amount });
   }
   closeModal();
   renderAll();
