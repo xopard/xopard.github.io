@@ -1624,36 +1624,34 @@ function tryParserHint(text, bankName, accName) {
 }
 
 function detectAndParse(text, bankHint, accHint) {
-  // 1. Intentar con el banco de la cuenta seleccionada
+  // 1. Pista desde la cuenta seleccionada
   if (bankHint || accHint) {
     const hint = tryParserHint(text, bankHint, accHint);
-    if (hint) return hint;
+    if (hint && hint.movs.length > 0) return hint;
   }
-  // 2. Mediolanum: "Solicitar Devolución" exclusivo, o fecha+TAB (tab obligatorio)
-  if (/Solicitar\s+Devoluci/i.test(text) ||
-      /^\d{2}\/\d{2}\/\d{4}\t\s*$/m.test(text)) {
-    return { bank: 'Formato Mediolanum detectado', movs: parseMediolanum(text) };
-  }
-  // 3. Eroski: fecha y concepto en la misma línea separados por tab
-  if (text.includes('\t') && /\d{2}\/\d{2}\/\d{4}\t.+/.test(text)) {
-    return { bank: 'Formato Eroski detectado', movs: parseEroski(text) };
-  }
-  // 4a. Via T: fechas "D Mes AA" (2 dígitos de año, sin saldo)
+  // 2. Parsers específicos en orden.
+  //    Si detecta el formato pero devuelve 0 resultados, continúa con el siguiente.
+  const candidates = [];
+  if (/Solicitar\s+Devoluci/i.test(text) || /^\d{2}\/\d{2}\/\d{4}\t\s*$/m.test(text))
+    candidates.push(['Formato Mediolanum', parseMediolanum]);
+  if (text.includes('\t') && /\d{2}\/\d{2}\/\d{4}\t.+/.test(text))
+    candidates.push(['Formato Eroski', parseEroski]);
   if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{2}\b/.test(text) &&
-      !/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text)) {
-    return { bank: 'Formato Via T detectado', movs: parseViaT(text) };
+      !/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text))
+    candidates.push(['Formato Via T', parseViaT]);
+  if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text))
+    candidates.push(['Formato CaixaBank', parseCaixaBank]);
+  if (/\d{2}\/\d{2}\/\d{4}/.test(text) && /[+-]?[\d.]+,\d{2}\s*€/.test(text))
+    candidates.push(['Formato Kutxabank', parseKutxabank]);
+  for (const [label, parser] of candidates) {
+    const movs = parser(text);
+    if (movs.length > 0) return { bank: label + ' detectado', movs };
   }
-  // 4b. CaixaBank: fechas "D Mes YYYY" (4 dígitos)
-  if (/\d{1,2}\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}/.test(text)) {
-    return { bank: 'Formato CaixaBank detectado', movs: parseCaixaBank(text) };
-  }
-  // 5. Kutxabank: grupos separados por líneas en blanco con DD/MM/YYYY
-  if (/\d{2}\/\d{2}\/\d{4}/.test(text) && /[+-]?[\d.]+,\d{2}\s*€/.test(text)) {
-    const movs = parseKutxabank(text);
-    if (movs.length) return { bank: 'Formato Kutxabank detectado', movs };
-  }
-  // 6. Fallback genérico
-  return { bank: 'Formato genérico (revisa los importes)', movs: parseGeneric(text) };
+  // 3. Genérico mejorado: extrae lo que pueda de cualquier formato
+  const movs = parseGeneric(text);
+  if (movs.length > 0)
+    return { bank: 'Formato no reconocido — revisa los resultados ⚠️', movs };
+  return { bank: '', movs: [] };
 }
 
 // ── PARSER VIA T ────────────────────────────────────────────
@@ -1813,22 +1811,54 @@ function parseEroski(text) {
   return movs;
 }
 
-// ── PARSER GENÉRICO ─────────────────────────────────────────
-// Intenta extraer fecha + importe de cualquier línea
+// ── PARSER GENÉRICO MEJORADO ────────────────────────────────
+// Busca fecha en cualquier formato y amount en líneas cercanas.
+// Fallback final cuando ningún parser específico reconoce el formato.
 
 function parseGeneric(text) {
+  const MES={'ene':1,'feb':2,'mar':3,'abr':4,'may':5,'jun':6,'jul':7,'ago':8,'sep':9,'oct':10,'nov':11,'dic':12};
+  const AMT_RE = /^-?[\d.]+,\d{2}\s*€?$/;
+  const BAL_RE = /^\+\s*[\d.]+,\d{2}\s*€$/; // saldo con +
+
+  function tryDate(line) {
+    // DD/MM/YYYY o DD/MM/YY o DD-MM-YY etc.
+    let m = line.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+    if (m) {
+      const y = m[3].length===4 ? m[3].slice(-2) : m[3].padStart(2,'0');
+      return `${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}-${y}`;
+    }
+    // D Mon YY o D Mon YYYY
+    m = line.match(/^(\d{1,2})\s+(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+(\d{2,4})$/i);
+    if (m) {
+      const mon = String(MES[m[2].toLowerCase()]).padStart(2,'0');
+      const y = m[3].length===4 ? m[3].slice(-2) : m[3].padStart(2,'0');
+      return `${m[1].padStart(2,'0')}-${mon}-${y}`;
+    }
+    return null;
+  }
+
   const movs = [];
-  const dateRe = /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b/;
-  const amtRe  = /-?[\d.]+,\d{2}\s*€?/;
-  for (const line of text.split('\n').map(l=>l.trim()).filter(l=>l)) {
-    const dm = line.match(dateRe);
-    const am = line.match(amtRe);
-    if (!dm || !am) continue;
-    const y = dm[3].length===4 ? dm[3].slice(-2) : dm[3].padStart(2,'0');
-    const date = dm[1].padStart(2,'0')+'-'+dm[2].padStart(2,'0')+'-'+y;
-    const amount = parseSpAmt(am[0]);
-    const concept = line.replace(dm[0],'').replace(am[0],'').replace(/[€\t]+/g,' ').trim() || '(sin concepto)';
-    if (!isNaN(amount)) movs.push({ date, concept, amount });
+  const lines = text.split('\n').map(l=>l.trim()).filter(l=>l);
+
+  for (let i=0; i<lines.length; i++) {
+    const date = tryDate(lines[i]);
+    if (!date) continue;
+
+    // Concepto: línea anterior si no es fecha ni importe
+    let concept = '(sin concepto)';
+    if (i>0 && !tryDate(lines[i-1]) && !AMT_RE.test(lines[i-1]) && !BAL_RE.test(lines[i-1])) {
+      concept = lines[i-1];
+    }
+
+    // Importe: hasta 4 líneas después de la fecha, ignorando saldos
+    let amount = null;
+    for (let j=i+1; j<=Math.min(i+4, lines.length-1); j++) {
+      if (BAL_RE.test(lines[j])) continue;
+      if (AMT_RE.test(lines[j])) { amount = parseSpAmt(lines[j]); break; }
+      if (tryDate(lines[j])) break;
+    }
+
+    if (amount !== null && !isNaN(amount)) movs.push({ date, concept, amount });
   }
   return movs;
 }
