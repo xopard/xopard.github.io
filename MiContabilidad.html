@@ -937,6 +937,7 @@ function renderMovs(ai){
     run+=m.amount;
     const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
     const checked=S.selMovs.has(m.oi);
+    const pending=m.ci===PENDING_CI;
     const row=document.createElement('div');
     row.className='mrow'+(checked?' sel-multi':'');
     row.dataset.oi=m.oi;
@@ -952,7 +953,7 @@ function renderMovs(ai){
       </div>
       <div class="mrow-sub">
         <span class="mperiod" style="padding-left:22px">${m.period}</span>
-        <span class="mcat">${cat}</span>
+        <span class="mcat"${pending?' style="color:#1A6EBD;font-weight:600"':''}>${cat}</span>
       </div>`;
     frag.appendChild(row);
   }
