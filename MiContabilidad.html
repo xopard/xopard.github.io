@@ -1922,36 +1922,52 @@ function parseViaT(text) {
 }
 
 // ── PARSER SELFBANK ─────────────────────────────────────────
-// Estructura: "Día DD/MM/YYYY[tabs]" / concepto / "Sin Categoría" / "-0,02 €[TAB]saldo €"
-// Importe y saldo en la misma línea separados por tabulador.
+// Estructura: fecha / concepto / "Sin Categoría" / importe[TAB]saldo
+// Puede haber varios movimientos por fecha sin repetir la línea de fecha.
 
 function parseSelfbank(text) {
   const movs = [];
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   const dateRe = /^(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s+(\d{2}\/\d{2}\/\d{4})/i;
   const amtRe  = /^[+-]?\s*[\d.]+,\d{2}\s*€/;
-  const SKIP   = /^sin categor[ií]a$/i;
+  const skipRe = /^sin categor[ií]a$/i;
 
+  let curDate = null;
   let i = 0;
+
   while (i < lines.length) {
-    const dm = lines[i].match(dateRe);
-    if (!dm) { i++; continue; }
-    const date = slashDateToDDMMYY(dm[1]); i++;
+    const line = lines[i];
 
-    // Concepto (siguiente línea no vacía que no sea fecha)
-    if (i >= lines.length) break;
-    const concept = lines[i]; i++;
+    // Línea de fecha → actualizar fecha actual
+    const dm = line.match(dateRe);
+    if (dm) { curDate = slashDateToDDMMYY(dm[1]); i++; continue; }
 
-    // Saltar "Sin Categoría" y similares hasta encontrar el importe
-    while (i < lines.length && !amtRe.test(lines[i].split('\t')[0])) i++;
-    if (i >= lines.length) continue;
+    // "Sin Categoría" → ignorar
+    if (skipRe.test(line)) { i++; continue; }
 
-    // Línea de importe: "amount €[TAB]balance €"
-    const parts = lines[i].split('\t').map(p => p.trim()).filter(p => p);
-    const amount = parseSpAmt(parts[0]); i++;
+    // Línea de importe sin concepto previo → ignorar
+    if (amtRe.test(line.split('\t')[0].trim())) { i++; continue; }
 
-    if (concept && !SKIP.test(concept) && !isNaN(amount)) {
-      movs.push({ date, concept, amount });
+    // Si no tenemos fecha todavía, no podemos crear un movimiento
+    if (!curDate) { i++; continue; }
+
+    // Esta línea es un concepto
+    const concept = line; i++;
+
+    // Saltar "Sin Categoría" u otras líneas de texto antes del importe
+    while (i < lines.length && !amtRe.test(lines[i].split('\t')[0].trim())) {
+      // Si encontramos otra fecha o concepto aquí, parar
+      if (lines[i].match(dateRe)) break;
+      i++;
+    }
+
+    // Línea de importe
+    if (i < lines.length && amtRe.test(lines[i].split('\t')[0].trim())) {
+      const amount = parseSpAmt(lines[i].split('\t')[0]);
+      i++;
+      if (!isNaN(amount) && concept) {
+        movs.push({ date: curDate, concept, amount });
+      }
     }
   }
   return movs;
