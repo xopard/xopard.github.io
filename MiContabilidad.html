@@ -760,10 +760,9 @@ function parseCSV(txt){
   const _t2 = S.tail2.split(';').map(v=>parseInt(v)).filter(v=>!isNaN(v)&&v>=0&&v<S.accs.length);
   S.displayOrder = _t2.length===S.accs.length ? _t2 : S.accs.map((_,i)=>i);
   S.selAcc=-1;S.selMov=-1;S.chartOff=0;
+  updatePendingCi();
   renderAll();
-}
-
-function genCSV(){
+}function genCSV(){
   const L=[];
   L.push(S.meta0);L.push(String(S.cats.length));
   for(const c of S.cats)L.push([c.id,c.name,c.level,c.expanded?'t':'',c.c5].join(';'));
@@ -1697,7 +1696,14 @@ function restoreBackup() {
 
 // ── AUTO-CATEGORIZACIÓN ─────────────────────────────────────
 
-const PENDING_CI = 1; // posición 0-based de "Pendiente de asignacion"
+let PENDING_CI = 1; // se actualiza dinámicamente tras cargar/editar categorías
+
+function updatePendingCi() {
+  const idx = S.cats.findIndex(c =>
+    c.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes('pendiente')
+  );
+  PENDING_CI = idx >= 0 ? idx : 1;
+}
 
 function normConc(s) {
   if (!s) return '';
@@ -2707,6 +2713,7 @@ function cuSaveEditCats(){
   }
 
   S.cats=newCats;
+  updatePendingCi(); // recalcular PENDING_CI tras reconstruir categorías
   CU.tree=null;CU.sums=null;
   closeModal();
   // Actualizar también el desplegable de categorías
