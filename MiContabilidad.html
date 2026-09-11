@@ -1340,7 +1340,7 @@ function delAcc(){
 }
 
 // ── TABS & MENU ──────────────────────────────────────────────
-function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));if(b)b.classList.add('active');$('tab-cuentas').style.display=n==='cuentas'?'flex':'none';$('tab-cuadro').style.display=n==='cuadro'?'flex':'none';}
+function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));if(b)b.classList.add('active');$('tab-cuentas').style.display=n==='cuentas'?'flex':'none';$('tab-cuadro').style.display=n==='cuadro'?'flex':'none';if(n==='cuadro')cuInit();}
 function applyFilter(v){S.filter=v;renderAccs();}
 function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
@@ -1958,13 +1958,22 @@ function deferredSave() {
     if(!drag) return;
     const cx=e.touches?e.touches[0].clientX:e.clientX;
     const cy=e.touches?e.touches[0].clientY:e.clientY;
-    if(drag==='v'){
+    if(drag==='cu-h'){
+      const cb=$('cu-bottom');
+      const nh=Math.max(80,Math.min(500,h0-(cy-y0)));
+      cb.style.height=nh+'px';
+      if(CU.selCat>=0)cuRenderBar();
+    } else if(drag==='cu-v2'){
+      const mp=$('cu-movs-panel');
+      const nw=Math.max(150,Math.min(700,w0+(cx-x0)));
+      mp.style.width=nw+'px';
+    } else if(drag==='v'){
       const lp=$('lpanel');
       const nw=Math.max(180,Math.min(window.innerWidth*0.6, w0+(cx-x0)));
       lp.style.width=nw+'px';
       localStorage.setItem('pref_lw',nw);
       if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
-    } else {
+    } else if(drag==='h'){
       const cb=$('chartbox');
       const nh=Math.max(80,Math.min(window.innerHeight*0.6, h0-(cy-y0)));
       cb.style.height=nh+'px';
@@ -1975,7 +1984,7 @@ function deferredSave() {
 
   function onUp(){
     if(!drag) return;
-    $('divider-'+drag)?.classList.remove('drag');
+    const dId=drag.startsWith('cu-')?'cu-'+drag.slice(3)+'divider':'divider-'+drag;$(dId)?.classList.remove('drag');
     document.body.classList.remove('no-sel','no-sel-h');
     drag=null;
     if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
@@ -2005,6 +2014,19 @@ function deferredSave() {
   document.addEventListener('mouseup', onUp);
   document.addEventListener('touchmove', onMove, {passive:false});
   document.addEventListener('touchend', onUp);
+
+  // Divisores CUADRO
+  const cuHd=$('cu-hdivider'), cuVd=$('cu-vdivider');
+  if(cuHd){
+    cuHd.addEventListener('mousedown',e=>{drag='cu-h';y0=e.clientY;h0=$('cu-bottom').getBoundingClientRect().height;cuHd.classList.add('drag');document.body.classList.add('no-sel-h');e.preventDefault();});
+    cuHd.addEventListener('touchstart',e=>{drag='cu-h';y0=e.touches[0].clientY;h0=$('cu-bottom').getBoundingClientRect().height;cuHd.classList.add('drag');e.preventDefault();},{passive:false});
+    cuHd.addEventListener('dblclick',()=>{$('cu-bottom').style.height='230px';if(CU.selCat>=0)cuRenderBar();});
+  }
+  if(cuVd){
+    cuVd.addEventListener('mousedown',e=>{drag='cu-v2';x0=e.clientX;w0=$('cu-movs-panel').getBoundingClientRect().width;cuVd.classList.add('drag');document.body.classList.add('no-sel');e.preventDefault();});
+    cuVd.addEventListener('touchstart',e=>{drag='cu-v2';x0=e.touches[0].clientX;w0=$('cu-movs-panel').getBoundingClientRect().width;cuVd.classList.add('drag');e.preventDefault();},{passive:false});
+    cuVd.addEventListener('dblclick',()=>{$('cu-movs-panel').style.width='420px';});
+  }
 
   // Restaurar tamaños guardados
   window.addEventListener('load', ()=>{
