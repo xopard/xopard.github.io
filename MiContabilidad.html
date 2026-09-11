@@ -387,7 +387,11 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
     <div class="fi">
       <div class="fr" style="flex:0 0 90px"><label>Mes</label><input id="fm-mes" placeholder="MM-AA" maxlength="5"></div>
-      <div class="fr"><label>Categoría</label><select id="fm-cat"></select></div>
+      <div class="fr">
+        <label>Categoría</label>
+        <input id="fm-cat-q" placeholder="Filtrar categoría…" style="font-size:11px;padding:3px 6px;margin-bottom:3px" oninput="filterCatSel('fm-cat','fm-cat-q')">
+        <select id="fm-cat"></select>
+      </div>
     </div>
     <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
       <label style="white-space:nowrap;font-size:13px">Importe</label>
@@ -487,7 +491,11 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
     <div class="fi">
       <div class="fr" style="flex:0 0 90px"><label>Mes</label><input id="dv-mes" maxlength="5"></div>
-      <div class="fr"><label>Categoría</label><select id="dv-cat"></select></div>
+      <div class="fr">
+        <label>Categoría</label>
+        <input id="dv-cat-q" placeholder="Filtrar categoría…" style="font-size:11px;padding:3px 6px;margin-bottom:3px" oninput="filterCatSel('dv-cat','dv-cat-q')">
+        <select id="dv-cat"></select>
+      </div>
     </div>
     <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
       <label style="white-space:nowrap;font-size:13px">Importe</label>
@@ -1367,6 +1375,19 @@ function overlayClick(e) {
   // Solo cerrar si el mousedown Y el mouseup ocurrieron en el overlay (no arrastre)
   if (e.target === $('overlay') && _overlayMouseDownTarget === $('overlay')) closeModal();
 }
+function filterCatSel(selId, searchId) {
+  const q = ($(searchId)?.value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const s = $(selId); if(!s) return;
+  let firstVis = null;
+  for (const o of s.options) {
+    const txt = o.textContent.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    o.hidden = !!(q && !txt.includes(q));
+    if (!o.hidden && !firstVis) firstVis = o;
+  }
+  // Solo mover selección si hay texto en el filtro
+  if (q && firstVis) s.value = firstVis.value;
+}
+
 function fillCatSel(id,sel){
   const s=$(id);s.innerHTML='';
   // Mismo orden que el CUADRO: ordenar por id (campo 1 del CSV)
@@ -1397,8 +1418,25 @@ function buildConceptsList() {
   dl.innerHTML = top.map(c=>`<option value="${c.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">`).join('');
 }
 
-function showAddMov(){if(!S.accs.length)return;buildConceptsList();S.editMov=-1;$('mdl-mov-ttl').textContent='Añadir Movimiento';fillAccSel('fm-cuenta',S.selAcc>=0?S.selAcc:0);$('fm-fecha').value=today();$('fm-texto').value='';$('fm-mes').value=todayPeriod();fillCatSel('fm-cat',1);$('fm-imp').value='0,00';showModal('mdl-mov');setTimeout(()=>$('fm-texto').focus(),50);}
-function showEditMov(oi){buildConceptsList();S.editMov=oi;const m=S.movs[oi];$('mdl-mov-ttl').textContent='Editar Movimiento';fillAccSel('fm-cuenta',m.ai);$('fm-fecha').value=m.date;$('fm-texto').value=m.concept;$('fm-mes').value=m.period;fillCatSel('fm-cat',m.ci>=0?m.ci:0);$('fm-imp').value=fmtAmt(m.amount);showModal('mdl-mov');}
+function showAddMov(){
+  if(!S.accs.length)return;
+  buildConceptsList();
+  S.editMov=-1;
+  // Pre-rellenar desde el movimiento seleccionado si hay exactamente uno
+  const sel=[...S.selMovs];
+  const base=sel.length===1?S.movs[sel[0]]:null;
+  $('mdl-mov-ttl').textContent=base?'Nuevo movimiento (basado en seleccionado)':'Añadir Movimiento';
+  fillAccSel('fm-cuenta',base?base.ai:(S.selAcc>=0?S.selAcc:0));
+  $('fm-fecha').value=today();
+  $('fm-texto').value=base?base.concept:'';
+  $('fm-mes').value=todayPeriod();
+  const fq=$('fm-cat-q');if(fq)fq.value='';
+  fillCatSel('fm-cat',base?base.ci:1);
+  $('fm-imp').value=base?fmtAmt(base.amount):'0,00';
+  showModal('mdl-mov');
+  setTimeout(()=>$('fm-texto').focus(),50);
+}
+function showEditMov(oi){buildConceptsList();S.editMov=oi;const m=S.movs[oi];$('mdl-mov-ttl').textContent='Editar Movimiento';fillAccSel('fm-cuenta',m.ai);$('fm-fecha').value=m.date;$('fm-texto').value=m.concept;$('fm-mes').value=m.period;const fq=$('fm-cat-q');if(fq)fq.value='';fillCatSel('fm-cat',m.ci>=0?m.ci:0);$('fm-imp').value=fmtAmt(m.amount);showModal('mdl-mov');}
 function saveMov(){
   const mov={c1:'',ai:parseInt($('fm-cuenta').value),shaded:'',div:'',period:$('fm-mes').value.trim(),date:$('fm-fecha').value.trim(),concept:$('fm-texto').value.trim(),c8:'',ci:parseInt($('fm-cat').value),amount:parseAmt($('fm-imp').value)};
   const esEdicion = S.editMov >= 0;
@@ -1495,6 +1533,8 @@ function showDivideModal() {
   $('dv-fecha').value = m.date;
   $('dv-texto').value = m.concept;
   $('dv-mes').value = m.period;
+  buildConceptsList();
+  const fqd=$('dv-cat-q');if(fqd)fqd.value='';
   fillCatSel('dv-cat', m.ci >= 0 ? m.ci : 0);
   $('dv-imp').value = '';
   $('dv-resto').textContent = 'Original: ' + fmtAmt(m.amount) + ' €';
