@@ -979,7 +979,14 @@ function updateUndoMenu() {
 }
 
 // ── RENDER ───────────────────────────────────────────────────
-function renderAll(){renderAccs();if(S.selAcc>=0||S.chartGroup){renderMovs(S.selAcc>=0?S.selAcc:-1);renderCurrentChart();}}
+function renderAll(){
+  renderAccs();
+  if(S.selAcc>=0||S.chartGroup){renderMovs(S.selAcc>=0?S.selAcc:-1);renderCurrentChart();}
+  // Si el CUADRO está visible, rebuildearlo con los datos nuevos
+  if($('tab-cuadro')&&$('tab-cuadro').style.display!=='none'&&S.cats.length>0){
+    CU.tree=null;CU.sums=null;cuInit();
+  }
+}
 function balances(){const b=new Array(S.accs.length).fill(0);for(const m of S.movs)if(m.ai>=0&&m.ai<b.length)b[m.ai]+=m.amount;return b;}
 
 const TIPO_LABEL = {
@@ -1420,7 +1427,7 @@ function delAcc(){
 }
 
 // ── TABS & MENU ──────────────────────────────────────────────
-function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));if(b)b.classList.add('active');$('tab-cuentas').style.display=n==='cuentas'?'flex':'none';$('tab-cuadro').style.display=n==='cuadro'?'flex':'none';if(n==='cuadro')cuInit();}
+function switchTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));if(b)b.classList.add('active');$('tab-cuentas').style.display=n==='cuentas'?'flex':'none';$('tab-cuadro').style.display=n==='cuadro'?'flex':'none';if(n==='cuadro'){CU.tree=null;CU.sums=null;cuInit();}}
 function applyFilter(v){S.filter=v;renderAccs();}
 function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
