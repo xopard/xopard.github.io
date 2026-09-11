@@ -288,7 +288,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="fr"><label>Cuenta</label><select id="fm-cuenta"></select></div>
     <div class="fi">
       <div class="fr" style="flex:0 0 110px"><label>Fecha</label><input id="fm-fecha" placeholder="DD-MM-AA" maxlength="8"></div>
-      <div class="fr"><label>Texto / Concepto</label><input id="fm-texto"></div>
+      <div class="fr"><label>Texto / Concepto</label><input id="fm-texto" list="concepts-list"></div>
     </div>
     <div class="fi">
       <div class="fr" style="flex:0 0 90px"><label>Mes</label><input id="fm-mes" placeholder="MM-AA" maxlength="5"></div>
@@ -388,7 +388,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="fr"><label>Cuenta</label><select id="dv-cuenta" disabled></select></div>
     <div class="fi">
       <div class="fr" style="flex:0 0 110px"><label>Fecha</label><input id="dv-fecha" disabled></div>
-      <div class="fr"><label>Texto</label><input id="dv-texto"></div>
+      <div class="fr"><label>Texto</label><input id="dv-texto" list="concepts-list"></div>
     </div>
     <div class="fi">
       <div class="fr" style="flex:0 0 90px"><label>Mes</label><input id="dv-mes" maxlength="5"></div>
@@ -426,6 +426,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
 
 </div>
 <div id="dbx-status"></div>
+<datalist id="concepts-list"></datalist>
 
 <script>
 'use strict';
@@ -1214,8 +1215,23 @@ function overlayClick(e) {
 }
 function fillCatSel(id,sel){const s=$(id);s.innerHTML='';S.cats.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent='\u3000'.repeat(Math.max(0,c.level-2))+c.name;if(i===sel)o.selected=true;s.appendChild(o);});}
 function fillAccSel(id,sel){const s=$(id);s.innerHTML='';S.accs.forEach((a,i)=>{const o=document.createElement('option');o.value=i;o.textContent=a.name;if(i===sel)o.selected=true;s.appendChild(o);});}
-function showAddMov(){if(!S.accs.length)return;S.editMov=-1;$('mdl-mov-ttl').textContent='Añadir Movimiento';fillAccSel('fm-cuenta',S.selAcc>=0?S.selAcc:0);$('fm-fecha').value=today();$('fm-texto').value='';$('fm-mes').value=todayPeriod();fillCatSel('fm-cat',1);$('fm-imp').value='0,00';showModal('mdl-mov');setTimeout(()=>$('fm-texto').focus(),50);}
-function showEditMov(oi){S.editMov=oi;const m=S.movs[oi];$('mdl-mov-ttl').textContent='Editar Movimiento';fillAccSel('fm-cuenta',m.ai);$('fm-fecha').value=m.date;$('fm-texto').value=m.concept;$('fm-mes').value=m.period;fillCatSel('fm-cat',m.ci>=0?m.ci:0);$('fm-imp').value=fmtAmt(m.amount);showModal('mdl-mov');}
+// ── AUTOCOMPLETADO DE CONCEPTOS ─────────────────────────────
+function buildConceptsList() {
+  const dl = $('concepts-list');
+  if (!dl || !S.movs.length) return;
+  const freq = new Map();
+  for (const m of S.movs) {
+    if (m.concept && m.concept.trim()) {
+      const k = m.concept.trim();
+      freq.set(k, (freq.get(k) || 0) + 1);
+    }
+  }
+  const top = [...freq.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2000).map(([c])=>c);
+  dl.innerHTML = top.map(c=>`<option value="${c.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">`).join('');
+}
+
+function showAddMov(){if(!S.accs.length)return;buildConceptsList();S.editMov=-1;$('mdl-mov-ttl').textContent='Añadir Movimiento';fillAccSel('fm-cuenta',S.selAcc>=0?S.selAcc:0);$('fm-fecha').value=today();$('fm-texto').value='';$('fm-mes').value=todayPeriod();fillCatSel('fm-cat',1);$('fm-imp').value='0,00';showModal('mdl-mov');setTimeout(()=>$('fm-texto').focus(),50);}
+function showEditMov(oi){buildConceptsList();S.editMov=oi;const m=S.movs[oi];$('mdl-mov-ttl').textContent='Editar Movimiento';fillAccSel('fm-cuenta',m.ai);$('fm-fecha').value=m.date;$('fm-texto').value=m.concept;$('fm-mes').value=m.period;fillCatSel('fm-cat',m.ci>=0?m.ci:0);$('fm-imp').value=fmtAmt(m.amount);showModal('mdl-mov');}
 function saveMov(){
   const mov={c1:'',ai:parseInt($('fm-cuenta').value),shaded:'',div:'',period:$('fm-mes').value.trim(),date:$('fm-fecha').value.trim(),concept:$('fm-texto').value.trim(),c8:'',ci:parseInt($('fm-cat').value),amount:parseAmt($('fm-imp').value)};
   const esEdicion = S.editMov >= 0;
@@ -1301,6 +1317,7 @@ function toggleMenu(){$('dropmenu').classList.toggle('show');}
 function closeMenu(){$('dropmenu').classList.remove('show');}
 function showDivideModal() {
   if (S.selMovs.size !== 1) { toast('Selecciona primero un movimiento'); return; }
+  buildConceptsList();
   const oi = [...S.selMovs][0];
   const m = S.movs[oi];
   // Cuenta (bloqueada)
