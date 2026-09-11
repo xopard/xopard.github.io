@@ -76,7 +76,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 #cu-grid-wrap{flex:1;overflow:auto;min-height:0;background:#fff;position:relative}
 #cu-col-handle{position:absolute;top:0;width:5px;height:100%;cursor:col-resize;z-index:20;background:transparent}
 #cu-col-handle:hover{background:rgba(109,24,49,.12)}
-#cu-table{border-collapse:collapse;white-space:nowrap;font-size:12px;table-layout:fixed}
+#cu-table{border-collapse:collapse;white-space:nowrap;font-size:12px}
 #cu-table td,#cu-table th{padding:2px 7px;border-right:1px solid #E8E8E8;border-bottom:1px solid #E8E8E8}
 :root{--cu-cat-w:200px}
 .cu-cat{position:sticky;left:0;background:#fff;z-index:8;border-right:2px solid #CCC!important;overflow:hidden;text-overflow:ellipsis}
@@ -391,7 +391,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div class="fr">
         <label>Categoría</label>
         <input id="fm-cat-q" placeholder="Filtrar categoría…" style="font-size:11px;padding:3px 6px;margin-bottom:3px" oninput="filterCatSel('fm-cat','fm-cat-q')">
-        <select id="fm-cat"></select>
+        <select id="fm-cat" onkeydown="catSelKey(event,'fm-cat-q')"></select>
       </div>
     </div>
     <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
@@ -495,7 +495,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div class="fr">
         <label>Categoría</label>
         <input id="dv-cat-q" placeholder="Filtrar categoría…" style="font-size:11px;padding:3px 6px;margin-bottom:3px" oninput="filterCatSel('dv-cat','dv-cat-q')">
-        <select id="dv-cat"></select>
+        <select id="dv-cat" onkeydown="catSelKey(event,'dv-cat-q')"></select>
       </div>
     </div>
     <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
@@ -1376,6 +1376,16 @@ function overlayClick(e) {
   // Solo cerrar si el mousedown Y el mouseup ocurrieron en el overlay (no arrastre)
   if (e.target === $('overlay') && _overlayMouseDownTarget === $('overlay')) closeModal();
 }
+// Redirige teclas del <select> al input de búsqueda
+function catSelKey(e, searchId) {
+  const inp=$(searchId); if(!inp) return;
+  if(e.key==='Backspace'){inp.value=inp.value.slice(0,-1);e.preventDefault();}
+  else if(e.key.length===1&&!e.ctrlKey&&!e.metaKey){inp.value+=e.key;e.preventDefault();}
+  else return;
+  filterCatSel(e.target.id, searchId);
+  inp.focus();
+}
+
 function filterCatSel(selId, searchId) {
   const q=($(searchId)?.value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const s=$(selId);if(!s)return;
@@ -2377,7 +2387,7 @@ function cuRender(){
   if(!th||!tb)return;
   const cols=cuCols();
   // Cabecera
-  let h=`<tr><th class="cu-cat" style="text-align:left;font-size:11px">CATEGORÍAS</th>`;
+  let h=`<tr><th class="cu-cat" style="text-align:left;font-size:11px;width:${cuCatWidth}px;min-width:${cuCatWidth}px;max-width:${cuCatWidth}px">CATEGORÍAS</th>`;
   for(const c of cols){
     const sC=(c.type==='M'&&CU.selPeriod===c.p&&!CU.selIsYear)||(c.type==='Y'&&CU.selPeriod===c.y&&CU.selIsYear);
     if(c.type==='M')h+=`<th class="cu-mc${sC?' cu-sel-col':''}">${c.label}</th>`;
@@ -2396,7 +2406,7 @@ function cuRender(){
     const clickP=CU.selPeriod!==null?CU.selPeriod:new Date().getFullYear();
     const clickY=CU.selPeriod!==null?CU.selIsYear:true;
     rows+=`<tr class="cu-lv${lv}${isSR?' cu-sel-row':''}" data-ci="${ci}">`;
-    rows+=`<td class="cu-cat" style="padding-left:${4+indent}px" title="${cat.name}" onclick="cuSel(${ci},${clickP},${clickY})" ondblclick="cuToggleCat(${ci})">${prefix}${cat.name}</td>`;
+    rows+=`<td class="cu-cat" style="padding-left:${4+indent}px;width:${cuCatWidth}px;min-width:${cuCatWidth}px;max-width:${cuCatWidth}px" title="${cat.name}" onclick="cuSel(${ci},${clickP},${clickY})" ondblclick="cuToggleCat(${ci})">${prefix}${cat.name}</td>`;
     for(const c of cols){
       let v,sC,isY;
       if(c.type==='M'){v=cuVal(ci,c.p);sC=CU.selPeriod===c.p&&!CU.selIsYear;isY=false;}
@@ -2722,7 +2732,13 @@ let _cuResizing=false,_cuResX=0,_cuResW=200,cuCatWidth=parseInt(localStorage.get
 
 function cuApplyCatWidth(w){
   cuCatWidth=w;
+  // Actualizar el col del colgroup
   const col=$('cu-cat-col');if(col)col.style.width=w+'px';
+  // Forzar ancho en todas las celdas cu-cat (table-layout:auto necesita esto)
+  const wPx=w+'px';
+  document.querySelectorAll('#cu-table .cu-cat').forEach(el=>{
+    el.style.width=wPx;el.style.minWidth=wPx;el.style.maxWidth=wPx;
+  });
   cuUpdateColHandle();
 }
 
