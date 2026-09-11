@@ -2135,6 +2135,219 @@ function deferredSave() {
     if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
   });
 })();
+// ── CUADRO ───────────────────────────────────────────────────
+const CU={tree:null,sums:null,selCat:-1,selPeriod:null,selIsYear:false,expYears:null,chartOff:0,selMovOi:-1};
+
+function cuInit(){
+  if(!S.cats.length)return;
+  if(!CU.tree)CU.tree=cuBuildTree();
+  if(!CU.sums)CU.sums=cuBuildSums();
+  if(!CU.expYears)CU.expYears=new Set([new Date().getFullYear()]);
+  cuRender();
+}
+
+function cuBuildTree(){
+  const n=S.cats.length;
+  const children=Array.from({length:n},()=>[]);
+  const parent=new Array(n).fill(-1);
+  const stack=[];
+  for(let i=0;i<n;i++){
+    const lv=S.cats[i].level;
+    while(stack.length&&S.cats[stack[stack.length-1]].level>=lv)stack.pop();
+    if(stack.length){parent[i]=stack[stack.length-1];children[stack[stack.length-1]].push(i);}
+    stack.push(i);
+  }
+  return{children,parent};
+}
+
+function cuBuildSums(){
+  const n=S.cats.length;
+  const sums=Array.from({length:n},()=>new Map());
+  for(const m of S.movs){
+    if(m.ci<0||m.ci>=n||!m.period)continue;
+    const p=cuP(m.period);if(!p)continue;
+    sums[m.ci].set(p,(sums[m.ci].get(p)||0)+m.amount);
+  }
+  function prop(i){
+    for(const c of CU.tree.children[i]){
+      prop(c);
+      for(const[p,v]of sums[c])sums[i].set(p,(sums[i].get(p)||0)+v);
+    }
+  }
+  for(let i=0;i<n;i++)if(CU.tree.parent[i]===-1)prop(i);
+  return sums;
+}
+
+function cuP(period){
+  if(!period||period.length<5)return 0;
+  const[mm,yy]=period.split('-');
+  const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);
+  return yyyy*100+parseInt(mm);
+}
+
+function cuVal(ci,p){return(CU.sums&&ci>=0?CU.sums[ci]?.get(p):0)||0;}
+function cuYrSum(ci,y){let s=0;for(let m=1;m<=12;m++)s+=cuVal(ci,y*100+m);return s;}
+function cuFmt(v){return v===0?'':fmtAmt(v);}
+
+function cuYears(){
+  const ys=new Set();const cy=new Date().getFullYear();
+  for(const m of S.movs)if(m.period){const p=cuP(m.period);if(p)ys.add(Math.floor(p/100));}
+  ys.add(cy);
+  return[...ys].sort((a,b)=>a-b);
+}
+
+function cuCols(){
+  const MN=['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const cols=[];
+  for(const y of cuYears()){
+    if(CU.expYears&&CU.expYears.has(y)){
+      for(let m=1;m<=12;m++)cols.push({type:'M',p:y*100+m,y,m,label:`${MN[m]}-${String(y).slice(-2)}`});
+    }
+    cols.push({type:'Y',y,label:String(y)});
+  }
+  return cols;
+}
+
+function cuRender(){
+  if(!CU.tree||!CU.sums)return;
+  const th=$('cu-thead'),tb=$('cu-tbody');
+  if(!th||!tb)return;
+  const cols=cuCols();
+  // Cabecera
+  let h='<tr><th class="cu-cat" style="text-align:left;font-size:11px">CATEGORÍAS</th>';
+  for(const c of cols){
+    const sC=(c.type==='M'&&CU.selPeriod===c.p&&!CU.selIsYear)||(c.type==='Y'&&CU.selPeriod===c.y&&CU.selIsYear);
+    if(c.type==='M')h+=`<th class="cu-mc${sC?' cu-sel-col':''}">${c.label}</th>`;
+    else h+=`<th class="cu-yc${sC?' cu-sel-col':''}" ondblclick="cuToggleYear(${c.y})">${c.label}</th>`;
+  }
+  h+='</tr>';
+  th.innerHTML=h;
+  // Filas
+  let rows='';
+  function rowHTML(ci){
+    const cat=S.cats[ci];const lv=Math.min(cat.level-1,5);
+    const isSR=ci===CU.selCat;const indent=cat.level*10-10;
+    rows+=`<tr class="cu-lv${lv}${isSR?' cu-sel-row':''}" data-ci="${ci}">`;
+    rows+=`<td class="cu-cat" style="padding-left:${6+indent}px" title="${cat.name}">${cat.name}</td>`;
+    for(const c of cols){
+      let v,sC,isY;
+      if(c.type==='M'){v=cuVal(ci,c.p);sC=CU.selPeriod===c.p&&!CU.selIsYear;isY=false;}
+      else{v=cuYrSum(ci,c.y);sC=CU.selPeriod===c.y&&CU.selIsYear;isY=true;}
+      const isCl=isSR&&sC;
+      const cls=[c.type==='M'?'cu-mc':'cu-yc',v<0?'cu-neg':'',isCl?'cu-sel-cell':sC?'cu-sel-col':''].filter(Boolean).join(' ');
+      const p=c.type==='M'?c.p:c.y;
+      rows+=`<td class="${cls}" onclick="cuSel(${ci},${p},${isY})"${c.type==='Y'?` ondblclick="cuToggleYear(${c.y})"`:''} >${cuFmt(v)}</td>`;
+    }
+    rows+='</tr>';
+    for(const ch of CU.tree.children[ci])rowHTML(ch);
+  }
+  for(let i=0;i<S.cats.length;i++)if(CU.tree.parent[i]===-1)rowHTML(i);
+  tb.innerHTML=rows||'<tr><td colspan="100" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>';
+}
+
+function cuToggleYear(y){
+  if(!CU.expYears)return;
+  if(CU.expYears.has(y))CU.expYears.delete(y);else CU.expYears.add(y);
+  cuRender();
+}
+
+function cuSel(ci,period,isYear){
+  CU.selCat=ci;CU.selPeriod=period;CU.selIsYear=isYear;CU.selMovOi=-1;CU.chartOff=0;
+  cuRender();cuRenderMovs();cuRenderBar();
+}
+
+function cuRenderMovs(){
+  const list=$('cu-movs-list');
+  if(!list)return;
+  if(CU.selCat<0||CU.selPeriod===null){
+    list.innerHTML='<div style="padding:16px;color:#999;text-align:center">Selecciona una celda</div>';
+    return;
+  }
+  function sub(ci){const r=[ci];for(const c of CU.tree.children[ci])r.push(...sub(c));return r;}
+  const cats=new Set(sub(CU.selCat));
+  let movs;
+  if(CU.selIsYear){
+    const y=CU.selPeriod;
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&Math.floor(cuP(m.period)/100)===y);
+  }else{
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&cuP(m.period)===CU.selPeriod);
+  }
+  movs.sort((a,b)=>dateSort(a.date)<dateSort(b.date)?-1:1);
+  const MN=['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const pStr=CU.selIsYear?String(CU.selPeriod):(()=>{const mm=CU.selPeriod%100,yy=Math.floor(CU.selPeriod/100);return`${MN[mm]}-${String(yy).slice(-2)}`;})();
+  $('cu-movs-title').textContent=`${S.cats[CU.selCat].name} en ${pStr}`;
+  if(!movs.length){list.innerHTML='<div style="padding:8px 16px;color:#999;font-size:12px">Sin movimientos</div>';return;}
+  let html='';
+  for(const m of movs){
+    const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
+    const neg=m.amount<0;const isSel=m.oi===CU.selMovOi;
+    html+=`<div class="cu-mr${isSel?' sel':''}" onclick="cuSelMov(${m.oi})">
+      <div class="cu-mr-main">
+        <span class="cu-mr-date">${m.date}</span>
+        <span class="cu-mr-conc">${m.concept||'—'}</span>
+        <span class="cu-mr-amt${neg?' neg':''}">${fmtAmt(m.amount)}</span>
+      </div>
+      <div class="cu-mr-sub">${m.period}&nbsp;&nbsp;${acc}</div>
+    </div>`;
+  }
+  list.innerHTML=html;
+}
+
+function cuSelMov(oi){
+  CU.selMovOi=oi;
+  document.querySelectorAll('.cu-mr').forEach(r=>r.classList.toggle('sel',parseInt(r.dataset&&r.dataset.oi)===oi));
+}
+function cuDelMov(){
+  if(CU.selMovOi<0){toast('Selecciona primero un movimiento');return;}
+  if(!confirm('¿Eliminar este movimiento?'))return;
+  saveUndo('Movimiento eliminado desde CUADRO');
+  S.movs.splice(CU.selMovOi,1);CU.selMovOi=-1;CU.sums=null;
+  renderAll();saveToDropbox();
+}
+function cuDivMov(){
+  if(CU.selMovOi<0){toast('Selecciona primero un movimiento');return;}
+  S.selMovs=new Set([CU.selMovOi]);showDivideModal();
+}
+
+function cuRenderBar(){
+  const area=$('cu-chart-area');if(!area)return;
+  area.innerHTML='';
+  if(CU.selCat<0)return;
+  const baseY=CU.selIsYear?CU.selPeriod:Math.floor(CU.selPeriod/100);
+  const cy=baseY+CU.chartOff,py=cy-1;
+  $('cu-chart-title').textContent=`Gráfico de ${S.cats[CU.selCat].name}`;
+  const MN=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const cvs=[],pvs=[];
+  for(let m=1;m<=12;m++){cvs.push(cuVal(CU.selCat,cy*100+m));pvs.push(cuVal(CU.selCat,py*100+m));}
+  const allV=[...cvs,...pvs].filter(v=>v!==0);
+  if(!allV.length){area.innerHTML='<div style="padding:20px;color:#999;font-size:12px;text-align:center">Sin datos para este período</div>';return;}
+  const W=area.clientWidth||500,H=Math.max(area.clientHeight-20,100);
+  const P={t:12,r:12,b:28,l:64};
+  const cW=W-P.l-P.r,cH=H-P.t-P.b;
+  const maxV=Math.max(...allV.map(Math.abs),1),minV=Math.min(...allV,0),span=maxV-minV||1;
+  const bW=cW/12,gap=bW*0.08,bw=(bW-gap*3)/2;
+  const yp=v=>P.t+cH-((v-minV)/span)*cH,y0=yp(0);
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('width','100%');svg.setAttribute('height',H);svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  const mk=(tag,at,txt)=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(at))el.setAttribute(k,v);if(txt)el.textContent=txt;return el;};
+  for(let i=0;i<=4;i++){const v=minV+(span*i/4),y=yp(v);svg.appendChild(mk('line',{x1:P.l,y1:y,x2:W-P.r,y2:y,stroke:'#EBEBEB','stroke-width':'1'}));svg.appendChild(mk('text',{x:P.l-4,y:y+4,'text-anchor':'end','font-size':'9',fill:'#999'},fmtAmt(Math.round(v))));}
+  svg.appendChild(mk('line',{x1:P.l,y1:y0,x2:W-P.r,y2:y0,stroke:'#CCC','stroke-width':'1'}));
+  for(let m=0;m<12;m++){
+    const x=P.l+m*bW+gap;const pv=pvs[m],cv=cvs[m];
+    if(pv!==0){const bh=Math.abs((pv/span)*cH);svg.appendChild(mk('rect',{x,y:pv>0?yp(pv):y0,width:bw,height:Math.max(1,bh),fill:'#F9C5CF',rx:'1'}));}
+    if(cv!==0){const bh=Math.abs((cv/span)*cH);svg.appendChild(mk('rect',{x:x+bw+gap,y:cv>0?yp(cv):y0,width:bw,height:Math.max(1,bh),fill:'#A01430',rx:'1'}));}
+    svg.appendChild(mk('text',{x:x+bW/2-gap/2,y:H-10,'text-anchor':'middle','font-size':'9',fill:'#888'},MN[m+1]));
+  }
+  area.appendChild(svg);
+  const leg=document.createElement('div');leg.className='cu-legend';
+  leg.innerHTML=`<span><span class="cu-lb" style="background:#F9C5CF"></span>${py}</span><span><span class="cu-lb" style="background:#A01430"></span>${cy}</span>`;
+  area.appendChild(leg);
+}
+
+function cuChartNav(dir){CU.chartOff=(CU.chartOff||0)+dir;cuRenderBar();}
+function cuSearch(){toast('Búsqueda en CUADRO — próximamente');}
+function cuExport(){toast('Exportación en CUADRO — próximamente');}
+
 (async()=>{
   // ¿Viene de Dropbox con código OAuth?
   if(window.location.search.includes('code=')){
