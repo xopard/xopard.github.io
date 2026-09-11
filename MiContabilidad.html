@@ -1086,14 +1086,28 @@ function chartNav(dir){
 function _renderChartFromDaily(daily){
   const box=$("chartsvg");box.innerHTML="";
   const sortedDates=[...daily.keys()].sort((a,b)=>dateSort(a)<dateSort(b)?-1:1);
-  if(sortedDates.length<2)return;
+  if(sortedDates.length<1)return;
   function dpn(d){const[dd,mm,yy]=d.split("-");const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);return yyyy*100+parseInt(mm);}
+  function addM(p,delta){let y=Math.floor(p/100),m=p%100+delta;while(m>12){m-=12;y++;}while(m<1){m+=12;y--;}return y*100+m;}
+
+  // Ventana basada en meses calendario reales, no en índices de puntos
   const allP=[...new Set(sortedDates.map(dpn))].sort((a,b)=>a-b);
   const months=S.chartYears*12;
-  const ce=Math.min(allP.length-1,Math.max(months,allP.length-1)+S.chartOff);
-  const cs=Math.max(0,ce-months);
-  const pS=allP[cs],pE=allP[ce];
-  const wd=sortedDates.filter(d=>{const p=dpn(d);return p>=pS&&p<=pE;});
+  const latestP=allP[allP.length-1];
+  const endP=addM(latestP, S.chartOff);
+  const startP=addM(endP, -months);
+
+  let wd=sortedDates.filter(d=>{const p=dpn(d);return p>=startP&&p<=endP;});
+
+  // Si la ventana cae después de todos los datos: línea plana al último saldo
+  if(wd.length===0 && dpn(sortedDates[sortedDates.length-1])<startP) {
+    const lastBal=daily.get(sortedDates[sortedDates.length-1]);
+    const fmt2=(n)=>String(n).padStart(2,'0');
+    const syn1=`01-${fmt2(startP%100)}-${String(Math.floor(startP/100)).slice(-2)}`;
+    const syn2=`28-${fmt2(endP%100)}-${String(Math.floor(endP/100)).slice(-2)}`;
+    daily.set(syn1,lastBal);daily.set(syn2,lastBal);
+    wd=[syn1,syn2];
+  }
   if(wd.length<2)return;
   const vals=wd.map(d=>daily.get(d));
   const W=box.clientWidth||640,H=box.clientHeight||150;
