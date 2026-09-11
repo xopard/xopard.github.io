@@ -76,10 +76,10 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 #cu-grid-wrap{flex:1;overflow:auto;min-height:0;background:#fff;position:relative}
 #cu-col-handle{position:absolute;top:0;width:5px;height:100%;cursor:col-resize;z-index:20;background:transparent}
 #cu-col-handle:hover{background:rgba(109,24,49,.12)}
-#cu-table{border-collapse:collapse;white-space:nowrap;font-size:12px;min-width:100%}
+#cu-table{border-collapse:collapse;white-space:nowrap;font-size:12px;table-layout:fixed}
 #cu-table td,#cu-table th{padding:2px 7px;border-right:1px solid #E8E8E8;border-bottom:1px solid #E8E8E8}
 :root{--cu-cat-w:200px}
-.cu-cat{position:sticky;left:0;background:#fff;z-index:8;width:var(--cu-cat-w);min-width:100px;max-width:400px;border-right:2px solid #CCC!important;text-overflow:ellipsis;overflow:hidden}
+.cu-cat{position:sticky;left:0;background:#fff;z-index:8;border-right:2px solid #CCC!important;overflow:hidden;text-overflow:ellipsis}
 .cu-col-resize{position:absolute;right:0;top:0;bottom:0;width:5px;cursor:col-resize;background:rgba(255,255,255,.15)}
 .cu-col-resize:hover{background:rgba(255,255,255,.4)}
 .cu-mc{min-width:65px;text-align:right;cursor:pointer}.cu-mc:hover{background:#F5F0E8}
@@ -343,6 +343,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
     <div id="cu-grid-wrap">
       <table id="cu-table">
+        <colgroup><col id="cu-cat-col" style="width:200px"></colgroup>
         <thead id="cu-thead"></thead>
         <tbody id="cu-tbody"></tbody>
       </table>
@@ -1376,16 +1377,26 @@ function overlayClick(e) {
   if (e.target === $('overlay') && _overlayMouseDownTarget === $('overlay')) closeModal();
 }
 function filterCatSel(selId, searchId) {
-  const q = ($(searchId)?.value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const s = $(selId); if(!s) return;
-  let firstVis = null;
-  for (const o of s.options) {
-    const txt = o.textContent.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    o.hidden = !!(q && !txt.includes(q));
-    if (!o.hidden && !firstVis) firstVis = o;
-  }
-  // Solo mover selección si hay texto en el filtro
-  if (q && firstVis) s.value = firstVis.value;
+  const q=($(searchId)?.value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const s=$(selId);if(!s)return;
+  const curVal=s.value;
+  // Reconstruir opciones con solo las que coinciden (option.hidden no es fiable)
+  const sorted=[...Array(S.cats.length).keys()]
+    .sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
+  s.innerHTML='';
+  let firstMatch=null;
+  sorted.forEach(i=>{
+    const c=S.cats[i];
+    const txt=c.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if(q&&!txt.includes(q))return;
+    const o=document.createElement('option');
+    o.value=i;
+    o.textContent='\u3000'.repeat(Math.max(0,c.level-2))+c.name;
+    if(String(i)===String(curVal))o.selected=true;
+    s.appendChild(o);
+    if(!firstMatch)firstMatch=o;
+  });
+  if(q&&firstMatch&&!s.querySelector('option[selected]'))firstMatch.selected=true;
 }
 
 function fillCatSel(id,sel){
@@ -2213,7 +2224,7 @@ function deferredSave() {
     const cuCatW=localStorage.getItem('pref_cu_cat_w');
     if(lw) $('lpanel').style.width=lw+'px';
     if(ch) $('chartbox').style.height=ch+'px';
-    if(cuCatW) document.documentElement.style.setProperty('--cu-cat-w',cuCatW);
+    if(cuCatWidth) setTimeout(()=>cuApplyCatWidth(cuCatWidth),100);
   });
 
   // Doble clic para resetear al tamaño por defecto
@@ -2229,7 +2240,7 @@ function deferredSave() {
   });
 })();
 // ── CUADRO ───────────────────────────────────────────────────
-const CU={tree:null,sums:null,selCat:-1,selPeriod:null,selIsYear:false,expYears:null,chartOff:0,selMovOi:-1};
+const CU={tree:null,sums:null,selCat:-1,selPeriod:null,selIsYear:false,expYears:null,chartOff:0,selMovOi:-1,collapsedCats:new Set()};
 
 function cuInit(){
   if(!S.cats.length)return;
@@ -2322,10 +2333,13 @@ function cuRender(){
   function rowHTML(ci){
     const cat=S.cats[ci];const lv=Math.min(cat.level-1,5);
     const isSR=ci===CU.selCat;const indent=cat.level*10-10;
-    rows+=`<tr class="cu-lv${lv}${isSR?' cu-sel-row':''}" data-ci="${ci}">`;
+    const hasChildren=CU.tree.children[ci].length>0;
+    const isCollapsed=CU.collapsedCats.has(ci);
+    const prefix=hasChildren?(isCollapsed?'\u25b6 ':'\u25bc '):'  ';
     const clickP=CU.selPeriod!==null?CU.selPeriod:new Date().getFullYear();
     const clickY=CU.selPeriod!==null?CU.selIsYear:true;
-    rows+=`<td class="cu-cat" style="padding-left:${6+indent}px" title="${cat.name}" onclick="cuSel(${ci},${clickP},${clickY})">${cat.name}</td>`;
+    rows+=`<tr class="cu-lv${lv}${isSR?' cu-sel-row':''}" data-ci="${ci}">`;
+    rows+=`<td class="cu-cat" style="padding-left:${4+indent}px" title="${cat.name}" onclick="cuSel(${ci},${clickP},${clickY})" ondblclick="cuToggleCat(${ci})">${prefix}${cat.name}</td>`;
     for(const c of cols){
       let v,sC,isY;
       if(c.type==='M'){v=cuVal(ci,c.p);sC=CU.selPeriod===c.p&&!CU.selIsYear;isY=false;}
@@ -2336,13 +2350,13 @@ function cuRender(){
       rows+=`<td class="${cls}" onclick="cuSel(${ci},${p},${isY})"${c.type==='Y'?` ondblclick="cuToggleYear(${c.y})"`:''} >${cuFmt(v)}</td>`;
     }
     rows+='</tr>';
-    for(const ch of CU.tree.children[ci])rowHTML(ch);
+    if(!isCollapsed) for(const ch of CU.tree.children[ci])rowHTML(ch);
   }
   // Raíces en orden de id
   const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
   for(const i of roots)rowHTML(i);
   tb.innerHTML=rows||'<tr><td colspan="100" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>';
-  setTimeout(cuUpdateColHandle,0); // posicionar handle tras render
+  setTimeout(()=>{cuApplyCatWidth(cuCatWidth);cuUpdateColHandle();},0);
 }
 
 function cuToggleYear(y){
@@ -2636,43 +2650,57 @@ function cuSaveEditCats(){
 }
 
 
+function cuToggleCat(ci){
+  if(!CU.tree||!CU.tree.children[ci]||!CU.tree.children[ci].length)return;
+  if(CU.collapsedCats.has(ci))CU.collapsedCats.delete(ci);
+  else CU.collapsedCats.add(ci);
+  cuRender();
+}
+
 function cuSearch(){toast('Búsqueda en CUADRO — próximamente');}
 function cuExport(){toast('Exportación en CUADRO — próximamente');}
 
 // ── RESIZE COLUMNA CATEGORÍAS ────────────────────────────────
-let _cuResizing=false,_cuResX=0,_cuResW=200;
+let _cuResizing=false,_cuResX=0,_cuResW=200,cuCatWidth=parseInt(localStorage.getItem('pref_cu_cat_w'))||200;
 
-function cuGetCatW(){return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cu-cat-w'))||200;}
+function cuApplyCatWidth(w){
+  cuCatWidth=w;
+  const col=$('cu-cat-col');if(col)col.style.width=w+'px';
+  cuUpdateColHandle();
+}
 
 function cuUpdateColHandle(){
   const gw=$('cu-grid-wrap');if(!gw)return;
   let h=$('cu-col-handle');
   if(!h){
     h=document.createElement('div');h.id='cu-col-handle';
-    h.title='Arrastra para cambiar ancho de categorías';
+    h.title='Arrastra para cambiar ancho';
     h.addEventListener('mousedown',cuColResizeStart);
     gw.appendChild(h);
     gw.addEventListener('scroll',cuUpdateColHandle);
   }
-  h.style.left=(cuGetCatW()+(gw.scrollLeft||0))+'px';
-  h.style.height=(gw.scrollHeight||gw.clientHeight)+'px';
+  // Posición basada en ancho real del col (no CSS variable)
+  const cell=gw.querySelector('th.cu-cat');
+  const pos=cell?cell.offsetWidth:cuCatWidth;
+  h.style.left=(pos+(gw.scrollLeft||0))+'px';
+  h.style.height=Math.max(gw.scrollHeight,gw.clientHeight)+'px';
 }
 
 function cuColResizeStart(e){
-  _cuResizing=true;_cuResX=e.clientX;_cuResW=cuGetCatW();
+  _cuResizing=true;_cuResX=e.clientX;
+  const cell=$('cu-grid-wrap')?.querySelector('th.cu-cat');
+  _cuResW=cell?cell.offsetWidth:cuCatWidth;
   document.body.classList.add('no-sel');e.preventDefault();e.stopPropagation();
 }
-
 document.addEventListener('mousemove',e=>{
   if(!_cuResizing)return;
-  const nw=Math.max(100,Math.min(450,_cuResW+(e.clientX-_cuResX)));
-  document.documentElement.style.setProperty('--cu-cat-w',nw+'px');
-  cuUpdateColHandle();
+  const nw=Math.max(80,Math.min(450,_cuResW+(e.clientX-_cuResX)));
+  cuApplyCatWidth(nw);
 });
 document.addEventListener('mouseup',()=>{
   if(!_cuResizing)return;
   _cuResizing=false;document.body.classList.remove('no-sel');
-  localStorage.setItem('pref_cu_cat_w',cuGetCatW()+'px');
+  localStorage.setItem('pref_cu_cat_w',cuCatWidth);
 });
 
 (async()=>{
