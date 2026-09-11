@@ -390,8 +390,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div class="fr" style="flex:0 0 90px"><label>Mes</label><input id="fm-mes" placeholder="MM-AA" maxlength="5"></div>
       <div class="fr">
         <label>Categoría</label>
-        <input id="fm-cat-q" placeholder="Filtrar categoría…" style="font-size:11px;padding:3px 6px;margin-bottom:3px" oninput="filterCatSel('fm-cat','fm-cat-q')">
-        <select id="fm-cat" onkeydown="catSelKey(event,'fm-cat-q')"></select>
+        <input id="fm-cat-q" placeholder="🔍 Filtrar categoría (cualquier parte del nombre)…" style="font-size:12px;padding:5px 7px;margin-bottom:4px;border:1px solid #CCC;border-radius:3px;width:100%" oninput="filterCatSel('fm-cat','fm-cat-q')">
+        <select id="fm-cat" size="5" style="height:auto;width:100%;border:1px solid #CCC;border-radius:3px;font-size:12.5px"></select>
       </div>
     </div>
     <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
@@ -494,8 +494,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div class="fr" style="flex:0 0 90px"><label>Mes</label><input id="dv-mes" maxlength="5"></div>
       <div class="fr">
         <label>Categoría</label>
-        <input id="dv-cat-q" placeholder="Filtrar categoría…" style="font-size:11px;padding:3px 6px;margin-bottom:3px" oninput="filterCatSel('dv-cat','dv-cat-q')">
-        <select id="dv-cat" onkeydown="catSelKey(event,'dv-cat-q')"></select>
+        <input id="dv-cat-q" placeholder="🔍 Filtrar categoría (cualquier parte del nombre)…" style="font-size:12px;padding:5px 7px;margin-bottom:4px;border:1px solid #CCC;border-radius:3px;width:100%" oninput="filterCatSel('dv-cat','dv-cat-q')">
+        <select id="dv-cat" size="5" style="height:auto;width:100%;border:1px solid #CCC;border-radius:3px;font-size:12.5px"></select>
       </div>
     </div>
     <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
@@ -1389,7 +1389,6 @@ function filterCatSel(selId, searchId) {
   const q=($(searchId)?.value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const s=$(selId);if(!s)return;
   const curVal=s.value;
-  // Reconstruir opciones con solo las que coinciden (option.hidden no es fiable)
   const sorted=[...Array(S.cats.length).keys()]
     .sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
   s.innerHTML='';
@@ -1405,6 +1404,8 @@ function filterCatSel(selId, searchId) {
     s.appendChild(o);
     if(!firstMatch)firstMatch=o;
   });
+  // Ajustar tamaño según opciones (mín 3, máx 8)
+  if(s.size!==undefined) s.size=Math.max(3,Math.min(8,s.options.length));
   if(q&&firstMatch&&!s.querySelector('option[selected]'))firstMatch.selected=true;
 }
 
