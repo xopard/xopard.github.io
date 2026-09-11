@@ -76,7 +76,10 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 #cu-grid-wrap{flex:1;overflow:auto;min-height:0;background:#fff}
 #cu-table{border-collapse:collapse;white-space:nowrap;font-size:12px;min-width:100%}
 #cu-table td,#cu-table th{padding:2px 7px;border-right:1px solid #E8E8E8;border-bottom:1px solid #E8E8E8}
-.cu-cat{position:sticky;left:0;background:#fff;z-index:8;min-width:180px;max-width:220px;border-right:2px solid #CCC!important;text-overflow:ellipsis;overflow:hidden}
+:root{--cu-cat-w:200px}
+.cu-cat{position:sticky;left:0;background:#fff;z-index:8;width:var(--cu-cat-w);min-width:100px;max-width:400px;border-right:2px solid #CCC!important;text-overflow:ellipsis;overflow:hidden}
+.cu-col-resize{position:absolute;right:0;top:0;bottom:0;width:5px;cursor:col-resize;background:rgba(255,255,255,.15)}
+.cu-col-resize:hover{background:rgba(255,255,255,.4)}
 .cu-mc{min-width:65px;text-align:right;cursor:pointer}.cu-mc:hover{background:#F5F0E8}
 .cu-yc{min-width:78px;text-align:right;cursor:pointer;background:#E0E0E0;font-weight:600}.cu-yc:hover{background:#D0D0D0}
 #cu-table thead th{background:var(--panel);color:#fff;font-weight:600;font-size:11.5px;position:sticky;top:0;z-index:9}
@@ -104,7 +107,16 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 .cu-mr-conc{flex:1;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .cu-mr-amt{width:80px;text-align:right;flex-shrink:0;font-weight:600}.cu-mr-amt.neg{color:var(--neg)}
 .cu-mr-sub{font-size:10.5px;color:#888;padding-left:64px}
-.cu-legend{position:absolute;top:4px;right:8px;display:flex;gap:10px;font-size:10px;color:#777}
+.ecat-row{padding:4px 8px;cursor:pointer;font-size:12px;border-bottom:1px solid #F0F0F0;user-select:none;display:flex;align-items:center}
+.ecat-row:hover{background:#F7F7F7}
+.ecat-row.sel{background:var(--sel)}
+.ecat-row.drag-over-top{border-top:2px solid var(--wine)}
+.ecat-name{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ecat-lv1{font-weight:700}
+.ecat-lv2{color:#555}
+.ecat-lv3{color:#7A1535}
+.ecat-lv4,.ecat-lv5,.ecat-lv6{color:#888;font-size:11.5px}
+top:4px;right:8px;display:flex;gap:10px;font-size:10px;color:#777}
 .cu-legend span{display:flex;align-items:center;gap:3px}
 .cu-lb{width:11px;height:11px;border-radius:2px;display:inline-block}
 
@@ -317,7 +329,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   <div id="tab-cuadro">
     <div id="cu-toolbar">
       <div style="display:flex;gap:4px">
-        <button class="cu-btn" title="Editar categorías" onclick="toast('Próximamente')">✏️</button>
+        <button class="cu-btn" title="Editar categorías" onclick="cuOpenEditCats()">✏️</button>
         <button class="cu-btn" title="Ayuda">?</button>
       </div>
       <div class="cu-title">CUADRO</div>
@@ -495,6 +507,30 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
     <div class="mbtns">
       <button class="bok" onclick="confirmTransfer()">Ok</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- MODAL: Editar Categorías -->
+  <div id="mdl-edit-cats" class="modal" style="display:none;max-width:500px;width:95vw">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <h3>Editar Categorías</h3>
+    <p style="font-size:11px;color:#666;margin-bottom:10px;line-height:1.5">
+      Arrastra las categorías para reordenarlas. Cambia el nombre, añade y borra. 
+      Modifica el nivel con ← →. Pulsa Ok para aplicar cambios.
+    </p>
+    <div style="background:var(--panel);color:#fff;padding:5px 8px;display:flex;align-items:center;gap:5px;border-radius:3px;margin-bottom:8px">
+      <span style="font-size:11px;white-space:nowrap">Cambiar</span>
+      <input id="edit-cat-name" style="flex:1;font-size:12px;padding:3px 6px;border:none;border-radius:2px" oninput="cuEditNameChange()">
+      <button class="cu-btn" onclick="cuEditAdd()" title="Añadir categoría">+</button>
+      <button class="cu-btn" onclick="cuEditDel()" title="Eliminar">🗑</button>
+      <button class="cu-btn" onclick="cuEditLeft()" title="Disminuir nivel">←</button>
+      <button class="cu-btn" onclick="cuEditRight()" title="Aumentar nivel">→</button>
+      <button class="cu-btn" title="Ayuda">?</button>
+    </div>
+    <div id="edit-cats-list" style="max-height:360px;overflow-y:auto;border:1px solid #DDD;border-radius:3px"></div>
+    <div class="mbtns">
+      <button class="bok" onclick="cuSaveEditCats()">Ok</button>
       <button class="bcan" onclick="closeModal()">Cancelar</button>
     </div>
   </div>
@@ -1316,7 +1352,7 @@ function _renderChartFromDaily(daily){
 // ── MODALS ───────────────────────────────────────────────────
 function showModal(id){
   $('overlay').classList.add('show');
-  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide'].forEach(m=>$(m).style.display='none');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats'].forEach(m=>$(m).style.display='none');
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
@@ -2119,8 +2155,10 @@ function deferredSave() {
   window.addEventListener('load', ()=>{
     const lw=localStorage.getItem('pref_lw');
     const ch=localStorage.getItem('pref_ch');
+    const cuCatW=localStorage.getItem('pref_cu_cat_w');
     if(lw) $('lpanel').style.width=lw+'px';
     if(ch) $('chartbox').style.height=ch+'px';
+    if(cuCatW) document.documentElement.style.setProperty('--cu-cat-w',cuCatW);
   });
 
   // Doble clic para resetear al tamaño por defecto
@@ -2216,7 +2254,7 @@ function cuRender(){
   if(!th||!tb)return;
   const cols=cuCols();
   // Cabecera
-  let h='<tr><th class="cu-cat" style="text-align:left;font-size:11px">CATEGORÍAS</th>';
+  let h=`<tr><th class="cu-cat" style="text-align:left;font-size:11px;position:relative">CATEGORÍAS<span class="cu-col-resize" onmousedown="cuColResizeStart(event)" title="Arrastra para cambiar ancho"></span></th>`;
   for(const c of cols){
     const sC=(c.type==='M'&&CU.selPeriod===c.p&&!CU.selIsYear)||(c.type==='Y'&&CU.selPeriod===c.y&&CU.selIsYear);
     if(c.type==='M')h+=`<th class="cu-mc${sC?' cu-sel-col':''}">${c.label}</th>`;
@@ -2230,7 +2268,9 @@ function cuRender(){
     const cat=S.cats[ci];const lv=Math.min(cat.level-1,5);
     const isSR=ci===CU.selCat;const indent=cat.level*10-10;
     rows+=`<tr class="cu-lv${lv}${isSR?' cu-sel-row':''}" data-ci="${ci}">`;
-    rows+=`<td class="cu-cat" style="padding-left:${6+indent}px" title="${cat.name}">${cat.name}</td>`;
+    const clickP=CU.selPeriod!==null?CU.selPeriod:new Date().getFullYear();
+    const clickY=CU.selPeriod!==null?CU.selIsYear:true;
+    rows+=`<td class="cu-cat" style="padding-left:${6+indent}px" title="${cat.name}" onclick="cuSel(${ci},${clickP},${clickY})">${cat.name}</td>`;
     for(const c of cols){
       let v,sC,isY;
       if(c.type==='M'){v=cuVal(ci,c.p);sC=CU.selPeriod===c.p&&!CU.selIsYear;isY=false;}
@@ -2348,9 +2388,219 @@ function cuRenderBar(){
   area.appendChild(leg);
 }
 
-function cuChartNav(dir){CU.chartOff=(CU.chartOff||0)+dir;cuRenderBar();}
+// ── EDITAR CATEGORÍAS ────────────────────────────────────────
+const CUE = { cats:[], sel:-1, dragIdx:-1, deletions:[] };
+
+function cuOpenEditCats() {
+  if (!S.cats.length) return;
+  CUE.cats = [...Array(S.cats.length).keys()]
+    .sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0))
+    .map(origIdx=>({
+      origIdx,
+      name: S.cats[origIdx].name,
+      level: S.cats[origIdx].level,
+      id: parseInt(S.cats[origIdx].id)||0,
+      expanded: S.cats[origIdx].expanded,
+      c5: S.cats[origIdx].c5||'',
+    }));
+  CUE.sel = 0;
+  CUE.deletions = [];
+  cuRenderEditList();
+  $('edit-cat-name').value = CUE.cats[0]?.name||'';
+  showModal('mdl-edit-cats');
+}
+
+function cuRenderEditList() {
+  const LCLS=['ecat-lv1','ecat-lv2','ecat-lv3','ecat-lv4','ecat-lv5','ecat-lv6'];
+  let html='';
+  CUE.cats.forEach((c,i)=>{
+    const indent=(c.level-1)*12;
+    const lc=LCLS[Math.min(c.level-1,5)];
+    const sel=i===CUE.sel?' sel':'';
+    html+=`<div class="ecat-row${sel}" data-i="${i}"
+      onclick="cuEditSel(${i})"
+      draggable="true"
+      ondragstart="cuEditDragStart(event,${i})"
+      ondragover="cuEditDragOver(event,${i})"
+      ondragleave="cuEditDragLeave(event)"
+      ondrop="cuEditDrop(event,${i})">
+      <span class="ecat-name ${lc}" style="padding-left:${indent}px">${c.name}</span>
+    </div>`;
+  });
+  $('edit-cats-list').innerHTML=html||'<div style="padding:16px;color:#999;text-align:center">Sin categorías</div>';
+  // Scroll a la selección
+  const selEl=$('edit-cats-list').querySelector('.sel');
+  if(selEl) selEl.scrollIntoView({block:'nearest'});
+}
+
+function cuEditSel(i){
+  CUE.sel=i;
+  $('edit-cat-name').value=CUE.cats[i].name;
+  cuRenderEditList();
+  setTimeout(()=>$('edit-cat-name').focus(),50);
+}
+
+function cuEditNameChange(){
+  if(CUE.sel<0||!CUE.cats[CUE.sel])return;
+  CUE.cats[CUE.sel].name=$('edit-cat-name').value;
+  // Actualizar solo el texto sin re-render completo
+  const rows=$('edit-cats-list').querySelectorAll('.ecat-row');
+  if(rows[CUE.sel]){
+    const span=rows[CUE.sel].querySelector('.ecat-name');
+    if(span) span.textContent=$('edit-cat-name').value;
+  }
+}
+
+function cuEditAdd(){
+  const i=CUE.sel>=0?CUE.sel:CUE.cats.length-1;
+  const parentLevel=CUE.cats[i]?CUE.cats[i].level:1;
+  const newCat={origIdx:-1,name:'Nueva categoría',level:Math.min(parentLevel+1,6),id:0,expanded:true,c5:''};
+  CUE.cats.splice(i+1,0,newCat);
+  CUE.sel=i+1;
+  cuRenderEditList();
+  $('edit-cat-name').value=newCat.name;
+  setTimeout(()=>{$('edit-cat-name').focus();$('edit-cat-name').select();},50);
+}
+
+function cuEditDel(){
+  if(CUE.sel<0)return;
+  const delCat=CUE.cats[CUE.sel];
+  // Buscar la categoría padre (la más próxima con nivel inferior)
+  let parentOrigIdx=-1;
+  for(let i=CUE.sel-1;i>=0;i--){
+    if(CUE.cats[i].level<delCat.level&&CUE.cats[i].origIdx>=0){
+      parentOrigIdx=CUE.cats[i].origIdx;break;
+    }
+  }
+  if(!confirm(`Se borrará la categoría y todas las subcategorías que contenga.\nLos movimientos asignados a la categoría borrada quedarán automáticamente asignados a la categoría que las contenía.\n¿Deseas borrar "${delCat.name}"?`))return;
+  // Recoger índices eliminados con su padre para reasignar movimientos al guardar
+  const lv=delCat.level;
+  let end=CUE.sel+1;
+  while(end<CUE.cats.length&&CUE.cats[end].level>lv)end++;
+  for(let j=CUE.sel;j<end;j++){
+    if(CUE.cats[j].origIdx>=0)
+      CUE.deletions.push({origIdx:CUE.cats[j].origIdx,parentOrigIdx});
+  }
+  CUE.cats.splice(CUE.sel,end-CUE.sel);
+  if(CUE.sel>=CUE.cats.length)CUE.sel=CUE.cats.length-1;
+  cuRenderEditList();
+  if(CUE.sel>=0)$('edit-cat-name').value=CUE.cats[CUE.sel].name;
+}
+
+function cuEditLeft(){
+  if(CUE.sel<0||CUE.cats[CUE.sel].level<=1)return;
+  CUE.cats[CUE.sel].level--;
+  cuRenderEditList();
+}
+
+function cuEditRight(){
+  if(CUE.sel<0)return;
+  CUE.cats[CUE.sel].level=Math.min(CUE.cats[CUE.sel].level+1,6);
+  cuRenderEditList();
+}
+
+// ── DRAG & DROP ─────────────────────────────────────────────
+function cuEditDragStart(e,i){
+  CUE.dragIdx=i;
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain',i);
+}
+function cuEditDragOver(e,i){
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  $('edit-cats-list').querySelectorAll('.ecat-row').forEach((r,j)=>{
+    r.classList.toggle('drag-over-top',j===i&&i!==CUE.dragIdx);
+  });
+}
+function cuEditDragLeave(e){
+  if(!$('edit-cats-list').contains(e.relatedTarget))
+    $('edit-cats-list').querySelectorAll('.ecat-row').forEach(r=>r.classList.remove('drag-over-top'));
+}
+function cuEditDrop(e,i){
+  e.preventDefault();
+  $('edit-cats-list').querySelectorAll('.ecat-row').forEach(r=>r.classList.remove('drag-over-top'));
+  const from=CUE.dragIdx;
+  if(from<0||from===i){CUE.dragIdx=-1;return;}
+  // Mover subtree completo (categoría + hijos)
+  const lv=CUE.cats[from].level;
+  let end=from+1;
+  while(end<CUE.cats.length&&CUE.cats[end].level>lv)end++;
+  const subtree=CUE.cats.splice(from,end-from);
+  const to=from<i?i-subtree.length:i;
+  CUE.cats.splice(to,0,...subtree);
+  CUE.sel=to;
+  CUE.dragIdx=-1;
+  cuRenderEditList();
+}
+
+// ── GUARDAR CAMBIOS ─────────────────────────────────────────
+function cuSaveEditCats(){
+  saveUndo('Categorías editadas');
+  // Construir nuevo S.cats desde CUE.cats (mantiene contenido, actualiza orden/nombre/nivel)
+  const newCats=[];
+  const oldToNew=new Map(); // origIdx -> nuevo índice en newCats
+  const pendingOrigIdx=S.cats.findIndex(c=>c.name.toLowerCase().includes('pendiente'));
+
+  CUE.cats.forEach((c,di)=>{
+    const newId=String(di+1);
+    if(c.origIdx>=0){
+      newCats.push({...S.cats[c.origIdx],name:c.name,level:c.level,id:newId});
+      oldToNew.set(c.origIdx,di);
+    } else {
+      newCats.push({id:newId,name:c.name,level:c.level,expanded:true,c5:''});
+    }
+  });
+
+  // Índice nuevo de "Pendiente" para movimientos huérfanos
+  const pendingNewIdx=oldToNew.has(pendingOrigIdx)?oldToNew.get(pendingOrigIdx):1;
+
+  // Actualizar S.movs.ci: presentes → nuevo índice, eliminados → categoría padre
+  for(const m of S.movs){
+    if(m.ci>=0){
+      if(oldToNew.has(m.ci)){
+        m.ci=oldToNew.get(m.ci);
+      } else {
+        // Buscar el padre registrado al borrar
+        const del=CUE.deletions.find(d=>d.origIdx===m.ci);
+        const parentNewIdx=(del&&del.parentOrigIdx>=0&&oldToNew.has(del.parentOrigIdx))
+          ?oldToNew.get(del.parentOrigIdx)
+          :pendingNewIdx;
+        m.ci=parentNewIdx;
+      }
+    }
+  }
+
+  S.cats=newCats;
+  CU.tree=null;CU.sums=null;
+  closeModal();
+  // Actualizar también el desplegable de categorías
+  if(S.selAcc>=0)renderMovs(S.selAcc);
+  cuInit();
+  saveToDropbox();
+  toast('Categorías guardadas ✓');
+}
+
+
 function cuSearch(){toast('Búsqueda en CUADRO — próximamente');}
 function cuExport(){toast('Exportación en CUADRO — próximamente');}
+
+// ── RESIZE COLUMNA CATEGORÍAS ────────────────────────────────
+let _cuResizing=false,_cuResX=0,_cuResW=200;
+function cuColResizeStart(e){
+  _cuResizing=true;_cuResX=e.clientX;
+  _cuResW=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cu-cat-w'))||200;
+  document.body.classList.add('no-sel');e.preventDefault();e.stopPropagation();
+}
+document.addEventListener('mousemove',e=>{
+  if(!_cuResizing)return;
+  const nw=Math.max(100,Math.min(450,_cuResW+(e.clientX-_cuResX)));
+  document.documentElement.style.setProperty('--cu-cat-w',nw+'px');
+});
+document.addEventListener('mouseup',()=>{
+  if(!_cuResizing)return;
+  _cuResizing=false;document.body.classList.remove('no-sel');
+  const w=getComputedStyle(document.documentElement).getPropertyValue('--cu-cat-w');
+  localStorage.setItem('pref_cu_cat_w',w.trim());
+});
 
 (async()=>{
   // ¿Viene de Dropbox con código OAuth?
