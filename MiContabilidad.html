@@ -2150,14 +2150,16 @@ function cuBuildTree(){
   const n=S.cats.length;
   const children=Array.from({length:n},()=>[]);
   const parent=new Array(n).fill(-1);
+  // Ordenar por id (campo 1 del CSV = orden de visualización en Xopard)
+  const sorted=[...Array(n).keys()].sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
   const stack=[];
-  for(let i=0;i<n;i++){
+  for(const i of sorted){
     const lv=S.cats[i].level;
     while(stack.length&&S.cats[stack[stack.length-1]].level>=lv)stack.pop();
     if(stack.length){parent[i]=stack[stack.length-1];children[stack[stack.length-1]].push(i);}
     stack.push(i);
   }
-  return{children,parent};
+  return{children,parent,sorted};
 }
 
 function cuBuildSums(){
@@ -2241,7 +2243,9 @@ function cuRender(){
     rows+='</tr>';
     for(const ch of CU.tree.children[ci])rowHTML(ch);
   }
-  for(let i=0;i<S.cats.length;i++)if(CU.tree.parent[i]===-1)rowHTML(i);
+  // Raíces en orden de id
+  const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
+  for(const i of roots)rowHTML(i);
   tb.innerHTML=rows||'<tr><td colspan="100" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>';
 }
 
