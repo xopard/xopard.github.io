@@ -73,7 +73,9 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 #cu-toolbar .cu-title{flex:1;text-align:center;font-weight:700;font-size:13px;color:#fff;letter-spacing:.5px}
 .cu-btn{background:rgba(0,0,0,.2);border:none;color:#fff;cursor:pointer;padding:3px 8px;border-radius:2px;font-size:13px}
 .cu-btn:hover{background:rgba(255,255,255,.2)}
-#cu-grid-wrap{flex:1;overflow:auto;min-height:0;background:#fff}
+#cu-grid-wrap{flex:1;overflow:auto;min-height:0;background:#fff;position:relative}
+#cu-col-handle{position:absolute;top:0;width:5px;height:100%;cursor:col-resize;z-index:20;background:transparent}
+#cu-col-handle:hover{background:rgba(109,24,49,.12)}
 #cu-table{border-collapse:collapse;white-space:nowrap;font-size:12px;min-width:100%}
 #cu-table td,#cu-table th{padding:2px 7px;border-right:1px solid #E8E8E8;border-bottom:1px solid #E8E8E8}
 :root{--cu-cat-w:200px}
@@ -1365,7 +1367,20 @@ function overlayClick(e) {
   // Solo cerrar si el mousedown Y el mouseup ocurrieron en el overlay (no arrastre)
   if (e.target === $('overlay') && _overlayMouseDownTarget === $('overlay')) closeModal();
 }
-function fillCatSel(id,sel){const s=$(id);s.innerHTML='';S.cats.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent='\u3000'.repeat(Math.max(0,c.level-2))+c.name;if(i===sel)o.selected=true;s.appendChild(o);});}
+function fillCatSel(id,sel){
+  const s=$(id);s.innerHTML='';
+  // Mismo orden que el CUADRO: ordenar por id (campo 1 del CSV)
+  const sorted=[...Array(S.cats.length).keys()]
+    .sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
+  sorted.forEach(i=>{
+    const c=S.cats[i];
+    const o=document.createElement('option');
+    o.value=i;
+    o.textContent='\u3000'.repeat(Math.max(0,c.level-2))+c.name;
+    if(i===sel)o.selected=true;
+    s.appendChild(o);
+  });
+}
 function fillAccSel(id,sel){const s=$(id);s.innerHTML='';S.accs.forEach((a,i)=>{const o=document.createElement('option');o.value=i;o.textContent=a.name;if(i===sel)o.selected=true;s.appendChild(o);});}
 // ── AUTOCOMPLETADO DE CONCEPTOS ─────────────────────────────
 function buildConceptsList() {
@@ -2254,7 +2269,7 @@ function cuRender(){
   if(!th||!tb)return;
   const cols=cuCols();
   // Cabecera
-  let h=`<tr><th class="cu-cat" style="text-align:left;font-size:11px;position:relative">CATEGORÍAS<span class="cu-col-resize" onmousedown="cuColResizeStart(event)" title="Arrastra para cambiar ancho"></span></th>`;
+  let h=`<tr><th class="cu-cat" style="text-align:left;font-size:11px">CATEGORÍAS</th>`;
   for(const c of cols){
     const sC=(c.type==='M'&&CU.selPeriod===c.p&&!CU.selIsYear)||(c.type==='Y'&&CU.selPeriod===c.y&&CU.selIsYear);
     if(c.type==='M')h+=`<th class="cu-mc${sC?' cu-sel-col':''}">${c.label}</th>`;
@@ -2287,6 +2302,7 @@ function cuRender(){
   const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
   for(const i of roots)rowHTML(i);
   tb.innerHTML=rows||'<tr><td colspan="100" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>';
+  setTimeout(cuUpdateColHandle,0); // posicionar handle tras render
 }
 
 function cuToggleYear(y){
@@ -2585,21 +2601,38 @@ function cuExport(){toast('Exportación en CUADRO — próximamente');}
 
 // ── RESIZE COLUMNA CATEGORÍAS ────────────────────────────────
 let _cuResizing=false,_cuResX=0,_cuResW=200;
+
+function cuGetCatW(){return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cu-cat-w'))||200;}
+
+function cuUpdateColHandle(){
+  const gw=$('cu-grid-wrap');if(!gw)return;
+  let h=$('cu-col-handle');
+  if(!h){
+    h=document.createElement('div');h.id='cu-col-handle';
+    h.title='Arrastra para cambiar ancho de categorías';
+    h.addEventListener('mousedown',cuColResizeStart);
+    gw.appendChild(h);
+    gw.addEventListener('scroll',cuUpdateColHandle);
+  }
+  h.style.left=(cuGetCatW()+(gw.scrollLeft||0))+'px';
+  h.style.height=(gw.scrollHeight||gw.clientHeight)+'px';
+}
+
 function cuColResizeStart(e){
-  _cuResizing=true;_cuResX=e.clientX;
-  _cuResW=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cu-cat-w'))||200;
+  _cuResizing=true;_cuResX=e.clientX;_cuResW=cuGetCatW();
   document.body.classList.add('no-sel');e.preventDefault();e.stopPropagation();
 }
+
 document.addEventListener('mousemove',e=>{
   if(!_cuResizing)return;
   const nw=Math.max(100,Math.min(450,_cuResW+(e.clientX-_cuResX)));
   document.documentElement.style.setProperty('--cu-cat-w',nw+'px');
+  cuUpdateColHandle();
 });
 document.addEventListener('mouseup',()=>{
   if(!_cuResizing)return;
   _cuResizing=false;document.body.classList.remove('no-sel');
-  const w=getComputedStyle(document.documentElement).getPropertyValue('--cu-cat-w');
-  localStorage.setItem('pref_cu_cat_w',w.trim());
+  localStorage.setItem('pref_cu_cat_w',cuGetCatW()+'px');
 });
 
 (async()=>{
