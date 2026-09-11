@@ -315,8 +315,48 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
   </div>
   <div id="tab-cuadro">
-    <div style="font-size:48px;opacity:.15">⊞</div>
-    <div>Pestaña CUADRO — próximamente</div>
+    <div id="cu-toolbar">
+      <div style="display:flex;gap:4px">
+        <button class="cu-btn" title="Editar categorías" onclick="toast('Próximamente')">✏️</button>
+        <button class="cu-btn" title="Ayuda">?</button>
+      </div>
+      <div class="cu-title">CUADRO</div>
+      <div style="display:flex;gap:4px">
+        <button class="cu-btn" title="Buscar" onclick="cuSearch()">🔍</button>
+        <button class="cu-btn" title="Exportar CSV" onclick="cuExport()">🖨️</button>
+        <button class="cu-btn" title="Ayuda">?</button>
+      </div>
+    </div>
+    <div id="cu-grid-wrap">
+      <table id="cu-table">
+        <thead id="cu-thead"></thead>
+        <tbody id="cu-tbody"></tbody>
+      </table>
+    </div>
+    <div class="divider-h" id="cu-hdivider" title="Arrastra para redimensionar"></div>
+    <div id="cu-bottom">
+      <div id="cu-movs-panel">
+        <div class="cu-ph">
+          <span id="cu-movs-title">Selecciona una celda</span>
+          <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento">🗑</button>
+          <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento">÷</button>
+          <button class="rbtn off" title="Exportar">🖨️</button>
+          <button class="rbtn" title="Ayuda">?</button>
+        </div>
+        <div id="cu-movs-list"></div>
+      </div>
+      <div class="divider-v" id="cu-vdivider" title="Arrastra para redimensionar"></div>
+      <div id="cu-chart-panel">
+        <div class="cu-ph">
+          <span id="cu-chart-title">Gráfico</span>
+          <div>
+            <button class="rbtn" onclick="cuChartNav(-1)">←</button>
+            <button class="rbtn" onclick="cuChartNav(+1)">→</button>
+          </div>
+        </div>
+        <div id="cu-chart-area"></div>
+      </div>
+    </div>
   </div>
 </div>
 
