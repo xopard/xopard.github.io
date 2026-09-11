@@ -787,7 +787,7 @@ function moveAccUp() {
   saveUndo('Cuenta subida: ' + S.accs[S.selAcc].name);
   [S.displayOrder[diPrev], S.displayOrder[di]] = [S.displayOrder[di], S.displayOrder[diPrev]];
   renderAccs();
-  saveToDropbox();
+  deferredSave();
 }
 
 function moveAccDown() {
@@ -798,7 +798,7 @@ function moveAccDown() {
   saveUndo('Cuenta bajada: ' + S.accs[S.selAcc].name);
   [S.displayOrder[di], S.displayOrder[diNext]] = [S.displayOrder[diNext], S.displayOrder[di]];
   renderAccs();
-  saveToDropbox();
+  deferredSave();
 }
 
 function updateMoveButtons() {
@@ -1008,10 +1008,9 @@ function renderMovs(ai){
 }
 
 function toggleShaded(oi) {
-  saveUndo(S.movs[oi].shaded==='t' ? 'Tick eliminado' : 'Tick añadido');
   S.movs[oi] = {...S.movs[oi], shaded: S.movs[oi].shaded==='t' ? '' : 't'};
   renderMovs(S.selAcc);
-  saveToDropbox();
+  deferredSave();
 }
 
 function selMov(oi){S.selMov=oi;document.querySelectorAll('.mrow').forEach(r=>r.classList.toggle('sel',parseInt(r.dataset.oi)===oi));}
@@ -1911,7 +1910,17 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.c
 document.addEventListener('click',e=>{if(!$('dropmenu').contains(e.target)&&e.target!==$('hambtn'))closeMenu();});
 window.addEventListener('resize',()=>{if(S.selAcc>=0)renderChart(S.selAcc);});
 
-// ── DIVISORES ARRASTRABLES ───────────────────────────────────
+// ── GUARDADO DIFERIDO (para cambios rápidos) ─────────────────
+// Espera 2,5 s tras el último cambio antes de subir a Dropbox.
+// Si llega otro cambio antes, reinicia el temporizador.
+let _saveTimer = null;
+function deferredSave() {
+  setStatus('Pendiente de guardar…');
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => saveToDropbox(), 2500);
+}
+
+
 (function(){
   let drag=null, x0, y0, w0, h0;
 
