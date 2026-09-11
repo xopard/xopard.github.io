@@ -264,6 +264,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
             <button class="rbtn yr-btn" data-y="3"  onclick="setChartYears(3)">3A</button>
             <button class="rbtn yr-btn" data-y="5"  onclick="setChartYears(5)">5A</button>
             <button class="rbtn yr-btn" data-y="10" onclick="setChartYears(10)">10A</button>
+            <button class="rbtn yr-btn" data-y="0"  onclick="setChartYears(0)">Todo</button>
             <span style="color:rgba(255,255,255,.25);margin:0 3px">│</span>
             <button class="rbtn" onclick="chartNav(-1)">←</button>
             <button class="rbtn" onclick="chartNav(+1)">→</button>
@@ -1077,8 +1078,7 @@ function _updateYearButtons() {
 }
 
 function chartNav(dir){
-  // ← va al pasado (negativo), → va al presente (hacia 0)
-  // Sin límite inferior para poder llegar al inicio del histórico
+  if(S.chartYears===0)return;
   S.chartOff = Math.min(0, S.chartOff + dir * Math.max(1, S.chartYears));
   renderCurrentChart();
 }
@@ -1090,26 +1090,42 @@ function _renderChartFromDaily(daily){
   function dpn(d){const[dd,mm,yy]=d.split("-");const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);return yyyy*100+parseInt(mm);}
   function addM(p,delta){let y=Math.floor(p/100),m=p%100+delta;while(m>12){m-=12;y++;}while(m<1){m+=12;y--;}return y*100+m;}
 
-  // Ventana basada en meses calendario reales, no en índices de puntos
+  // Periodo actual (hoy) y primer/último periodo con datos
+  const todayD=new Date(), todayP=todayD.getFullYear()*100+(todayD.getMonth()+1);
   const allP=[...new Set(sortedDates.map(dpn))].sort((a,b)=>a-b);
-  const months=S.chartYears*12;
-  const latestP=allP[allP.length-1];
-  const endP=addM(latestP, S.chartOff);
-  const startP=addM(endP, -months);
+  const firstDataP=allP[0];
 
-  let wd=sortedDates.filter(d=>{const p=dpn(d);return p>=startP&&p<=endP;});
+  // Calcular ventana calendario
+  let startP, endP;
+  if(S.chartYears===0){
+    // Modo "Todo": desde el primer movimiento hasta hoy
+    startP=firstDataP; endP=todayP;
+  } else {
+    const months=S.chartYears*12;
+    endP=addM(todayP, S.chartOff);   // siempre referenciado a hoy
+    startP=addM(endP, -months);
+  }
 
-  // Si la ventana cae después de todos los datos: línea plana al último saldo
-  if(wd.length===0 && dpn(sortedDates[sortedDates.length-1])<startP) {
-    const lastBal=daily.get(sortedDates[sortedDates.length-1]);
-    const fmt2=(n)=>String(n).padStart(2,'0');
-    const syn1=`01-${fmt2(startP%100)}-${String(Math.floor(startP/100)).slice(-2)}`;
-    const syn2=`28-${fmt2(endP%100)}-${String(Math.floor(endP/100)).slice(-2)}`;
-    daily.set(syn1,lastBal);daily.set(syn2,lastBal);
-    wd=[syn1,syn2];
+  // Mapa de ultimo saldo por periodo (O(n))
+  const monthBal=new Map();
+  for(const d of sortedDates) monthBal.set(dpn(d), daily.get(d));
+
+  // Cuadrícula mensual: un punto por mes, rellena gaps con último saldo conocido
+  let lastBal=0;
+  const beforeGrid=sortedDates.filter(d=>dpn(d)<startP);
+  if(beforeGrid.length>0) lastBal=daily.get(beforeGrid[beforeGrid.length-1]);
+
+  const wd=[], vals=[];
+  let p=startP;
+  while(p<=endP){
+    if(monthBal.has(p)) lastBal=monthBal.get(p);
+    const yy=String(Math.floor(p/100)).slice(-2);
+    const mm=String(p%100).padStart(2,'0');
+    wd.push(`15-${mm}-${yy}`);
+    vals.push(lastBal);
+    p=addM(p,1);
   }
   if(wd.length<2)return;
-  const vals=wd.map(d=>daily.get(d));
   const W=box.clientWidth||640,H=box.clientHeight||150;
   const P={t:8,r:16,b:26,l:80},cW=W-P.l-P.r,cH=H-P.t-P.b;
   const minV=Math.min(...vals),maxV=Math.max(...vals),span=maxV-minV||1;
@@ -1187,8 +1203,8 @@ function _renderChartFromDaily(daily){
     const cx=xPos[idx],cy=yp(vals[idx]);
     // Formatear fecha "DD-MM-YY" → "Mes DD, YYYY"
     const [dd,mm,yy]=wd[idx].split('-');
-    const yyyy=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);
-    const dateStr=MESES_L[parseInt(mm)-1]+' '+parseInt(dd)+', '+yyyy;
+    const yyyy2=parseInt(yy)<50?2000+parseInt(yy):1900+parseInt(yy);
+    const dateStr=MESES_L[parseInt(mm)-1]+' '+yyyy2;
     const valStr=fmtAmt(vals[idx]);
     // Dimensionar el rectángulo
     const pad=6,tw=Math.max(dateStr.length,valStr.length)*6.2+pad*2;
