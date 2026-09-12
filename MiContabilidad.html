@@ -383,7 +383,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <h3 id="mdl-mov-ttl">Añadir Movimiento</h3>
     <div class="fr"><label>Cuenta</label><select id="fm-cuenta"></select></div>
     <div class="fi">
-      <div class="fr" style="flex:0 0 110px"><label>Fecha</label><input id="fm-fecha" placeholder="DD-MM-AA" maxlength="8"></div>
+      <div class="fr" style="flex:0 0 120px"><label>Fecha</label><div style="display:flex;gap:3px"><input id="fm-fecha" placeholder="DD-MM-AA" maxlength="8" style="flex:1;min-width:0"><button type="button" onclick="showDatePicker('fm-fecha')" style="padding:0 5px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:12px" title="Seleccionar fecha">📅</button></div></div>
       <div class="fr"><label>Texto / Concepto</label><input id="fm-texto" list="concepts-list"></div>
     </div>
     <div class="fi">
@@ -396,7 +396,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
     <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
       <label style="white-space:nowrap;font-size:13px">Importe</label>
-      <input id="fm-imp" style="width:140px;text-align:right" placeholder="0,00">
+      <div style="display:flex;flex-direction:column"><input id="fm-imp" style="width:140px;text-align:right" placeholder="0,00 o 100+50-25" oninput="prevAmt(this,'fm-imp-p')" onblur="evalAmt(this);prevAmt(this,'fm-imp-p')"><span id="fm-imp-p" style="font-size:11px;color:#1A6EBD;text-align:right;height:14px;display:block"></span></div>
     </div>
     <div class="mbtns">
       <button class="bok" onclick="saveMov()">Ok</button>
@@ -487,7 +487,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <h3>Dividir Movimiento</h3>
     <div class="fr"><label>Cuenta</label><select id="dv-cuenta" disabled></select></div>
     <div class="fi">
-      <div class="fr" style="flex:0 0 110px"><label>Fecha</label><input id="dv-fecha" disabled></div>
+      <div class="fr" style="flex:0 0 120px"><label>Fecha</label><div style="display:flex;gap:3px"><input id="dv-fecha" disabled style="flex:1;min-width:0"></div></div>
       <div class="fr"><label>Texto</label><input id="dv-texto" list="concepts-list"></div>
     </div>
     <div class="fi">
@@ -500,7 +500,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
     <div class="fi" style="align-items:center;gap:12px;margin-top:4px">
       <label style="white-space:nowrap;font-size:13px">Importe</label>
-      <input id="dv-imp" style="width:140px;text-align:right" placeholder="0,00">
+      <div style="display:flex;flex-direction:column"><input id="dv-imp" style="width:140px;text-align:right" placeholder="0,00 o 100+50" oninput="prevAmt(this,'dv-imp-p')" onblur="evalAmt(this);prevAmt(this,'dv-imp-p')"><span id="dv-imp-p" style="font-size:11px;color:#1A6EBD;text-align:right;height:14px;display:block"></span></div>
       <span id="dv-resto" style="font-size:11px;color:#888"></span>
     </div>
     <div class="mbtns">
@@ -834,7 +834,62 @@ function logoHtml(bank) {
   }
   return `<div class="acc-logo">${initials(bank)}</div>`;
 }
-// ── DESHACER / REHACER (5 niveles) ─────────────────────────
+// ── SELECTOR DE FECHA ────────────────────────────────────────
+function showDatePicker(targetId) {
+  const target=$(targetId);
+  const cal=document.createElement('input');
+  cal.type='date';
+  cal.style.cssText='position:fixed;opacity:0;width:0;height:0;top:0;left:0;pointer-events:none';
+  // Convertir valor actual "DD-MM-YY" → "YYYY-MM-DD"
+  const txt=target.value;
+  if(txt&&txt.length>=8){
+    const[dd,mm,yy]=txt.split('-');
+    const yyyy=parseInt(yy)<50?'20'+yy:'19'+yy;
+    cal.value=`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+  }
+  cal.addEventListener('change',()=>{
+    if(cal.value){
+      const[yyyy,mm,dd]=cal.value.split('-');
+      target.value=`${dd}-${mm}-${yyyy.slice(-2)}`;
+      // Actualizar periodo automáticamente si es fm-fecha
+      if(targetId==='fm-fecha'){
+        const per=$('fm-mes');
+        if(per&&per.value===todayPeriod()||per.value==='') per.value=`${mm}-${yyyy.slice(-2)}`;
+      }
+    }
+    document.body.removeChild(cal);
+  });
+  document.body.appendChild(cal);
+  try{if(cal.showPicker)cal.showPicker();else cal.click();}
+  catch(e){cal.click();}
+}
+
+// ── CALCULADORA EN CAMPO IMPORTE ─────────────────────────────
+function evalAmt(input){
+  const raw=input.value.trim().replace(/€/g,'').replace(/\s/g,'');
+  if(!raw||!/[+\-*/]/.test(raw))return;
+  const expr=raw.replace(/,/g,'.');
+  if(!/^[0-9+\-*/().]+$/.test(expr))return;
+  try{
+    const r=Function('"use strict";return('+expr+')')();
+    if(!isNaN(r)&&isFinite(r)) input.value=fmtAmt(Math.round(r*100)/100);
+  }catch(e){}
+}
+
+function prevAmt(input,previewId){
+  const prev=$(previewId);if(!prev)return;
+  const raw=input.value.trim().replace(/€/g,'').replace(/\s/g,'');
+  if(!raw||!/[+\-*/]/.test(raw)){prev.textContent='';return;}
+  const expr=raw.replace(/,/g,'.');
+  if(!/^[0-9+\-*/().]+$/.test(expr)){prev.textContent='';return;}
+  try{
+    const r=Function('"use strict";return('+expr+')')();
+    if(!isNaN(r)&&isFinite(r)) prev.textContent='= '+fmtAmt(Math.round(r*100)/100)+' €';
+    else prev.textContent='';
+  }catch(e){prev.textContent='';}
+}
+
+
 const UNDO = { stack: [], redo: [], max: 5 };
 
 function saveUndo(desc) {
@@ -1423,7 +1478,19 @@ function fillCatSel(id,sel){
     s.appendChild(o);
   });
 }
-function fillAccSel(id,sel){const s=$(id);s.innerHTML='';S.accs.forEach((a,i)=>{const o=document.createElement('option');o.value=i;o.textContent=a.name;if(i===sel)o.selected=true;s.appendChild(o);});}
+function fillAccSel(id,sel){
+  const s=$(id);s.innerHTML='';
+  const TIPO_ORDER=['1','2','3','4'];
+  for(const tipo of TIPO_ORDER){
+    for(const i of (S.displayOrder||[])){
+      if(!S.accs[i]||S.accs[i].type!==tipo)continue;
+      const o=document.createElement('option');
+      o.value=i;o.textContent=S.accs[i].name;
+      if(i===sel)o.selected=true;
+      s.appendChild(o);
+    }
+  }
+}
 // ── AUTOCOMPLETADO DE CONCEPTOS ─────────────────────────────
 function buildConceptsList() {
   const dl = $('concepts-list');
