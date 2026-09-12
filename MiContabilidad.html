@@ -837,9 +837,12 @@ function logoHtml(bank) {
 // ── SELECTOR DE FECHA ────────────────────────────────────────
 function showDatePicker(targetId) {
   const target=$(targetId);
+  const rect=target.getBoundingClientRect();
   const cal=document.createElement('input');
   cal.type='date';
-  cal.style.cssText='position:fixed;opacity:0;width:0;height:0;top:0;left:0;pointer-events:none';
+  // Posicionar junto al campo de fecha para que el picker aparezca cerca
+  cal.style.cssText=`position:fixed;opacity:0;width:${rect.width}px;height:${rect.height}px;`+
+    `left:${rect.left}px;top:${rect.top}px;pointer-events:none;z-index:9999`;
   // Convertir valor actual "DD-MM-YY" → "YYYY-MM-DD"
   const txt=target.value;
   if(txt&&txt.length>=8){
