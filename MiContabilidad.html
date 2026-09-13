@@ -580,6 +580,22 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
   </div>
 
+  <!-- MODAL: Búsqueda CUADRO -->
+  <div id="mdl-cu-search" class="modal" style="display:none;max-width:400px">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <h3>Buscar en movimientos</h3>
+    <div class="fr">
+      <label>Texto a buscar</label>
+      <input id="cu-search-q" style="font-size:13px" placeholder="Concepto, cuenta…"
+        oninput="cuSearchPreview()" onkeydown="if(e?.key==='Enter'||event?.key==='Enter')cuConfirmSearch()">
+    </div>
+    <div id="cu-search-prev" style="font-size:11px;color:#777;margin-top:-8px;margin-bottom:4px;height:14px"></div>
+    <div class="mbtns">
+      <button class="bok" onclick="cuConfirmSearch()">Ok</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+
   <!-- MODAL: Confirmación simple -->
   <div id="mdl-info" class="modal" style="display:none;max-width:360px;text-align:center">
     <p id="mdl-info-msg" style="font-size:15px;margin:10px 0 20px"></p>
@@ -1535,7 +1551,7 @@ function _renderChartFromDaily(daily){
 // ── MODALS ───────────────────────────────────────────────────
 function showModal(id){
   $('overlay').classList.add('show');
-  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats'].forEach(m=>$(m).style.display='none');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search'].forEach(m=>$(m).style.display='none');
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
@@ -2924,7 +2940,73 @@ function cuToggleCat(ci){
   cuRender();
 }
 
-function cuSearch(){toast('Búsqueda en CUADRO — próximamente');}
+function cuSearch(){
+  $('cu-search-q').value='';
+  $('cu-search-prev').textContent='';
+  showModal('mdl-cu-search');
+  setTimeout(()=>$('cu-search-q').focus(),50);
+}
+
+function cuSearchPreview(){
+  const q=($('cu-search-q').value||'').trim();
+  if(!q){$('cu-search-prev').textContent='';return;}
+  const norm=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const n=S.movs.filter(m=>{
+    const t=(m.concept||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    return t.includes(norm);
+  }).length;
+  $('cu-search-prev').textContent=`${n} movimiento${n!==1?'s':''} encontrado${n!==1?'s':''}`;
+}
+
+function cuConfirmSearch(){
+  const q=($('cu-search-q').value||'').trim();
+  closeModal();
+  if(!q)return;
+  cuRenderSearch(q);
+}
+
+function cuRenderSearch(q){
+  const list=$('cu-movs-list');if(!list)return;
+  const norm=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const results=S.movs.map((m,i)=>({...m,oi:i}))
+    .filter(m=>{
+      const t=(m.concept||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      return t.includes(norm);
+    })
+    .sort((a,b)=>dateSort(a.date)<dateSort(b.date)?-1:1);
+
+  $('cu-movs-title').textContent=`Búsqueda de "${q}" — ${results.length} resultado${results.length!==1?'s':''}`;
+  ['cu-del-btn','cu-div-btn'].forEach(id=>{const b=$(id);if(b)b.classList.add('off');});
+
+  if(!results.length){
+    list.innerHTML='<div style="padding:12px;color:#999;text-align:center;font-size:12px">Sin resultados para "'+q+'"</div>';
+    return;
+  }
+
+  // Escapar el término para usarlo en regex de resaltado
+  const esc=q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const hiRe=new RegExp(`(${esc})`,'gi');
+
+  let html='';
+  for(const m of results){
+    const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
+    const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
+    const neg=m.amount<0;
+    const isSel=m.oi===CU.selMovOi;
+    // Resaltar término en el concepto
+    const conc=(m.concept||'—').replace(hiRe,'<mark style="background:#FFE57F;padding:0;border-radius:2px">$1</mark>');
+    html+=`<div class="cu-mr${isSel?' sel':''}" onclick="cuSelMov(${m.oi})" ondblclick="cuEditMovFromCuadro(${m.oi})">
+      <div class="cu-mr-main">
+        <span class="cu-mr-date">${m.date}</span>
+        <span class="cu-mr-conc">${conc}</span>
+        <span class="cu-mr-amt${neg?' neg':''}">${fmtAmt(m.amount)}</span>
+      </div>
+      <div class="cu-mr-sub">${m.period}&nbsp;&nbsp;${acc}&nbsp;&nbsp;<span style="color:#AAA;font-style:italic">${cat}</span></div>
+    </div>`;
+  }
+  list.innerHTML=html;
+}
+
 function cuExport(){toast('Exportación en CUADRO — próximamente');}
 
 // ── RESIZE COLUMNA CATEGORÍAS ────────────────────────────────
