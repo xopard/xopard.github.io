@@ -589,8 +589,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <input id="cu-search-q" placeholder="Texto en el concepto…" oninput="cuSearchLive()">
     </div>
     <div class="fr">
-      <label>Importe <span style="font-size:10px;color:#999">— valor exacto, ej: 55,10</span></label>
-      <input id="cu-search-amt" placeholder="0,00" oninput="cuSearchLive()" style="width:140px;text-align:right">
+      <label>Importe <span style="font-size:10px;color:#999">— 648 (empieza por) · *648 (contiene en cualquier parte)</span></label>
+      <input id="cu-search-amt" placeholder="648 o *648" oninput="cuSearchLive()" style="width:130px;text-align:right">
     </div>
     <div id="cu-search-prev" style="font-size:11px;color:#555;height:15px;margin-top:-4px"></div>
     <div class="mbtns">
@@ -2984,10 +2984,15 @@ function matchesConcept(concept,q){
 }
 
 function matchesAmt(amount,qAmt){
-  if(!qAmt||!qAmt.trim())return true; // sin filtro importe = todo pasa
-  const target=parseFloat(qAmt.trim().replace(/\./g,'').replace(',','.'));
-  if(isNaN(target))return true;
-  return Math.abs(Math.abs(amount)-target)<0.005;
+  if(!qAmt||!qAmt.trim())return true;
+  const q=qAmt.trim();
+  const fmt=fmtAmt(Math.abs(amount));
+  if(q.startsWith('*')){
+    // *648 o *1,1 → contiene en cualquier parte del importe formateado
+    return fmt.includes(q.slice(1));
+  }
+  // 648 o 1,1 → el importe formateado empieza por estos dígitos
+  return fmt.startsWith(q);
 }
 
 function highlightWords(concept,words){
