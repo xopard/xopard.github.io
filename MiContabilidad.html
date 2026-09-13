@@ -299,6 +299,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <span id="acc-title">—</span>
         <span id="sel-count" style="display:none;font-size:11px;opacity:.85;white-space:nowrap"></span>
         <button class="rbtn off" id="btn-selall" onclick="selectAllMovs()" title="Seleccionar todos">☑</button>
+        <button class="rbtn" onclick="toggleFltBar()" id="btn-flt" title="Filtrar movimientos">🔍</button>
         <button class="rbtn" onclick="showPasteModal()" title="Pegar movimientos del banco">📋</button>
         <button class="rbtn" onclick="showAddMov()">＋</button>
         <button class="rbtn" onclick="delMov()">🗑</button>
@@ -306,6 +307,41 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="rbtn" onclick="showTransferModal()" title="Traspasar movimiento a otra cuenta">⇄</button>
         <button class="rbtn off">🖨</button>
         <button class="rbtn">?</button>
+      </div>
+      <!-- Barra de filtros -->
+      <div id="flt-bar" style="display:none;background:#EEF3F8;padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+          <input id="flt-desde" placeholder="Desde DD-MM-AA" maxlength="8"
+            style="width:95px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()">
+          <input id="flt-hasta" placeholder="Hasta DD-MM-AA" maxlength="8"
+            style="width:95px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()">
+          <input id="flt-conc" placeholder="Concepto…"
+            style="flex:1;min-width:80px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()">
+          <select id="flt-cat" style="font-size:11px;padding:3px;border:1px solid #CCC;border-radius:3px;max-width:150px" onchange="applyFlt()">
+            <option value="-1">Todas las categorías</option>
+          </select>
+          <button onclick="clearFlt()" style="background:#888;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px">✕</button>
+          <span id="flt-count" style="font-size:11px;color:#555;white-space:nowrap"></span>
+        </div>
+      </div>
+      <!-- Barra de edición masiva -->
+      <div id="bulk-bar" style="display:none;background:#FFF8E1;padding:5px 8px;border-bottom:1px solid #E0C060;flex-shrink:0">
+        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;font-size:11px">
+          <span id="bulk-info" style="font-weight:700;color:#7A5800"></span>
+          <span style="color:#7A5800">→ cambiar:</span>
+          <select id="bulk-cat" style="font-size:11px;padding:2px;border:1px solid #CCC;border-radius:3px;max-width:160px">
+            <option value="">— Categoría —</option>
+          </select>
+          <select id="bulk-acc" style="font-size:11px;padding:2px;border:1px solid #CCC;border-radius:3px;max-width:160px">
+            <option value="">— Cuenta —</option>
+          </select>
+          <input id="bulk-per" placeholder="MM-AA" maxlength="5"
+            style="width:70px;font-size:11px;padding:2px 5px;border:1px solid #CCC;border-radius:3px">
+          <button onclick="applyBulkEdit()"
+            style="background:var(--wine);color:#fff;border:none;padding:3px 12px;border-radius:3px;cursor:pointer;font-size:11px;font-weight:600">
+            Aplicar a seleccionados
+          </button>
+        </div>
       </div>
       <div id="movarea"><div class="empty-msg">Selecciona una cuenta</div></div>
       <div class="divider-h" id="divider-h" title="Arrastra para redimensionar"></div>
@@ -893,6 +929,90 @@ function prevAmt(input,previewId){
 }
 
 
+// ── FILTROS Y EDICIÓN MASIVA ────────────────────────────────
+const FLT = { desde:'', hasta:'', conc:'', cat:-1, active:false };
+
+function toggleFltBar() {
+  const bar=$('flt-bar');if(!bar)return;
+  const show=bar.style.display==='none';
+  bar.style.display=show?'block':'none';
+  if(show&&S.selAcc>=0){
+    const sel=$('flt-cat');sel.innerHTML='<option value="-1">Todas las categorías</option>';
+    const sorted=[...Array(S.cats.length).keys()].sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
+    sorted.forEach(i=>{const o=document.createElement('option');o.value=i;o.textContent=S.cats[i].name;sel.appendChild(o);});
+    setTimeout(()=>$('flt-conc')?.focus(),50);
+  }
+}
+
+function applyFlt() {
+  FLT.desde=($('flt-desde')?.value||'').trim();
+  FLT.hasta=($('flt-hasta')?.value||'').trim();
+  FLT.conc =($('flt-conc')?.value||'').trim();
+  FLT.cat  =parseInt($('flt-cat')?.value??'-1');
+  FLT.active=!!(FLT.desde||FLT.hasta||FLT.conc||FLT.cat>=0);
+  S.selMovs.clear();S.lastMovClick=-1;
+  if(S.selAcc>=0)renderMovs(S.selAcc);
+}
+
+function clearFlt() {
+  FLT.desde='';FLT.hasta='';FLT.conc='';FLT.cat=-1;FLT.active=false;
+  ['flt-desde','flt-hasta','flt-conc'].forEach(id=>{const el=$(id);if(el)el.value='';});
+  const fc=$('flt-cat');if(fc)fc.value='-1';
+  S.selMovs.clear();S.lastMovClick=-1;
+  if(S.selAcc>=0)renderMovs(S.selAcc);
+}
+
+function filteredAccMovs(ai) {
+  let movs=accMovs(ai);
+  if(!FLT.active)return movs;
+  if(FLT.desde){const ds=dateSort(FLT.desde);movs=movs.filter(m=>dateSort(m.date)>=ds);}
+  if(FLT.hasta){const dh=dateSort(FLT.hasta);movs=movs.filter(m=>dateSort(m.date)<=dh);}
+  if(FLT.conc){
+    const q=FLT.conc.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    movs=movs.filter(m=>{const t=(m.concept||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');return t.includes(q);});
+  }
+  if(FLT.cat>=0)movs=movs.filter(m=>m.ci===FLT.cat);
+  return movs;
+}
+
+function applyBulkEdit() {
+  const n=S.selMovs.size;
+  if(!n){toast('Selecciona primero movimientos');return;}
+  const newCat=$('bulk-cat').value;
+  const newAcc=$('bulk-acc').value;
+  const newPer=($('bulk-per')?.value||'').trim();
+  if(!newCat&&!newAcc&&!newPer){toast('Elige al menos un campo a cambiar');return;}
+  saveUndo(`Edición masiva de ${n} movimiento${n!==1?'s':''}`);
+  for(const oi of S.selMovs){
+    if(newCat!=='')S.movs[oi]={...S.movs[oi],ci:parseInt(newCat)};
+    if(newAcc!=='')S.movs[oi]={...S.movs[oi],ai:parseInt(newAcc)};
+    if(newPer)S.movs[oi]={...S.movs[oi],period:newPer};
+  }
+  const count=n;
+  S.selMovs.clear();S.lastMovClick=-1;
+  renderAll();saveToDropbox();
+  toast(`${count} movimiento${count!==1?'s':''} actualizados ✓`);
+}
+
+function updateBulkBar() {
+  const n=S.selMovs.size;
+  const bb=$('bulk-bar');if(!bb)return;
+  if(n>1){
+    bb.style.display='block';
+    $('bulk-info').textContent=`${n} seleccionados`;
+    const bc=$('bulk-cat');bc.innerHTML='<option value="">— Categoría —</option>';
+    const sorted=[...Array(S.cats.length).keys()].sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
+    sorted.forEach(i=>{const o=document.createElement('option');o.value=i;o.textContent=S.cats[i].name;bc.appendChild(o);});
+    const ba=$('bulk-acc');ba.innerHTML='<option value="">— Cuenta —</option>';
+    for(const t of['1','2','3','4'])for(const i of S.displayOrder){
+      if(!S.accs[i]||S.accs[i].type!==t)continue;
+      const o=document.createElement('option');o.value=i;o.textContent=S.accs[i].name;ba.appendChild(o);
+    }
+  } else {
+    bb.style.display='none';
+  }
+}
+
 const UNDO = { stack: [], redo: [], max: 5 };
 
 function saveUndo(desc) {
@@ -1004,6 +1124,7 @@ function updateMoveButtons() {
 }
 
 function updateSelCount() {
+  updateBulkBar();
   const n = S.selMovs.size;
   const sc = $('sel-count'), sb = $('btn-selall');
   if (!sc) return;
@@ -1043,7 +1164,7 @@ function clickMov(oi, shiftKey) {
 
 function selectAllMovs() {
   if (S.selAcc < 0) return;
-  accMovs(S.selAcc).forEach(m => S.selMovs.add(m.oi));
+  filteredAccMovs(S.selAcc).forEach(m => S.selMovs.add(m.oi));
   document.querySelectorAll('.mrow').forEach(r => {
     const cb = r.querySelector('input[type=checkbox]');
     if (cb) cb.checked = true;
@@ -1164,8 +1285,13 @@ function selAcc(idx){
 function accMovs(ai){return S.movs.map((m,i)=>({...m,oi:i})).filter(m=>m.ai===ai).sort((a,b)=>{const da=dateSort(a.date),db=dateSort(b.date);return da<db?-1:da>db?1:a.oi-b.oi;});}
 
 function renderMovs(ai){
-  const el=$('movarea'),list=accMovs(ai);
-  if(!list.length){el.innerHTML='<div class="empty-msg">Sin movimientos</div>';updateSelCount();return;}
+  const el=$('movarea');
+  const all=accMovs(ai);
+  const list=filteredAccMovs(ai);
+  const fc=$('flt-count');
+  if(!all.length){el.innerHTML='<div class="empty-msg">Sin movimientos</div>';if(fc)fc.textContent='';updateSelCount();return;}
+  if(!list.length){el.innerHTML='<div class="empty-msg">Sin resultados con los filtros actuales</div>';if(fc)fc.textContent=`0 de ${all.length}`;updateSelCount();return;}
+  if(fc)fc.textContent=FLT.active?`${list.length} de ${all.length}`:'';
   const frag=document.createDocumentFragment();let run=0;
   for(const m of list){
     run+=m.amount;
