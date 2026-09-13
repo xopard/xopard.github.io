@@ -311,10 +311,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <!-- Barra de filtros -->
       <div id="flt-bar" style="display:none;background:#EEF3F8;padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0">
         <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-          <input id="flt-desde" placeholder="Desde DD-MM-AA" maxlength="8"
-            style="width:95px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()">
-          <input id="flt-hasta" placeholder="Hasta DD-MM-AA" maxlength="8"
-            style="width:95px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()">
+          <div style="position:relative;display:inline-flex;align-items:center"><input id="flt-desde" placeholder="Desde DD-MM-AA" maxlength="8" style="width:95px;font-size:11px;padding:3px 20px 3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()"><input type="date" id="flt-desde-cal" style="position:absolute;right:0;top:0;width:20px;height:100%;opacity:0;cursor:pointer;border:none" onfocus="dateToCalendar('flt-desde','flt-desde-cal')" onchange="calToDate('flt-desde-cal','flt-desde');applyFlt()"></div>
+          <div style="position:relative;display:inline-flex;align-items:center"><input id="flt-hasta" placeholder="Hasta DD-MM-AA" maxlength="8" style="width:95px;font-size:11px;padding:3px 20px 3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()"><input type="date" id="flt-hasta-cal" style="position:absolute;right:0;top:0;width:20px;height:100%;opacity:0;cursor:pointer;border:none" onfocus="dateToCalendar('flt-hasta','flt-hasta-cal')" onchange="calToDate('flt-hasta-cal','flt-hasta');applyFlt()"></div>
           <input id="flt-conc" placeholder="Concepto…"
             style="flex:1;min-width:80px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()">
           <select id="flt-cat" style="font-size:11px;padding:3px;border:1px solid #CCC;border-radius:3px;max-width:150px" onchange="applyFlt()">
@@ -419,7 +417,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <h3 id="mdl-mov-ttl">Añadir Movimiento</h3>
     <div class="fr"><label>Cuenta</label><select id="fm-cuenta"></select></div>
     <div class="fi">
-      <div class="fr" style="flex:0 0 120px"><label>Fecha</label><div style="display:flex;gap:3px"><input id="fm-fecha" placeholder="DD-MM-AA" maxlength="8" style="flex:1;min-width:0"><button type="button" onclick="showDatePicker('fm-fecha')" style="padding:0 5px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:12px" title="Seleccionar fecha">📅</button></div></div>
+      <div class="fr" style="flex:0 0 120px"><label>Fecha</label><div style="display:flex;gap:3px"><input id="fm-fecha" placeholder="DD-MM-AA" maxlength="8" style="flex:1;min-width:0"><div style="position:relative"><button type="button" style="padding:0 5px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:12px;height:100%;display:flex;align-items:center">📅</button><input type="date" id="fm-fecha-cal" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none" onfocus="dateToCalendar('fm-fecha','fm-fecha-cal')" onchange="calToDate('fm-fecha-cal','fm-fecha')"></div></div></div>
       <div class="fr"><label>Texto / Concepto</label><input id="fm-texto" list="concepts-list"></div>
     </div>
     <div class="fi">
@@ -870,38 +868,29 @@ function logoHtml(bank) {
   }
   return `<div class="acc-logo">${initials(bank)}</div>`;
 }
-// ── SELECTOR DE FECHA ────────────────────────────────────────
-function showDatePicker(targetId) {
-  const target=$(targetId);
-  const rect=target.getBoundingClientRect();
-  const cal=document.createElement('input');
-  cal.type='date';
-  // Posicionar junto al campo de fecha para que el picker aparezca cerca
-  cal.style.cssText=`position:fixed;opacity:0;width:${rect.width}px;height:${rect.height}px;`+
-    `left:${rect.left}px;top:${rect.top}px;pointer-events:none;z-index:9999`;
-  // Convertir valor actual "DD-MM-YY" → "YYYY-MM-DD"
-  const txt=target.value;
-  if(txt&&txt.length>=8){
+// ── SELECTOR DE FECHA (overlay) ──────────────────────────────
+// Convierte YYYY-MM-DD del input[type=date] → DD-MM-YY del campo texto
+function calToDate(calId, textId) {
+  const val=$(calId).value; if(!val)return;
+  const[yyyy,mm,dd]=val.split('-');
+  $(textId).value=`${dd}-${mm}-${yyyy.slice(-2)}`;
+  // Si es la fecha principal del movimiento, actualizar el periodo
+  if(textId==='fm-fecha'){
+    const per=$('fm-mes');
+    if(per&&!per.value)per.value=`${mm}-${yyyy.slice(-2)}`;
+  }
+}
+
+// Sincroniza el campo texto → input[type=date] al enfocar (para pre-seleccionar)
+function dateToCalendar(textId, calId) {
+  const txt=$(textId)?.value||'';
+  if(txt.length>=8){
     const[dd,mm,yy]=txt.split('-');
     const yyyy=parseInt(yy)<50?'20'+yy:'19'+yy;
-    cal.value=`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+    $(calId).value=`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
   }
-  cal.addEventListener('change',()=>{
-    if(cal.value){
-      const[yyyy,mm,dd]=cal.value.split('-');
-      target.value=`${dd}-${mm}-${yyyy.slice(-2)}`;
-      // Actualizar periodo automáticamente si es fm-fecha
-      if(targetId==='fm-fecha'){
-        const per=$('fm-mes');
-        if(per&&per.value===todayPeriod()||per.value==='') per.value=`${mm}-${yyyy.slice(-2)}`;
-      }
-    }
-    document.body.removeChild(cal);
-  });
-  document.body.appendChild(cal);
-  try{if(cal.showPicker)cal.showPicker();else cal.click();}
-  catch(e){cal.click();}
 }
+
 
 // ── CALCULADORA EN CAMPO IMPORTE ─────────────────────────────
 function evalAmt(input){
