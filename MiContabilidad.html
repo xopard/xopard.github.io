@@ -2991,19 +2991,18 @@ function matchesAmt(amount,qAmt){
 }
 
 function highlightWords(concept,words){
-  let r=concept||'—';
-  for(const w of words){
-    if(!w)continue;
-    const esc=w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    r=r.replace(new RegExp(`(${esc})`,'gi'),'<mark style="background:#FFE57F;padding:0;border-radius:2px">$1</mark>');
-  }
-  return r;
+  if(!words.length)return concept||'—';
+  // Una sola pasada con todas las palabras en alternancia:
+  // así no se vuelve a analizar el HTML ya insertado
+  const parts=words.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  const re=new RegExp(`(${parts.join('|')})`,'gi');
+  return(concept||'—').replace(re,'<mark style="background:#FFE57F;padding:0;border-radius:2px">$1</mark>');
 }
 
 // ── Búsqueda en tiempo real ──────────────────────────────────
 
 function cuSearchLive(){
-  const q=($('cu-search-q')?.value||'').trim();
+  const q=$('cu-search-q')?.value||'';   // SIN trim: el espacio final es significativo
   const qAmt=($('cu-search-amt')?.value||'').trim();
   if(!q&&!qAmt){$('cu-search-prev').textContent='';return;}
 
