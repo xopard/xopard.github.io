@@ -581,18 +581,20 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   </div>
 
   <!-- MODAL: Búsqueda CUADRO -->
-  <div id="mdl-cu-search" class="modal" style="display:none;max-width:400px">
+  <div id="mdl-cu-search" class="modal" style="display:none;max-width:440px">
     <button class="mcls" onclick="closeModal()">×</button>
-    <h3>Buscar en movimientos</h3>
+    <h3>Buscar movimientos</h3>
     <div class="fr">
-      <label>Texto a buscar</label>
-      <input id="cu-search-q" style="font-size:13px" placeholder="Concepto, cuenta…"
-        oninput="cuSearchPreview()" onkeydown="if(e?.key==='Enter'||event?.key==='Enter')cuConfirmSearch()">
+      <label>Concepto <span style="font-size:10px;color:#999">— espacio = "y": "eroski bilbao" busca los dos</span></label>
+      <input id="cu-search-q" placeholder="Texto en el concepto…" oninput="cuSearchLive()">
     </div>
-    <div id="cu-search-prev" style="font-size:11px;color:#777;margin-top:-8px;margin-bottom:4px;height:14px"></div>
+    <div class="fr">
+      <label>Importe <span style="font-size:10px;color:#999">— valor exacto, ej: 55,10</span></label>
+      <input id="cu-search-amt" placeholder="0,00" oninput="cuSearchLive()" style="width:140px;text-align:right">
+    </div>
+    <div id="cu-search-prev" style="font-size:11px;color:#555;height:15px;margin-top:-4px"></div>
     <div class="mbtns">
-      <button class="bok" onclick="cuConfirmSearch()">Ok</button>
-      <button class="bcan" onclick="closeModal()">Cancelar</button>
+      <button class="bcan" onclick="closeModal()">Cerrar</button>
     </div>
   </div>
 
@@ -2942,64 +2944,114 @@ function cuToggleCat(ci){
 
 function cuSearch(){
   $('cu-search-q').value='';
+  $('cu-search-amt').value='';
   $('cu-search-prev').textContent='';
   showModal('mdl-cu-search');
   setTimeout(()=>$('cu-search-q').focus(),50);
 }
 
-function cuSearchPreview(){
-  const q=($('cu-search-q').value||'').trim();
-  if(!q){$('cu-search-prev').textContent='';return;}
-  const norm=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const n=S.movs.filter(m=>{
-    const t=(m.concept||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    return t.includes(norm);
-  }).length;
+// ── Lógica de matching ───────────────────────────────────────
+
+function normTxt(s){return(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+
+// Comprueba que 'word' aparece como palabra completa en 'txt' (normalizado)
+function isWholeWord(txt, word){
+  let pos=0;
+  while(pos<=txt.length-word.length){
+    const i=txt.indexOf(word,pos);
+    if(i===-1)break;
+    const before=i===0||/[^a-z0-9]/.test(txt[i-1]);
+    const after=i+word.length>=txt.length||/[^a-z0-9]/.test(txt[i+word.length]);
+    if(before&&after)return true;
+    pos=i+1;
+  }
+  return false;
+}
+
+function matchesConcept(concept,q){
+  if(!q)return true;
+  const txt=normTxt(concept);
+  const qn=normTxt(q);
+  const hasTrailingSpace=q.endsWith(' ');
+  const words=qn.split(/\s+/).filter(w=>w.length>0);
+  if(!words.length)return false;
+  return words.every((w,i)=>{
+    const isLast=i===words.length-1;
+    // Último fragmento sin espacio final → subcadena (aún escribiendo)
+    // Cualquier otro caso → palabra completa
+    return(!isLast||hasTrailingSpace)?isWholeWord(txt,w):txt.includes(w);
+  });
+}
+
+function matchesAmt(amount,qAmt){
+  if(!qAmt||!qAmt.trim())return true; // sin filtro importe = todo pasa
+  const target=parseFloat(qAmt.trim().replace(/\./g,'').replace(',','.'));
+  if(isNaN(target))return true;
+  return Math.abs(Math.abs(amount)-target)<0.005;
+}
+
+function highlightWords(concept,words){
+  let r=concept||'—';
+  for(const w of words){
+    if(!w)continue;
+    const esc=w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    r=r.replace(new RegExp(`(${esc})`,'gi'),'<mark style="background:#FFE57F;padding:0;border-radius:2px">$1</mark>');
+  }
+  return r;
+}
+
+// ── Búsqueda en tiempo real ──────────────────────────────────
+
+function cuSearchLive(){
+  const q=($('cu-search-q')?.value||'').trim();
+  const qAmt=($('cu-search-amt')?.value||'').trim();
+  if(!q&&!qAmt){$('cu-search-prev').textContent='';return;}
+
+  const results=S.movs.filter(m=>matchesConcept(m.concept,q)&&matchesAmt(m.amount,qAmt));
+  const n=results.length;
   $('cu-search-prev').textContent=`${n} movimiento${n!==1?'s':''} encontrado${n!==1?'s':''}`;
+  cuRenderSearch(q,qAmt,results);
 }
 
+// Mantener compatibilidad con código anterior
+function cuSearchPreview(){cuSearchLive();}
 function cuConfirmSearch(){
-  const q=($('cu-search-q').value||'').trim();
+  cuSearchLive();
   closeModal();
-  if(!q)return;
-  cuRenderSearch(q);
 }
 
-function cuRenderSearch(q){
+// ── Renderizado de resultados ────────────────────────────────
+
+function cuRenderSearch(q,qAmt,results){
   const list=$('cu-movs-list');if(!list)return;
-  const norm=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const results=S.movs.map((m,i)=>({...m,oi:i}))
-    .filter(m=>{
-      const t=(m.concept||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      return t.includes(norm);
-    })
+  const sorted=[...results].map((m,_)=>({...m,oi:S.movs.indexOf(m)}))
     .sort((a,b)=>dateSort(a.date)<dateSort(b.date)?-1:1);
 
-  $('cu-movs-title').textContent=`Búsqueda de "${q}" — ${results.length} resultado${results.length!==1?'s':''}`;
+  const label=q&&qAmt?`"${q}" + ${qAmt}€`:q?`"${q}"`:qAmt?`importe ${qAmt}€`:'';
+  $('cu-movs-title').textContent=`Búsqueda${label?' de '+label:''} — ${sorted.length} resultado${sorted.length!==1?'s':''}`;
   ['cu-del-btn','cu-div-btn'].forEach(id=>{const b=$(id);if(b)b.classList.add('off');});
 
-  if(!results.length){
-    list.innerHTML='<div style="padding:12px;color:#999;text-align:center;font-size:12px">Sin resultados para "'+q+'"</div>';
+  if(!sorted.length){
+    list.innerHTML='<div style="padding:12px;color:#999;text-align:center;font-size:12px">Sin resultados</div>';
     return;
   }
-
-  // Escapar el término para usarlo en regex de resaltado
-  const esc=q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  const hiRe=new RegExp(`(${esc})`,'gi');
-
+  const words=q?normTxt(q).split(/\s+/).filter(w=>w.length>0):[];
   let html='';
-  for(const m of results){
+  for(const m of sorted){
     const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
     const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
     const neg=m.amount<0;
     const isSel=m.oi===CU.selMovOi;
-    // Resaltar término en el concepto
-    const conc=(m.concept||'—').replace(hiRe,'<mark style="background:#FFE57F;padding:0;border-radius:2px">$1</mark>');
-    html+=`<div class="cu-mr${isSel?' sel':''}" onclick="cuSelMov(${m.oi})" ondblclick="cuEditMovFromCuadro(${m.oi})">
+    const conc=words.length?highlightWords(m.concept||'—',words):m.concept||'—';
+    const amtStyle=neg?' neg':'';
+    // Resaltar el importe si la búsqueda es por importe
+    const amtStr=fmtAmt(m.amount);
+    const amtHtml=qAmt?`<mark style="background:#FFE57F;padding:0;border-radius:2px">${amtStr}</mark>`:amtStr;
+    html+=`<div class="cu-mr${isSel?' sel':''}" data-oi="${m.oi}" onclick="cuSelMov(${m.oi})" ondblclick="cuEditMovFromCuadro(${m.oi})">
       <div class="cu-mr-main">
         <span class="cu-mr-date">${m.date}</span>
         <span class="cu-mr-conc">${conc}</span>
-        <span class="cu-mr-amt${neg?' neg':''}">${fmtAmt(m.amount)}</span>
+        <span class="cu-mr-amt${amtStyle}">${amtHtml}</span>
       </div>
       <div class="cu-mr-sub">${m.period}&nbsp;&nbsp;${acc}&nbsp;&nbsp;<span style="color:#AAA;font-style:italic">${cat}</span></div>
     </div>`;
