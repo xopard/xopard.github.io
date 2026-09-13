@@ -2408,22 +2408,22 @@ function deferredSave() {
     const cy=e.touches?e.touches[0].clientY:e.clientY;
     if(drag==='cu-h'){
       const cb=$('cu-bottom');
-      const nh=Math.max(80,Math.min(500,h0-(cy-y0)));
+      const nh=Math.max(40,Math.min(window.innerHeight*0.85,h0-(cy-y0)));
       cb.style.height=nh+'px';
       if(CU.selCat>=0)cuRenderBar();
     } else if(drag==='cu-v2'){
       const mp=$('cu-movs-panel');
-      const nw=Math.max(150,Math.min(700,w0+(cx-x0)));
+      const nw=Math.max(60,Math.min(window.innerWidth*0.85,w0+(cx-x0)));
       mp.style.width=nw+'px';
     } else if(drag==='v'){
       const lp=$('lpanel');
-      const nw=Math.max(180,Math.min(window.innerWidth*0.6, w0+(cx-x0)));
+      const nw=Math.max(60,Math.min(window.innerWidth*0.85, w0+(cx-x0)));
       lp.style.width=nw+'px';
       localStorage.setItem('pref_lw',nw);
       if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
     } else if(drag==='h'){
       const cb=$('chartbox');
-      const nh=Math.max(80,Math.min(window.innerHeight*0.6, h0-(cy-y0)));
+      const nh=Math.max(40,Math.min(window.innerHeight*0.85, h0-(cy-y0)));
       cb.style.height=nh+'px';
       localStorage.setItem('pref_ch',nh);
       if(S.selAcc>=0||S.chartGroup) renderCurrentChart();
@@ -2654,7 +2654,7 @@ function cuRenderMovs(){
   for(const m of movs){
     const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
     const neg=m.amount<0;const isSel=m.oi===CU.selMovOi;
-    html+=`<div class="cu-mr${isSel?' sel':''}" onclick="cuSelMov(${m.oi})">
+    html+=`<div class="cu-mr${isSel?' sel':''}" onclick="cuSelMov(${m.oi})" ondblclick="cuEditMovFromCuadro(${m.oi})">
       <div class="cu-mr-main">
         <span class="cu-mr-date">${m.date}</span>
         <span class="cu-mr-conc">${m.concept||'—'}</span>
@@ -2669,6 +2669,13 @@ function cuRenderMovs(){
 function cuSelMov(oi){
   CU.selMovOi=oi;
   document.querySelectorAll('.cu-mr').forEach(r=>r.classList.toggle('sel',parseInt(r.dataset&&r.dataset.oi)===oi));
+  ['cu-del-btn','cu-div-btn'].forEach(id=>{const b=$(id);if(b)b.classList.remove('off');});
+}
+function cuEditMovFromCuadro(oi){
+  CU.selMovOi=oi;
+  cuSelMov(oi);
+  buildConceptsList();
+  showEditMov(oi);
 }
 function cuDelMov(){
   if(CU.selMovOi<0){toast('Selecciona primero un movimiento');return;}
@@ -2944,6 +2951,7 @@ function cuUpdateColHandle(){
     h.addEventListener('mousedown',cuColResizeStart);
     gw.appendChild(h);
     gw.addEventListener('scroll',cuUpdateColHandle);
+    h.addEventListener('dblclick',()=>{cuApplyCatWidth(200);localStorage.removeItem('pref_cu_cat_w');});
   }
   // Posición basada en ancho real del col (no CSS variable)
   const cell=gw.querySelector('th.cu-cat');
@@ -2960,7 +2968,7 @@ function cuColResizeStart(e){
 }
 document.addEventListener('mousemove',e=>{
   if(!_cuResizing)return;
-  const nw=Math.max(80,Math.min(450,_cuResW+(e.clientX-_cuResX)));
+  const nw=Math.max(60,Math.min(600,_cuResW+(e.clientX-_cuResX)));
   cuApplyCatWidth(nw);
 });
 document.addEventListener('mouseup',()=>{
