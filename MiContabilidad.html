@@ -299,7 +299,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <span id="acc-title">—</span>
         <span id="sel-count" style="display:none;font-size:11px;opacity:.85;white-space:nowrap"></span>
         <button class="rbtn off" id="btn-selall" onclick="selectAllMovs()" title="Seleccionar todos">☑</button>
-        <button class="rbtn" onclick="toggleFltBar()" id="btn-flt" title="Filtrar movimientos">🔍</button>
+        <button class="rbtn" onclick="toggleFltBar()" id="btn-flt" title="Filtrar movimientos"><svg width="12" height="11" viewBox="0 0 12 11" fill="white"><path d="M0 0h12L8 5v5l-4-1.5V5Z"/></svg></button>
         <button class="rbtn" onclick="showPasteModal()" title="Pegar movimientos del banco">📋</button>
         <button class="rbtn" onclick="showAddMov()">＋</button>
         <button class="rbtn" onclick="delMov()">🗑</button>
@@ -311,8 +311,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <!-- Barra de filtros -->
       <div id="flt-bar" style="display:none;background:#EEF3F8;padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0">
         <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-          <div style="position:relative;display:inline-flex;align-items:center"><input id="flt-desde" placeholder="Desde DD-MM-AA" maxlength="8" style="width:95px;font-size:11px;padding:3px 20px 3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()"><input type="date" id="flt-desde-cal" style="position:absolute;right:0;top:0;width:20px;height:100%;opacity:0;cursor:pointer;border:none" onfocus="dateToCalendar('flt-desde','flt-desde-cal')" onchange="calToDate('flt-desde-cal','flt-desde');applyFlt()"></div>
-          <div style="position:relative;display:inline-flex;align-items:center"><input id="flt-hasta" placeholder="Hasta DD-MM-AA" maxlength="8" style="width:95px;font-size:11px;padding:3px 20px 3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()"><input type="date" id="flt-hasta-cal" style="position:absolute;right:0;top:0;width:20px;height:100%;opacity:0;cursor:pointer;border:none" onfocus="dateToCalendar('flt-hasta','flt-hasta-cal')" onchange="calToDate('flt-hasta-cal','flt-hasta');applyFlt()"></div>
+          <div style="display:flex;align-items:center;gap:2px"><input id="flt-desde" placeholder="Desde DD-MM-AA" maxlength="8" style="width:88px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()"><div style="position:relative;flex-shrink:0"><button type="button" style="padding:1px 4px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:11px;line-height:1.4">📅</button><input type="date" id="flt-desde-cal" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none" onfocus="dateToCalendar('flt-desde','flt-desde-cal')" onchange="calToDate('flt-desde-cal','flt-desde');applyFlt()"></div></div>
+          <div style="display:flex;align-items:center;gap:2px"><input id="flt-hasta" placeholder="Hasta DD-MM-AA" maxlength="8" style="width:88px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()"><div style="position:relative;flex-shrink:0"><button type="button" style="padding:1px 4px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:11px;line-height:1.4">📅</button><input type="date" id="flt-hasta-cal" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none" onfocus="dateToCalendar('flt-hasta','flt-hasta-cal')" onchange="calToDate('flt-hasta-cal','flt-hasta');applyFlt()"></div></div>
           <input id="flt-conc" placeholder="Concepto…"
             style="flex:1;min-width:80px;font-size:11px;padding:3px 5px;border:1px solid #CCC;border-radius:3px" oninput="applyFlt()">
           <select id="flt-cat" style="font-size:11px;padding:3px;border:1px solid #CCC;border-radius:3px;max-width:150px" onchange="applyFlt()">
@@ -1949,7 +1949,7 @@ function autoCategory(concept, catMap) {
 function showPasteModal() {
   if (S.accs.length === 0) { toast('Carga primero el fichero'); return; }
   fillAccSel('paste-cuenta', S.selAcc >= 0 ? S.selAcc : 0);
-  fillCatSel('paste-cat', 1);
+  fillCatSel('paste-cat', PENDING_CI);
   $('paste-txt').value = '';
   $('paste-s1').style.display = 'block';
   $('paste-s2').style.display = 'none';
