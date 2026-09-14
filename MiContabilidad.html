@@ -621,9 +621,9 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:5px;font-size:12px">
-        <label><input type="checkbox" id="exp-cat" checked> Incluir columna Categoría</label>
-        <label><input type="checkbox" id="exp-acc" checked> Incluir columna Cuenta</label>
-        <label><input type="checkbox" id="exp-bal"> Incluir columna Saldo acumulado</label>
+        <label><input type="checkbox" id="exp-cat" checked onchange="_expUpdatePreview()"> Incluir columna Categoría</label>
+        <label><input type="checkbox" id="exp-acc" checked onchange="_expUpdatePreview()"> Incluir columna Cuenta</label>
+        <label><input type="checkbox" id="exp-bal" onchange="_expUpdatePreview()"> Incluir columna Saldo acumulado</label>
       </div>
     </div>
 
@@ -631,16 +631,23 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div id="exp-grid-opts" style="display:none">
       <div class="fi" style="gap:12px;margin-bottom:8px">
         <div class="fr" style="flex:0 0 100px"><label>Año desde</label>
-          <input id="exp-yr-desde" placeholder="ej: 2020" maxlength="4" style="width:80px">
+          <input id="exp-yr-desde" placeholder="ej: 2020" maxlength="4" style="width:80px" oninput="_expUpdatePreview()">
         </div>
         <div class="fr" style="flex:0 0 100px"><label>Año hasta</label>
-          <input id="exp-yr-hasta" placeholder="ej: 2026" maxlength="4" style="width:80px">
+          <input id="exp-yr-hasta" placeholder="ej: 2026" maxlength="4" style="width:80px" oninput="_expUpdatePreview()">
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:5px;font-size:12px">
-        <label><input type="checkbox" id="exp-collapsed" checked> Incluir categorías colapsadas</label>
-        <label><input type="checkbox" id="exp-zeros"> Mostrar ceros (en lugar de celdas vacías)</label>
-        <label><input type="checkbox" id="exp-totals" checked> Incluir columnas de totales anuales</label>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+        <div class="fr"><label>Categorías colapsadas</label>
+          <select id="exp-collapsed-mode" onchange="_expUpdatePreview()" style="font-size:12px;padding:2px">
+            <option value="parent" selected>Mostrar solo la línea padre</option>
+            <option value="all">Incluir también sus subcategorías</option>
+            <option value="hide">Ocultar completamente</option>
+          </select>
+        </div>
+        <label><input type="checkbox" id="exp-zeros" onchange="_expUpdatePreview()"> Mostrar ceros (en lugar de celdas vacías)</label>
+        <label><input type="checkbox" id="exp-totals" checked onchange="_expUpdatePreview()"> Incluir columnas de totales anuales</label>
+        <label><input type="checkbox" id="exp-formulas"> Usar fórmulas =SUMA() en categorías padre (abre con Excel)</label>
       </div>
     </div>
 
@@ -989,7 +996,10 @@ function prevAmt(input,previewId){
 }
 
 
-// ── FILTROS Y EDICIÓN MASIVA ────────────────────────────────
+// Cache de movimientos del panel inferior del CUADRO
+let _cuMovsCache = []; // [{oi, date, concept, ci, ai, period, amount}]
+
+
 const FLT = { desde:'', hasta:'', conc:'', cat:-1, active:false };
 
 function toggleFltBar() {
@@ -2735,6 +2745,7 @@ function cuRenderMovs(){
     </div>`;
   }
   list.innerHTML=html;
+  _cuMovsCache=[...movs];
 }
 
 function cuSelMov(oi){
@@ -3062,14 +3073,25 @@ function _expUpdatePreview(){
   if(_expMode==='cu-grid'){
     const y1=parseInt($('exp-yr-desde')?.value)||0;
     const y2=parseInt($('exp-yr-hasta')?.value)||9999;
-    const cols=cuCols().filter(c=>c.y>=y1&&c.y<=y2);
-    const rows=S.cats.length;
-    p.textContent=`${rows} filas × ${cols.length} columnas`;
+    const inclTotals=$('exp-totals')?.checked;
+    const collMode=$('exp-collapsed-mode')?.value||'parent';
+    const cols=cuCols().filter(c=>c.y>=y1&&c.y<=y2&&(inclTotals||c.type==='M'));
+    let rowCount=0;
+    function countRows(ci){
+      const hasChildren=CU.tree&&CU.tree.children[ci].length>0;
+      const isCollapsed=CU.collapsedCats&&CU.collapsedCats.has(ci);
+      if(hasChildren&&isCollapsed&&collMode==='hide')return;
+      rowCount++;
+      const showKids=!hasChildren||collMode==='all'||(collMode==='parent'&&!isCollapsed)||!isCollapsed;
+      if(showKids&&CU.tree)(CU.tree.children[ci]||[]).forEach(countRows);
+    }
+    if(CU.tree){const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);roots.forEach(countRows);}
+    p.textContent=`${rowCount} categorías × ${cols.length} columnas`;
   } else if(_expMode==='movs-accs'){
     const list=_expFilteredMovs();
     p.textContent=`${list.length} movimiento${list.length!==1?'s':''}`;
   } else if(_expMode==='cu-movs'){
-    const n=$('cu-movs-list')?.querySelectorAll('.cu-mr').length||0;
+    const n=_cuMovsCache.length;
     p.textContent=`${n} movimiento${n!==1?'s':''}`;
   }
 }
@@ -3126,35 +3148,51 @@ function _doExportCuGrid(){
   if(!CU.tree||!CU.sums)return;
   const y1=parseInt($('exp-yr-desde')?.value)||0;
   const y2=parseInt($('exp-yr-hasta')?.value)||9999;
-  const inclCollapsed=$('exp-collapsed')?.checked;
+  const collMode=$('exp-collapsed-mode')?.value||'parent';
   const showZeros=$('exp-zeros')?.checked;
   const inclTotals=$('exp-totals')?.checked;
+  const useFormulas=$('exp-formulas')?.checked;
   const cols=cuCols().filter(c=>c.y>=y1&&c.y<=y2&&(inclTotals||c.type==='M'));
   if(!cols.length){toast('Sin columnas en ese rango de años');return;}
-  const header=['Categoría',...cols.map(c=>c.type==='M'?c.label:String(c.year)+' (total)')];
+  const header=['Categoría',...cols.map(c=>c.type==='M'?c.label:String(c.y)+' (total)')];
   const rows=[header];
+  const rowMap={};
   function addRow(ci,level){
-    if(!inclCollapsed&&CU.collapsedCats.has(ci)&&CU.tree.children[ci].length)return;
+    const hasChildren=CU.tree.children[ci].length>0;
+    const isCollapsed=CU.collapsedCats.has(ci);
+    if(hasChildren&&isCollapsed&&collMode==='hide')return;
     const cat=S.cats[ci];
     const indent='  '.repeat(level);
+    rowMap[ci]=rows.length+1; // fila Excel (cabecera=1)
     const vals=cols.map(c=>{
       const v=c.type==='M'?cuVal(ci,c.p):cuYrSum(ci,c.y);
-      return (v===0&&!showZeros)?'':fmtAmt(v);
+      if(useFormulas&&hasChildren)return '__F__'+ci+'__'+(c.type==='M'?c.p:c.y*100000+99);
+      return(v===0&&!showZeros)?'':fmtAmt(v);
     });
     rows.push([indent+cat.name,...vals]);
-    if(inclCollapsed||!CU.collapsedCats.has(ci))
-      for(const ch of CU.tree.children[ci])addRow(ch,level+1);
+    const showChildren=!hasChildren||collMode==='all'||(collMode==='parent'&&!isCollapsed)||(!isCollapsed);
+    if(showChildren) for(const ch of CU.tree.children[ci])addRow(ch,level+1);
   }
   const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
   for(const i of roots)addRow(i,0);
+  if(useFormulas){
+    const colLet=n=>{let r='',x=n;while(x>0){r=String.fromCharCode(64+((x-1)%26+1))+r;x=Math.floor((x-1)/26);}return r;};
+    rows.forEach(row=>{
+      row.forEach((cell,ci2)=>{
+        if(typeof cell==='string'&&cell.startsWith('__F__')){
+          const catIdx=parseInt(cell.split('__')[2]);
+          const childRows=(CU.tree.children[catIdx]||[]).filter(ch=>rowMap[ch]!=null).map(ch=>`${colLet(ci2+1)}${rowMap[ch]}`);
+          row[ci2]=childRows.length?`=SUMA(${childRows.join(';')})`:'';
+        }
+      });
+    });
+  }
   downloadCsv(rows,`Cuadro_${y1}-${y2}_${csvDate()}.csv`);
   toast('Cuadro exportado ✓');
 }
 
 function _doExportCuMovs(){
-  const list=$('cu-movs-list');if(!list)return;
-  const items=list.querySelectorAll('.cu-mr');
-  if(!items.length){toast('Sin resultados');return;}
+  if(!_cuMovsCache.length){toast('Sin resultados para exportar');return;}
   const inclCat=$('exp-cat')?.checked;
   const inclAcc=$('exp-acc')?.checked;
   const header=['Fecha','Concepto'];
@@ -3162,17 +3200,15 @@ function _doExportCuMovs(){
   if(inclAcc)header.push('Cuenta');
   header.push('Periodo','Importe');
   const rows=[header];
-  items.forEach(row=>{
-    const oi=parseInt(row.dataset.oi);
-    if(isNaN(oi)||oi<0||oi>=S.movs.length)return;
-    const m=S.movs[oi];
-    const r=[m.date,m.concept||''];
+  for(const m of _cuMovsCache){
+    const src=(m.oi>=0&&m.oi<S.movs.length)?S.movs[m.oi]:m;
+    const r=[src.date||m.date,src.concept||m.concept||''];
     if(inclCat)r.push((m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'');
     if(inclAcc)r.push((m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'');
-    r.push(m.period,fmtAmt(m.amount));
+    r.push(src.period||m.period,fmtAmt(src.amount!=null?src.amount:m.amount));
     rows.push(r);
-  });
-  const title=($('cu-movs-title')?.textContent||'Resultados').replace(/[^\w\s-]/g,'').trim().substring(0,40);
+  }
+  const title=($('cu-movs-title')?.textContent||'Resultados').replace(/[^\w\sáéíóúüñÁÉÍÓÚÜÑ-]/g,'').trim().substring(0,40);
   downloadCsv(rows,`${title}_${csvDate()}.csv`);
   toast(`Exportados ${rows.length-1} movimientos ✓`);
 }
@@ -3296,6 +3332,7 @@ function cuRenderSearch(q,qAmt,results){
     </div>`;
   }
   list.innerHTML=html;
+  _cuMovsCache=[...sorted];
 }
 
 // ── RESIZE COLUMNA CATEGORÍAS ────────────────────────────────
