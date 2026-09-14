@@ -122,6 +122,21 @@ top:4px;right:8px;display:flex;gap:10px;font-size:10px;color:#777}
 .cu-legend span{display:flex;align-items:center;gap:3px}
 .cu-lb{width:11px;height:11px;border-radius:2px;display:inline-block}
 
+
+/* ── COLORES DE BOTONES ─────────────────────────────────────── */
+.rbtn-add{background:rgba(30,140,70,.45)!important}
+.rbtn-add:hover{background:rgba(30,140,70,.65)!important}
+.rbtn-del{background:rgba(190,40,40,.45)!important}
+.rbtn-del:hover{background:rgba(190,40,40,.65)!important}
+.rbtn-div{background:rgba(30,100,200,.45)!important}
+.rbtn-div:hover{background:rgba(30,100,200,.65)!important}
+.rbtn-trn{background:rgba(200,130,20,.45)!important}
+.rbtn-trn:hover{background:rgba(200,130,20,.65)!important}
+.rbtn-pst{background:rgba(20,140,140,.45)!important}
+.rbtn-pst:hover{background:rgba(20,140,140,.65)!important}
+.rbtn-exp{background:rgba(80,80,80,.35)!important}
+.rbtn-exp:hover{background:rgba(80,80,80,.55)!important}
+
 .divider-v{
   width:5px;background:#D5D5D5;cursor:col-resize;flex-shrink:0;
   transition:background .15s;position:relative;
@@ -286,7 +301,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
           <option value="todas">Todas</option>
         </select>
         <button class="hbtn" onclick="showAddAcc()" title="Añadir cuenta">＋</button>
-        <button class="hbtn" onclick="delAcc()" title="Eliminar cuenta">🗑</button>
+        <button class="hbtn" onclick="delAcc()" title="Eliminar cuenta" class="rbtn rbtn-del">🗑</button>
         <button class="hbtn" id="btn-up" onclick="moveAccUp()" title="Subir cuenta">▲</button>
         <button class="hbtn" id="btn-dn" onclick="moveAccDown()" title="Bajar cuenta">▼</button>
         <button class="hbtn" title="Ayuda">?</button>
@@ -300,12 +315,12 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <span id="sel-count" style="display:none;font-size:11px;opacity:.85;white-space:nowrap"></span>
         <button class="rbtn off" id="btn-selall" onclick="selectAllMovs()" title="Seleccionar todos">☑</button>
         <button class="rbtn" onclick="toggleFltBar()" id="btn-flt" title="Filtrar movimientos"><svg width="12" height="11" viewBox="0 0 12 11" fill="white"><path d="M0 0h12L8 5v5l-4-1.5V5Z"/></svg></button>
-        <button class="rbtn" onclick="showPasteModal()" title="Pegar movimientos del banco">📋</button>
-        <button class="rbtn" onclick="showAddMov()">＋</button>
-        <button class="rbtn" onclick="delMov()">🗑</button>
-        <button class="rbtn" onclick="showDivideModal()" title="Dividir movimiento">÷</button>
-        <button class="rbtn" onclick="showTransferModal()" title="Traspasar movimiento a otra cuenta">⇄</button>
-        <button class="rbtn" onclick="exportMovsCsv()" title="Exportar movimientos a CSV">🖨</button>
+        <button class="rbtn" onclick="showPasteModal()" title="Pegar movimientos del banco" class="rbtn rbtn-pst">📋</button>
+        <button class="rbtn" onclick="showAddMov()" class="rbtn rbtn-add">＋</button>
+        <button class="rbtn" onclick="delMov()" class="rbtn rbtn-del">🗑</button>
+        <button class="rbtn" onclick="showDivideModal()" title="Dividir movimiento" class="rbtn rbtn-div">÷</button>
+        <button class="rbtn" onclick="showTransferModal()" title="Traspasar movimiento a otra cuenta" class="rbtn rbtn-trn">⇄</button>
+        <button class="rbtn" onclick="exportMovsCsv()" title="Exportar movimientos a CSV" class="rbtn rbtn-exp">🖨</button>
         <button class="rbtn">?</button>
       </div>
       <!-- Barra de filtros -->
@@ -319,6 +334,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
             <option value="-1">Todas las categorías</option>
           </select>
           <button onclick="clearFlt()" style="background:#888;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px">✕</button>
+          <button id="btn-bal-mode" onclick="toggleBalMode()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;white-space:nowrap" title="Saldo: filtrado (solo movimientos visibles) o real (saldo total de la cuenta)">Saldo: filtrado</button>
           <span id="flt-count" style="font-size:11px;color:#555;white-space:nowrap"></span>
         </div>
       </div>
@@ -371,7 +387,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div class="cu-title">CUADRO</div>
       <div style="display:flex;gap:4px">
         <button class="cu-btn" title="Buscar" onclick="cuSearch()">🔍</button>
-        <button class="cu-btn" title="Exportar cuadro a CSV" onclick="cuExport()">🖨️</button>
+        <button class="cu-btn rbtn-exp" title="Exportar cuadro a CSV" onclick="cuExport()">🖨️</button>
         <button class="cu-btn" title="Ayuda">?</button>
       </div>
     </div>
@@ -387,9 +403,9 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div id="cu-movs-panel">
         <div class="cu-ph">
           <span id="cu-movs-title">Selecciona una celda</span>
-          <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento">🗑</button>
-          <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento">÷</button>
-          <button class="rbtn" onclick="cuExportMovs()" title="Exportar resultados a CSV">🖨️</button>
+          <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento" class="rbtn off rbtn-del">🗑</button>
+          <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento" class="rbtn off rbtn-div">÷</button>
+          <button class="rbtn rbtn-exp" onclick="cuExportMovs()" title="Exportar resultados a CSV">🖨️</button>
           <button class="rbtn" title="Ayuda">?</button>
         </div>
         <div id="cu-movs-list"></div>
@@ -1000,7 +1016,14 @@ function prevAmt(input,previewId){
 let _cuMovsCache = []; // [{oi, date, concept, ci, ai, period, amount}]
 
 
-const FLT = { desde:'', hasta:'', conc:'', cat:-1, active:false };
+const FLT = { desde:'', hasta:'', conc:'', cat:-1, active:false, balMode:'filtered' };
+
+function toggleBalMode(){
+  FLT.balMode = FLT.balMode==='filtered'?'total':'filtered';
+  const b=$('btn-bal-mode');
+  if(b) b.textContent='Saldo: '+(FLT.balMode==='filtered'?'filtrado':'real');
+  if(S.selAcc>=0) renderMovs(S.selAcc);
+}
 
 function toggleFltBar() {
   const bar=$('flt-bar');if(!bar)return;
@@ -1363,8 +1386,15 @@ function renderMovs(ai){
   if(!list.length){el.innerHTML='<div class="empty-msg">Sin resultados con los filtros actuales</div>';if(fc)fc.textContent=`0 de ${all.length}`;updateSelCount();return;}
   if(fc)fc.textContent=FLT.active?`${list.length} de ${all.length}`:'';
   const frag=document.createDocumentFragment();let run=0;
+  // Saldo real: precomputar balance acumulado de TODOS los movimientos de la cuenta
+  let cumBal=null;
+  if(FLT.active&&FLT.balMode==='total'){
+    cumBal={};let s=0;
+    for(const m of accMovs(ai)){s+=m.amount;cumBal[m.oi]=s;}
+  }
   for(const m of list){
-    run+=m.amount;
+    if(cumBal) run=cumBal[m.oi]??run+m.amount; // saldo real
+    else run+=m.amount; // saldo filtrado
     const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
     const checked=S.selMovs.has(m.oi);
     const pending=m.ci===PENDING_CI;
@@ -3154,39 +3184,37 @@ function _doExportCuGrid(){
   const useFormulas=$('exp-formulas')?.checked;
   const cols=cuCols().filter(c=>c.y>=y1&&c.y<=y2&&(inclTotals||c.type==='M'));
   if(!cols.length){toast('Sin columnas en ese rango de años');return;}
-  const header=['Categoría',...cols.map(c=>c.type==='M'?c.label:String(c.y)+' (total)')];
+  const colLet=n=>{let r='',x=n;while(x>0){r=String.fromCharCode(64+((x-1)%26+1))+r;x=Math.floor((x-1)/26);}return r;};
+  const monthIdxsForYear=y=>cols.reduce((a,c,i)=>{if(c.type==='M'&&c.y===y)a.push(i);return a;},[]);
+  const header=['Categoría',...cols.map(c=>c.type==='M'?c.label:String(c.y))];
   const rows=[header];
-  const rowMap={};
   function addRow(ci,level){
     const hasChildren=CU.tree.children[ci].length>0;
     const isCollapsed=CU.collapsedCats.has(ci);
     if(hasChildren&&isCollapsed&&collMode==='hide')return;
     const cat=S.cats[ci];
     const indent='  '.repeat(level);
-    rowMap[ci]=rows.length+1; // fila Excel (cabecera=1)
-    const vals=cols.map(c=>{
+    const excelRow=rows.length+1;
+    const isCollapsedParent=hasChildren&&isCollapsed&&collMode==='parent';
+    const vals=cols.map((c,colIdx)=>{
       const v=c.type==='M'?cuVal(ci,c.p):cuYrSum(ci,c.y);
-      if(useFormulas&&hasChildren)return '__F__'+ci+'__'+(c.type==='M'?c.p:c.y*100000+99);
+      if(useFormulas&&c.type==='Y'){
+        const mIdxs=monthIdxsForYear(c.y);
+        if(mIdxs.length>0){
+          const s=colLet(mIdxs[0]+2),e=colLet(mIdxs[mIdxs.length-1]+2);
+          return `=SUMA(${s}${excelRow}:${e}${excelRow})`;
+        }
+      }
+      // Para categorías padre colapsadas en modo "solo padre", mostrar siempre el valor
+      if(isCollapsedParent) return fmtAmt(v);
       return(v===0&&!showZeros)?'':fmtAmt(v);
     });
     rows.push([indent+cat.name,...vals]);
-    const showChildren=!hasChildren||collMode==='all'||(collMode==='parent'&&!isCollapsed)||(!isCollapsed);
-    if(showChildren) for(const ch of CU.tree.children[ci])addRow(ch,level+1);
+    const showKids=!hasChildren||collMode==='all'||(collMode==='parent'&&!isCollapsed)||!isCollapsed;
+    if(showKids) for(const ch of CU.tree.children[ci])addRow(ch,level+1);
   }
   const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
   for(const i of roots)addRow(i,0);
-  if(useFormulas){
-    const colLet=n=>{let r='',x=n;while(x>0){r=String.fromCharCode(64+((x-1)%26+1))+r;x=Math.floor((x-1)/26);}return r;};
-    rows.forEach(row=>{
-      row.forEach((cell,ci2)=>{
-        if(typeof cell==='string'&&cell.startsWith('__F__')){
-          const catIdx=parseInt(cell.split('__')[2]);
-          const childRows=(CU.tree.children[catIdx]||[]).filter(ch=>rowMap[ch]!=null).map(ch=>`${colLet(ci2+1)}${rowMap[ch]}`);
-          row[ci2]=childRows.length?`=SUMA(${childRows.join(';')})`:'';
-        }
-      });
-    });
-  }
   downloadCsv(rows,`Cuadro_${y1}-${y2}_${csvDate()}.csv`);
   toast('Cuadro exportado ✓');
 }
