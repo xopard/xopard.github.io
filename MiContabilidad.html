@@ -305,7 +305,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="rbtn" onclick="delMov()">🗑</button>
         <button class="rbtn" onclick="showDivideModal()" title="Dividir movimiento">÷</button>
         <button class="rbtn" onclick="showTransferModal()" title="Traspasar movimiento a otra cuenta">⇄</button>
-        <button class="rbtn off">🖨</button>
+        <button class="rbtn" onclick="exportMovsCsv()" title="Exportar movimientos a CSV">🖨</button>
         <button class="rbtn">?</button>
       </div>
       <!-- Barra de filtros -->
@@ -371,7 +371,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div class="cu-title">CUADRO</div>
       <div style="display:flex;gap:4px">
         <button class="cu-btn" title="Buscar" onclick="cuSearch()">🔍</button>
-        <button class="cu-btn" title="Exportar CSV" onclick="cuExport()">🖨️</button>
+        <button class="cu-btn" title="Exportar cuadro a CSV" onclick="cuExport()">🖨️</button>
         <button class="cu-btn" title="Ayuda">?</button>
       </div>
     </div>
@@ -389,7 +389,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
           <span id="cu-movs-title">Selecciona una celda</span>
           <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento">🗑</button>
           <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento">÷</button>
-          <button class="rbtn off" title="Exportar">🖨️</button>
+          <button class="rbtn" onclick="cuExportMovs()" title="Exportar resultados a CSV">🖨️</button>
           <button class="rbtn" title="Ayuda">?</button>
         </div>
         <div id="cu-movs-list"></div>
@@ -2940,6 +2940,101 @@ function cuToggleCat(ci){
   if(CU.collapsedCats.has(ci))CU.collapsedCats.delete(ci);
   else CU.collapsedCats.add(ci);
   cuRender();
+}
+
+// ── EXPORTACIÓN CSV ──────────────────────────────────────────
+
+function csvCell(v){
+  const s=v===null||v===undefined?'':String(v);
+  return s.includes(';')||s.includes('"')||s.includes('\n')
+    ?'"'+s.replace(/"/g,'""')+'"':s;
+}
+
+function downloadCsv(rows,filename){
+  const BOM='\uFEFF'; // BOM para compatibilidad con Excel
+  const content=rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
+  const blob=new Blob([BOM+content],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=filename;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function csvDate(){
+  const d=new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// 1. Exportar movimientos de la pestaña Cuentas
+function exportMovsCsv(){
+  if(S.selAcc<0){toast('Selecciona una cuenta');return;}
+  const acc=S.accs[S.selAcc];
+  const list=filteredAccMovs(S.selAcc);
+  if(!list.length){toast('Sin movimientos para exportar');return;}
+
+  // Calcular saldo inicial antes de la primera fila filtrada
+  const allList=accMovs(S.selAcc);
+  const firstOi=list[0].oi;
+  let running=0;
+  for(const m of allList){if(m.oi===firstOi)break;running+=m.amount;}
+
+  const rows=[['Fecha','Concepto','Categoría','Cuenta','Periodo','Importe','Saldo']];
+  for(const m of list){
+    running+=m.amount;
+    const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
+    const acct=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
+    rows.push([m.date,m.concept||'',cat,acct,m.period,fmtAmt(m.amount),fmtAmt(running)]);
+  }
+  downloadCsv(rows,`${acc.name}_${csvDate()}.csv`);
+  toast(`Exportados ${list.length} movimientos ✓`);
+}
+
+// 2. Exportar cuadrícula del CUADRO
+function cuExport(){
+  if(!CU.tree||!CU.sums){toast('El Cuadro no tiene datos');return;}
+  const cols=cuCols();
+  const header=['Categoría',...cols.map(c=>c.type==='M'?c.label:String(c.year))];
+  const rows=[header];
+
+  function addRow(ci,level){
+    const cat=S.cats[ci];
+    const indent='  '.repeat(level);
+    const vals=cols.map(c=>{
+      const v=c.type==='M'?cuVal(ci,c.p):cuYrSum(ci,c.y);
+      return v===0?'':fmtAmt(v);
+    });
+    rows.push([indent+cat.name,...vals]);
+    if(!CU.collapsedCats.has(ci))
+      for(const ch of CU.tree.children[ci])addRow(ch,level+1);
+  }
+  const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
+  for(const i of roots)addRow(i,0);
+
+  downloadCsv(rows,`Cuadro_${csvDate()}.csv`);
+  toast('Cuadro exportado ✓');
+}
+
+// 3. Exportar resultados del panel inferior del CUADRO
+function cuExportMovs(){
+  const list=$('cu-movs-list');if(!list)return;
+  const items=list.querySelectorAll('.cu-mr[data-oi]');
+  if(!items.length){toast('Sin resultados para exportar');return;}
+
+  const rows=[['Fecha','Concepto','Categoría','Cuenta','Periodo','Importe']];
+  items.forEach(row=>{
+    const oi=parseInt(row.dataset.oi);
+    if(isNaN(oi)||oi<0||oi>=S.movs.length)return;
+    const m=S.movs[oi];
+    const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
+    const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
+    rows.push([m.date,m.concept||'',cat,acc,m.period,fmtAmt(m.amount)]);
+  });
+
+  const title=($('cu-movs-title')?.textContent||'Resultados').replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ _-]/g,'').trim().substring(0,40);
+  downloadCsv(rows,`${title}_${csvDate()}.csv`);
+  toast(`Exportados ${rows.length-1} movimientos ✓`);
 }
 
 function cuSearch(){
