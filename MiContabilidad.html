@@ -125,14 +125,12 @@ top:4px;right:8px;display:flex;gap:10px;font-size:10px;color:#777}
 
 /* ── COLORES DE BOTONES (selectores por atributo) ────────────── */
 /* Verde: añadir */
-button[onclick*="showAddMov"],button[onclick*="addAcc"],
+button[onclick*="showAddMov"],button[onclick*="addAcc"],button[onclick*="showAddAcc"],
 [onclick*="cuEditAdd"]{background:rgba(30,140,70,.45)!important}
-button[onclick*="showAddMov"]:hover,button[onclick*="addAcc"]:hover{background:rgba(30,140,70,.65)!important}
+button[onclick*="showAddMov"]:hover,button[onclick*="addAcc"]:hover,button[onclick*="showAddAcc"]:hover{background:rgba(30,140,70,.65)!important}
 /* Rojo: eliminar */
-button[onclick*="delMov"],button[onclick*="delAcc"],
-button[onclick*="cuDelMov"]{background:rgba(190,40,40,.45)!important}
-button[onclick*="delMov"]:hover,button[onclick*="delAcc"]:hover,
-button[onclick*="cuDelMov"]:hover{background:rgba(190,40,40,.65)!important}
+button[onclick*="delMov"],button[onclick*="delAcc"],button[onclick*="cuDelMov"]{background:rgba(190,40,40,.45)!important}
+button[onclick*="delMov"]:hover,button[onclick*="delAcc"]:hover,button[onclick*="cuDelMov"]:hover{background:rgba(190,40,40,.65)!important}
 /* Azul: dividir */
 button[onclick*="showDivideModal"],button[onclick*="cuDivMov"]{background:rgba(30,100,200,.45)!important}
 button[onclick*="showDivideModal"]:hover,button[onclick*="cuDivMov"]:hover{background:rgba(30,100,200,.65)!important}
@@ -143,8 +141,8 @@ button[onclick*="showTransferModal"]:hover{background:rgba(200,130,20,.65)!impor
 button[onclick*="showPasteModal"]{background:rgba(20,140,140,.45)!important}
 button[onclick*="showPasteModal"]:hover{background:rgba(20,140,140,.65)!important}
 /* Gris oscuro: exportar */
-button[onclick*="exportMovsCsv"],button[onclick*="cuExport"]{background:rgba(70,70,70,.4)!important}
-button[onclick*="exportMovsCsv"]:hover,button[onclick*="cuExport"]:hover{background:rgba(70,70,70,.6)!important}
+button[onclick*="exportMovsCsv"],button[onclick*="cuExport"],button[onclick*="cuExportMovs"]{background:rgba(70,70,70,.4)!important}
+button[onclick*="exportMovsCsv"]:hover,button[onclick*="cuExport"]:hover,button[onclick*="cuExportMovs"]:hover{background:rgba(70,70,70,.6)!important}
 
 .divider-v{
   width:5px;background:#D5D5D5;cursor:col-resize;flex-shrink:0;
@@ -331,7 +329,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="rbtn" onclick="delMov()">🗑</button>
         <button class="rbtn" onclick="showDivideModal()" title="Dividir movimiento">÷</button>
         <button class="rbtn" onclick="showTransferModal()" title="Traspasar movimiento a otra cuenta">⇄</button>
-        <button class="rbtn" onclick="exportMovsCsv()" title="Exportar movimientos a CSV">🖨</button>
+        <button class="rbtn" onclick="exportMovsCsv()" title="Exportar movimientos a CSV">🖨️</button>
         <button class="rbtn">?</button>
       </div>
       <!-- Barra de filtros -->
@@ -988,11 +986,15 @@ function calToDate(calId, textId) {
 // Sincroniza el campo texto → input[type=date] al enfocar (para pre-seleccionar)
 function dateToCalendar(textId, calId) {
   const txt=$(textId)?.value||'';
+  const cal=$(calId); if(!cal) return;
   if(txt.length>=8){
     const[dd,mm,yy]=txt.split('-');
     const yyyy=parseInt(yy)<50?'20'+yy:'19'+yy;
-    $(calId).value=`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+    cal.value=`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
   }
+  // Limpiar la selección en el siguiente frame para que el usuario
+  // pueda volver a elegir la misma fecha (onchange solo dispara si cambia)
+  requestAnimationFrame(()=>{ cal.value=''; });
 }
 
 
@@ -1392,17 +1394,13 @@ function renderMovs(ai){
   const all=accMovs(ai);
   const list=filteredAccMovs(ai);
   const fc=$('flt-count');
-  if(!all.length){el.innerHTML='<div class="empty-msg">Sin movimientos</div>';if(fc)fc.textContent='';updateSelCount();return;}
-  if(!list.length){el.innerHTML='<div class="empty-msg">Sin resultados con los filtros actuales</div>';if(fc)fc.textContent=`0 de ${all.length}`;updateSelCount();return;}
-  // Contador permanente de movimientos
-  const mc=$('mov-count');
-  if(mc){
-    const total=accMovs(ai).length;
-    mc.textContent=FLT.active?`(${list.length}/${total})`:String(total)+' movs';
-  }
-  // Toggle de saldo solo visible cuando hay filtro activo
-  const bm=$('btn-bal-mode');
-  if(bm) bm.style.display=FLT.active?'inline-block':'none';  const frag=document.createDocumentFragment();let run=0;
+  // Contador permanente y toggle saldo: SIEMPRE, antes de cualquier return
+  const mc=$('mov-count'),bm=$('btn-bal-mode');
+  if(mc) mc.textContent=FLT.active?`(${list.length}/${all.length})`:all.length+' movs';
+  if(bm) bm.style.display=FLT.active?'inline-block':'none';
+  if(fc) fc.textContent=FLT.active?`${list.length} de ${all.length}`:'';
+  if(!all.length){el.innerHTML='<div class="empty-msg">Sin movimientos</div>';updateSelCount();return;}
+  if(!list.length){el.innerHTML='<div class="empty-msg">Sin resultados con los filtros actuales</div>';updateSelCount();return;}  const frag=document.createDocumentFragment();let run=0;
   // Saldo real: precomputar balance acumulado de TODOS los movimientos de la cuenta
   let cumBal=null;
   if(FLT.active&&FLT.balMode==='total'){
