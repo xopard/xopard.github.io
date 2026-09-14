@@ -598,6 +598,59 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
   </div>
 
+  <!-- MODAL: Opciones exportación -->
+  <div id="mdl-export" class="modal" style="display:none;max-width:420px">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <h3 id="exp-title">Exportar a CSV</h3>
+    <p id="exp-info" style="font-size:12px;color:#666;margin-bottom:10px"></p>
+
+    <!-- Opciones para movimientos (cuentas y resultados CUADRO) -->
+    <div id="exp-movs-opts">
+      <div class="fi" style="gap:12px;margin-bottom:8px">
+        <div class="fr" style="flex:0 0 130px"><label>Desde (DD-MM-AA)</label>
+          <div style="display:flex;gap:3px">
+            <input id="exp-desde" placeholder="DD-MM-AA" maxlength="8" style="flex:1;min-width:0">
+            <div style="position:relative"><button type="button" style="padding:0 5px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:12px;height:100%;display:flex;align-items:center">📅</button><input type="date" id="exp-desde-cal" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none" onfocus="dateToCalendar('exp-desde','exp-desde-cal')" onchange="calToDate('exp-desde-cal','exp-desde')"></div>
+          </div>
+        </div>
+        <div class="fr" style="flex:0 0 130px"><label>Hasta (DD-MM-AA)</label>
+          <div style="display:flex;gap:3px">
+            <input id="exp-hasta" placeholder="DD-MM-AA" maxlength="8" style="flex:1;min-width:0">
+            <div style="position:relative"><button type="button" style="padding:0 5px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:12px;height:100%;display:flex;align-items:center">📅</button><input type="date" id="exp-hasta-cal" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none" onfocus="dateToCalendar('exp-hasta','exp-hasta-cal')" onchange="calToDate('exp-hasta-cal','exp-hasta')"></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:12px">
+        <label><input type="checkbox" id="exp-cat" checked> Incluir columna Categoría</label>
+        <label><input type="checkbox" id="exp-acc" checked> Incluir columna Cuenta</label>
+        <label><input type="checkbox" id="exp-bal"> Incluir columna Saldo acumulado</label>
+      </div>
+    </div>
+
+    <!-- Opciones para la cuadrícula del CUADRO -->
+    <div id="exp-grid-opts" style="display:none">
+      <div class="fi" style="gap:12px;margin-bottom:8px">
+        <div class="fr" style="flex:0 0 100px"><label>Año desde</label>
+          <input id="exp-yr-desde" placeholder="ej: 2020" maxlength="4" style="width:80px">
+        </div>
+        <div class="fr" style="flex:0 0 100px"><label>Año hasta</label>
+          <input id="exp-yr-hasta" placeholder="ej: 2026" maxlength="4" style="width:80px">
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:12px">
+        <label><input type="checkbox" id="exp-collapsed" checked> Incluir categorías colapsadas</label>
+        <label><input type="checkbox" id="exp-zeros"> Mostrar ceros (en lugar de celdas vacías)</label>
+        <label><input type="checkbox" id="exp-totals" checked> Incluir columnas de totales anuales</label>
+      </div>
+    </div>
+
+    <div id="exp-preview" style="font-size:11px;color:#888;margin-top:10px;height:14px"></div>
+    <div class="mbtns">
+      <button class="bok" onclick="doExport()">Descargar CSV</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+
   <!-- MODAL: Confirmación simple -->
   <div id="mdl-info" class="modal" style="display:none;max-width:360px;text-align:center">
     <p id="mdl-info-msg" style="font-size:15px;margin:10px 0 20px"></p>
@@ -1553,7 +1606,7 @@ function _renderChartFromDaily(daily){
 // ── MODALS ───────────────────────────────────────────────────
 function showModal(id){
   $('overlay').classList.add('show');
-  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search'].forEach(m=>$(m).style.display='none');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search','mdl-export'].forEach(m=>$(m).style.display='none');
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
@@ -2944,95 +2997,182 @@ function cuToggleCat(ci){
 
 // ── EXPORTACIÓN CSV ──────────────────────────────────────────
 
+let _expMode = ''; // 'movs-accs' | 'cu-grid' | 'cu-movs'
+
 function csvCell(v){
   const s=v===null||v===undefined?'':String(v);
   return s.includes(';')||s.includes('"')||s.includes('\n')
     ?'"'+s.replace(/"/g,'""')+'"':s;
 }
-
 function downloadCsv(rows,filename){
-  const BOM='\uFEFF'; // BOM para compatibilidad con Excel
+  const BOM='\uFEFF';
   const content=rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
   const blob=new Blob([BOM+content],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=filename;
+  a.href=URL.createObjectURL(blob);a.download=filename;
   document.body.appendChild(a);a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(a.href);
+  document.body.removeChild(a);URL.revokeObjectURL(a.href);
 }
-
 function csvDate(){
   const d=new Date();
-  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  return`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// 1. Exportar movimientos de la pestaña Cuentas
+// Abrir modal de exportación (3 usos distintos)
 function exportMovsCsv(){
   if(S.selAcc<0){toast('Selecciona una cuenta');return;}
-  const acc=S.accs[S.selAcc];
-  const list=filteredAccMovs(S.selAcc);
-  if(!list.length){toast('Sin movimientos para exportar');return;}
-
-  // Calcular saldo inicial antes de la primera fila filtrada
-  const allList=accMovs(S.selAcc);
-  const firstOi=list[0].oi;
-  let running=0;
-  for(const m of allList){if(m.oi===firstOi)break;running+=m.amount;}
-
-  const rows=[['Fecha','Concepto','Categoría','Cuenta','Periodo','Importe','Saldo']];
-  for(const m of list){
-    running+=m.amount;
-    const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
-    const acct=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
-    rows.push([m.date,m.concept||'',cat,acct,m.period,fmtAmt(m.amount),fmtAmt(running)]);
-  }
-  downloadCsv(rows,`${acc.name}_${csvDate()}.csv`);
-  toast(`Exportados ${list.length} movimientos ✓`);
+  _expMode='movs-accs';
+  $('exp-title').textContent='Exportar movimientos de '+S.accs[S.selAcc].name;
+  $('exp-movs-opts').style.display='block';
+  $('exp-grid-opts').style.display='none';
+  $('exp-bal').parentElement.style.display='flex';
+  // Pre-rellenar con el filtro activo si lo hay
+  $('exp-desde').value=FLT.desde||'';$('exp-hasta').value=FLT.hasta||'';
+  _expUpdatePreview();
+  showModal('mdl-export');
+}
+function cuExport(){
+  if(!CU.tree||!CU.sums){toast('Abre el Cuadro primero');return;}
+  _expMode='cu-grid';
+  $('exp-title').textContent='Exportar cuadrícula del Cuadro';
+  $('exp-movs-opts').style.display='none';
+  $('exp-grid-opts').style.display='block';
+  // Rango de años del cuadro
+  const yrs=cuYears();
+  $('exp-yr-desde').value=yrs[0]||'';$('exp-yr-hasta').value=yrs[yrs.length-1]||'';
+  _expUpdatePreview();
+  showModal('mdl-export');
+}
+function cuExportMovs(){
+  const list=$('cu-movs-list');if(!list)return;
+  const n=list.querySelectorAll('.cu-mr').length;
+  if(!n){toast('Sin resultados para exportar');return;}
+  _expMode='cu-movs';
+  $('exp-title').textContent='Exportar resultados del Cuadro';
+  $('exp-movs-opts').style.display='block';
+  $('exp-grid-opts').style.display='none';
+  $('exp-bal').parentElement.style.display='none';
+  $('exp-desde').value='';$('exp-hasta').value='';
+  _expUpdatePreview();
+  showModal('mdl-export');
 }
 
-// 2. Exportar cuadrícula del CUADRO
-function cuExport(){
-  if(!CU.tree||!CU.sums){toast('El Cuadro no tiene datos');return;}
-  const cols=cuCols();
-  const header=['Categoría',...cols.map(c=>c.type==='M'?c.label:String(c.year))];
-  const rows=[header];
+function _expUpdatePreview(){
+  const p=$('exp-preview');if(!p)return;
+  if(_expMode==='cu-grid'){
+    const y1=parseInt($('exp-yr-desde')?.value)||0;
+    const y2=parseInt($('exp-yr-hasta')?.value)||9999;
+    const cols=cuCols().filter(c=>c.y>=y1&&c.y<=y2);
+    const rows=S.cats.length;
+    p.textContent=`${rows} filas × ${cols.length} columnas`;
+  } else if(_expMode==='movs-accs'){
+    const list=_expFilteredMovs();
+    p.textContent=`${list.length} movimiento${list.length!==1?'s':''}`;
+  } else if(_expMode==='cu-movs'){
+    const n=$('cu-movs-list')?.querySelectorAll('.cu-mr').length||0;
+    p.textContent=`${n} movimiento${n!==1?'s':''}`;
+  }
+}
 
+function _expFilteredMovs(){
+  if(S.selAcc<0)return[];
+  let movs=accMovs(S.selAcc);
+  const desde=($('exp-desde')?.value||'').trim();
+  const hasta=($('exp-hasta')?.value||'').trim();
+  if(desde){const ds=dateSort(desde);movs=movs.filter(m=>dateSort(m.date)>=ds);}
+  if(hasta){const dh=dateSort(hasta);movs=movs.filter(m=>dateSort(m.date)<=dh);}
+  return movs;
+}
+
+function doExport(){
+  closeModal();
+  if(_expMode==='movs-accs') _doExportMovsAccs();
+  else if(_expMode==='cu-grid') _doExportCuGrid();
+  else if(_expMode==='cu-movs') _doExportCuMovs();
+}
+
+function _doExportMovsAccs(){
+  const acc=S.accs[S.selAcc];
+  const movs=_expFilteredMovs();
+  if(!movs.length){toast('Sin movimientos en ese rango');return;}
+  const inclCat=$('exp-cat')?.checked;
+  const inclAcc=$('exp-acc')?.checked;
+  const inclBal=$('exp-bal')?.checked;
+  const header=['Fecha','Concepto'];
+  if(inclCat)header.push('Categoría');
+  if(inclAcc)header.push('Cuenta');
+  header.push('Periodo','Importe');
+  if(inclBal)header.push('Saldo');
+  // Calcular saldo inicial
+  const allMovs=accMovs(S.selAcc);
+  const firstOi=movs[0].oi;
+  let running=0;
+  for(const m of allMovs){if(m.oi===firstOi)break;running+=m.amount;}
+  const rows=[header];
+  for(const m of movs){
+    running+=m.amount;
+    const row=[m.date,m.concept||''];
+    if(inclCat)row.push((m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'');
+    if(inclAcc)row.push((m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'');
+    row.push(m.period,fmtAmt(m.amount));
+    if(inclBal)row.push(fmtAmt(running));
+    rows.push(row);
+  }
+  downloadCsv(rows,`${acc.name}_${csvDate()}.csv`);
+  toast(`Exportados ${movs.length} movimientos ✓`);
+}
+
+function _doExportCuGrid(){
+  if(!CU.tree||!CU.sums)return;
+  const y1=parseInt($('exp-yr-desde')?.value)||0;
+  const y2=parseInt($('exp-yr-hasta')?.value)||9999;
+  const inclCollapsed=$('exp-collapsed')?.checked;
+  const showZeros=$('exp-zeros')?.checked;
+  const inclTotals=$('exp-totals')?.checked;
+  const cols=cuCols().filter(c=>c.y>=y1&&c.y<=y2&&(inclTotals||c.type==='M'));
+  if(!cols.length){toast('Sin columnas en ese rango de años');return;}
+  const header=['Categoría',...cols.map(c=>c.type==='M'?c.label:String(c.year)+' (total)')];
+  const rows=[header];
   function addRow(ci,level){
+    if(!inclCollapsed&&CU.collapsedCats.has(ci)&&CU.tree.children[ci].length)return;
     const cat=S.cats[ci];
     const indent='  '.repeat(level);
     const vals=cols.map(c=>{
       const v=c.type==='M'?cuVal(ci,c.p):cuYrSum(ci,c.y);
-      return v===0?'':fmtAmt(v);
+      return (v===0&&!showZeros)?'':fmtAmt(v);
     });
     rows.push([indent+cat.name,...vals]);
-    if(!CU.collapsedCats.has(ci))
+    if(inclCollapsed||!CU.collapsedCats.has(ci))
       for(const ch of CU.tree.children[ci])addRow(ch,level+1);
   }
   const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
   for(const i of roots)addRow(i,0);
-
-  downloadCsv(rows,`Cuadro_${csvDate()}.csv`);
+  downloadCsv(rows,`Cuadro_${y1}-${y2}_${csvDate()}.csv`);
   toast('Cuadro exportado ✓');
 }
 
-// 3. Exportar resultados del panel inferior del CUADRO
-function cuExportMovs(){
+function _doExportCuMovs(){
   const list=$('cu-movs-list');if(!list)return;
-  const items=list.querySelectorAll('.cu-mr[data-oi]');
-  if(!items.length){toast('Sin resultados para exportar');return;}
-
-  const rows=[['Fecha','Concepto','Categoría','Cuenta','Periodo','Importe']];
+  const items=list.querySelectorAll('.cu-mr');
+  if(!items.length){toast('Sin resultados');return;}
+  const inclCat=$('exp-cat')?.checked;
+  const inclAcc=$('exp-acc')?.checked;
+  const header=['Fecha','Concepto'];
+  if(inclCat)header.push('Categoría');
+  if(inclAcc)header.push('Cuenta');
+  header.push('Periodo','Importe');
+  const rows=[header];
   items.forEach(row=>{
     const oi=parseInt(row.dataset.oi);
     if(isNaN(oi)||oi<0||oi>=S.movs.length)return;
     const m=S.movs[oi];
-    const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
-    const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
-    rows.push([m.date,m.concept||'',cat,acc,m.period,fmtAmt(m.amount)]);
+    const r=[m.date,m.concept||''];
+    if(inclCat)r.push((m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'');
+    if(inclAcc)r.push((m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'');
+    r.push(m.period,fmtAmt(m.amount));
+    rows.push(r);
   });
-
-  const title=($('cu-movs-title')?.textContent||'Resultados').replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ _-]/g,'').trim().substring(0,40);
+  const title=($('cu-movs-title')?.textContent||'Resultados').replace(/[^\w\s-]/g,'').trim().substring(0,40);
   downloadCsv(rows,`${title}_${csvDate()}.csv`);
   toast(`Exportados ${rows.length-1} movimientos ✓`);
 }
@@ -3157,8 +3297,6 @@ function cuRenderSearch(q,qAmt,results){
   }
   list.innerHTML=html;
 }
-
-function cuExport(){toast('Exportación en CUADRO — próximamente');}
 
 // ── RESIZE COLUMNA CATEGORÍAS ────────────────────────────────
 let _cuResizing=false,_cuResX=0,_cuResW=200,cuCatWidth=parseInt(localStorage.getItem('pref_cu_cat_w'))||200;
