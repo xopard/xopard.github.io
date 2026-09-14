@@ -249,6 +249,74 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
 /* ── TOAST / STATUS ── */
 #toast{position:fixed;bottom:18px;right:18px;background:#333;color:#fff;padding:9px 16px;border-radius:4px;font-size:13px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px}
 #dbx-status{position:fixed;bottom:18px;left:18px;font-size:11px;color:#AAA;z-index:100}
+
+/* ══════════════════════════════════════════════════════════════
+   VISTA MÓVIL  (≤ 640px)
+   ══════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+
+  /* Cabecera: logo + tabs más compactos */
+  #hdr{padding:0 6px}
+  .logo{font-size:16px;padding:6px 4px}
+  .tab{padding:6px 8px;font-size:11px}
+  .tab svg{display:none}             /* ocultar iconos SVG de tabs */
+  #hmenu-btn{display:none}           /* menú hamburguesa no necesario */
+
+  /* Layout: apilar paneles verticalmente pero mostrar solo uno */
+  #main{flex-direction:column;position:relative}
+  #tab-cuentas{flex-direction:column;overflow:hidden}
+
+  /* Panel izquierdo: ocupa toda la pantalla */
+  #lpanel{
+    width:100%!important;min-width:0!important;
+    flex:1;border-right:none;
+  }
+  #lhdr{padding:4px 8px;font-size:12px}
+  #acclist{flex:1}
+
+  /* Panel derecho: oculto por defecto, aparece al seleccionar cuenta */
+  #rpanel{
+    position:fixed;top:0;left:0;right:0;bottom:0;
+    z-index:50;background:#fff;
+    flex-direction:column;
+    display:none!important;           /* oculto por defecto */
+    transform:translateX(100%);
+    transition:transform .25s ease;
+  }
+  #rpanel.mobile-show{
+    display:flex!important;
+    transform:translateX(0);
+  }
+
+  /* Cabecera del panel derecho: añadir botón volver */
+  #rhdr{padding:4px 6px;gap:4px;flex-wrap:wrap}
+  #btn-back-mob{display:flex!important}  /* visible solo en móvil */
+
+  /* Gráfico: ocultar en móvil por defecto (se puede expandir) */
+  #chartbox{display:none}
+  #divider-h{display:none}
+
+  /* Barra de filtros y edición masiva */
+  #flt-bar{flex-wrap:wrap;gap:4px}
+  #flt-bar input,#flt-bar select{font-size:12px}
+  #bulk-bar{flex-wrap:wrap}
+
+  /* Barras separadoras: ocultar en móvil */
+  #divider-v,#cu-hdivider,#cu-vdivider{display:none}
+
+  /* CUADRO: panel inferior en columna */
+  #cu-bottom{flex-direction:column;height:auto}
+  #cu-movs-panel{width:100%!important;max-height:300px}
+  #cu-chart-panel{height:200px}
+
+  /* Modales: ocupar más pantalla */
+  .modal{max-width:98vw!important;margin:8px;padding:14px}
+
+  /* Botones: algo más grandes para dedos */
+  .rbtn{padding:5px 8px;font-size:14px}
+  .hbtn{font-size:17px;padding:4px 7px}
+}
+
 </style>
 </head>
 <body>
@@ -318,6 +386,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="divider-v" id="divider-v" title="Arrastra para redimensionar"></div>
     <div id="rpanel">
       <div id="rhdr">
+        <button id="btn-back-mob" onclick="mobileBack()" style="display:none;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;padding:2px 8px;border-radius:3px;cursor:pointer;margin-right:4px" title="Volver a cuentas">←</button>
         <span id="acc-title">—</span>
         <span id="mov-count" style="font-size:10px;opacity:.6;white-space:nowrap;margin-right:2px"></span>
         <span id="sel-count" style="display:none;font-size:11px;opacity:.85;white-space:nowrap"></span>
@@ -1385,6 +1454,7 @@ function selAcc(idx){
   $('acc-title').textContent=S.accs[idx].name;
   $('chart-title').textContent='Gráfico de '+S.accs[idx].name;
   renderMovs(idx);renderCurrentChart();
+  mobileShowMovs(); // en móvil mostrar panel de movimientos
 }
 
 function accMovs(ai){return S.movs.map((m,i)=>({...m,oi:i})).filter(m=>m.ai===ai).sort((a,b)=>{const da=dateSort(a.date),db=dateSort(b.date);return da<db?-1:da>db?1:a.oi-b.oi;});}
@@ -3426,6 +3496,16 @@ document.addEventListener('mouseup',()=>{
   if(!_cuResizing)return;
   _cuResizing=false;document.body.classList.remove('no-sel');
   localStorage.setItem('pref_cu_cat_w',cuCatWidth);
+});
+
+// ── NAVEGACIÓN MÓVIL ─────────────────────────────────────────
+function isMobile(){ return window.innerWidth<=640; }
+function mobileShowMovs(){ if(isMobile()) $('rpanel')?.classList.add('mobile-show'); }
+function mobileBack(){
+  $('rpanel')?.classList.remove('mobile-show');
+}
+window.addEventListener('popstate',()=>{
+  if(isMobile()&&$('rpanel')?.classList.contains('mobile-show')) mobileBack();
 });
 
 (async()=>{
