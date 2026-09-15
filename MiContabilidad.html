@@ -492,9 +492,15 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
           <span id="cu-movs-title">Selecciona una celda</span>
           <span id="cu-movs-count" style="font-size:10px;opacity:.7;margin-left:4px"></span>
           <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento">🗑</button>
-          <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento" class="rbtn off">÷</button>
+          <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento">÷</button>
           <button onclick="cuExportMovs()" title="Exportar resultados a CSV">🖨️</button>
+          <button class="rbtn" id="cu-flt-btn" onclick="cuMovsFltToggle()" title="Filtrar movimientos"><svg width="12" height="11" viewBox="0 0 12 11" fill="white"><path d="M0 0h12L8 5v5l-4-1.5V5Z"/></svg></button>
           <button class="rbtn" title="Ayuda">?</button>
+        </div>
+        <div id="cu-movs-flt" style="display:none;padding:4px 8px;background:#F5F5F5;border-bottom:1px solid #E0E0E0;flex-shrink:0">
+          <input id="cu-movs-flt-q" placeholder="Filtrar: concepto, cuenta, importe (ej: *648)…"
+            style="width:100%;font-size:12px;padding:4px 8px;border:1px solid #CCC;border-radius:3px;box-sizing:border-box"
+            oninput="cuMovsFltApply()">
         </div>
         <div id="cu-movs-list"></div>
       </div>
@@ -2866,6 +2872,9 @@ function cuSel(ci,period,isYear){
 function cuRenderMovs(){
   const list=$('cu-movs-list');
   if(!list)return;
+  // Resetear filtro al cambiar de celda
+  const fq=$('cu-movs-flt-q');if(fq)fq.value='';
+  const bar=$('cu-movs-flt');if(bar&&bar.style.display!=='none'){bar.style.display='none';const fb=$('cu-flt-btn');if(fb)fb.style.background='';}
   if(CU.selCat<0||CU.selPeriod===null){
     list.innerHTML='<div style="padding:16px;color:#999;text-align:center">Selecciona una celda</div>';
     return;
@@ -3160,7 +3169,41 @@ function cuSaveEditCats(){
 }
 
 
-// Clic en nombre de categoría → muestra TODOS sus movimientos (cualquier fecha)
+// ── FILTRO DEL PANEL INFERIOR DEL CUADRO ────────────────────
+function cuMovsFltToggle(){
+  const bar=$('cu-movs-flt');if(!bar)return;
+  const show=bar.style.display==='none';
+  bar.style.display=show?'block':'none';
+  if(show){$('cu-movs-flt-q').value='';setTimeout(()=>$('cu-movs-flt-q').focus(),50);}
+  else{$('cu-movs-flt-q').value='';cuMovsFltApply();}
+  const btn=$('cu-flt-btn');
+  if(btn)btn.style.background=show?'rgba(255,255,255,.25)':'';
+}
+
+function cuMovsFltApply(){
+  const q=normTxt($('cu-movs-flt-q')?.value||'');
+  const rows=$('cu-movs-list')?.querySelectorAll('.cu-mr');
+  if(!rows)return;
+  let vis=0;
+  rows.forEach(row=>{
+    const oi=parseInt(row.dataset.oi);
+    let match=true;
+    if(q&&!isNaN(oi)&&oi>=0&&oi<S.movs.length){
+      const m=S.movs[oi];
+      const conc=normTxt(m.concept||'');
+      const acc=normTxt((m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'');
+      const cat=normTxt((m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'');
+      const amt=fmtAmt(Math.abs(m.amount));
+      match=conc.includes(q)||acc.includes(q)||cat.includes(q)||amt.includes(q)||m.date.includes(q);
+    }
+    row.style.display=match?'':'none';
+    if(match)vis++;
+  });
+  const cc=$('cu-movs-count');
+  if(cc)cc.textContent=q?`(${vis}/${rows.length})`:(rows.length?`(${rows.length})`:'');
+}
+
+
 function cuSelCat(ci){
   CU.selCat=ci; CU.selPeriod='ALL'; CU.selIsYear=false;
   CU.selMovOi=-1; CU.chartOff=0;
