@@ -266,13 +266,15 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   #main{flex-direction:column;position:relative}
   #tab-cuentas{flex-direction:column;overflow:hidden}
 
-  /* Panel izquierdo: ocupa toda la pantalla */
+  /* Panel izquierdo: ocupa toda la pantalla con scroll correcto */
+  #tab-cuentas{height:100%}
   #lpanel{
     width:100%!important;min-width:0!important;
-    flex:1;border-right:none;
+    height:100%;display:flex;flex-direction:column;
+    border-right:none;overflow:hidden;
   }
-  #lhdr{padding:4px 8px;font-size:12px}
-  #acclist{flex:1}
+  #lhdr{padding:4px 8px;font-size:12px;flex-shrink:0}
+  #acclist{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
 
   /* Panel derecho: oculto por defecto, aparece al seleccionar cuenta */
   #rpanel{
@@ -1460,6 +1462,11 @@ function renderAccs(){
   frag.appendChild(global);
 
   el.innerHTML='';el.appendChild(frag);
+
+  // En móvil: scroll al final para ver los movimientos más recientes
+  if(isMobile()) requestAnimationFrame(()=>{
+    const ma=$('movarea');if(ma)ma.scrollTop=ma.scrollHeight;
+  });
 }
 
 function selAcc(idx){
