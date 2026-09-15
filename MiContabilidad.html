@@ -490,7 +490,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <div id="cu-movs-panel">
         <div class="cu-ph">
           <span id="cu-movs-title">Selecciona una celda</span>
-          <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento" class="rbtn off">🗑</button>
+          <span id="cu-movs-count" style="font-size:10px;opacity:.7;margin-left:4px"></span>
+          <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento">🗑</button>
           <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento" class="rbtn off">÷</button>
           <button onclick="cuExportMovs()" title="Exportar resultados a CSV">🖨️</button>
           <button class="rbtn" title="Ayuda">?</button>
@@ -683,8 +684,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
   </div>
 
-  <!-- MODAL: Búsqueda CUADRO -->
-  <div id="mdl-cu-search" class="modal" style="display:none;max-width:440px">
+    <div id="mdl-cu-search" class="modal" style="display:none;max-width:440px">
     <button class="mcls" onclick="closeModal()">×</button>
     <h3>Buscar movimientos</h3>
     <div class="fr">
@@ -695,7 +695,21 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <label>Importe <span style="font-size:10px;color:#999">— 648 (empieza por) · *648 (contiene en cualquier parte)</span></label>
       <input id="cu-search-amt" placeholder="648 o *648" oninput="cuSearchLive()" style="width:130px;text-align:right">
     </div>
-    <div id="cu-search-prev" style="font-size:11px;color:#555;height:15px;margin-top:-4px"></div>
+    <div class="fi" style="gap:10px">
+      <div class="fr" style="flex:1"><label>Desde (DD-MM-AA)</label>
+        <div style="display:flex;gap:3px">
+          <input id="cu-search-desde" placeholder="DD-MM-AA" maxlength="8" style="flex:1;min-width:0" oninput="cuSearchLive()">
+          <div style="position:relative"><button type="button" style="padding:0 5px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:12px;height:100%;display:flex;align-items:center">📅</button><input type="date" id="cu-sd-cal" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none" onfocus="dateToCalendar('cu-search-desde','cu-sd-cal')" onchange="calToDate('cu-sd-cal','cu-search-desde');cuSearchLive()"></div>
+        </div>
+      </div>
+      <div class="fr" style="flex:1"><label>Hasta (DD-MM-AA)</label>
+        <div style="display:flex;gap:3px">
+          <input id="cu-search-hasta" placeholder="DD-MM-AA" maxlength="8" style="flex:1;min-width:0" oninput="cuSearchLive()">
+          <div style="position:relative"><button type="button" style="padding:0 5px;border:1px solid #CCC;border-radius:3px;background:#F0F0F0;cursor:pointer;font-size:12px;height:100%;display:flex;align-items:center">📅</button><input type="date" id="cu-sh-cal" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none" onfocus="dateToCalendar('cu-search-hasta','cu-sh-cal')" onchange="calToDate('cu-sh-cal','cu-search-hasta');cuSearchLive()"></div>
+        </div>
+      </div>
+    </div>
+    <div id="cu-search-prev" style="font-size:11px;color:#555;height:15px;margin-top:4px"></div>
     <div class="mbtns">
       <button class="bcan" onclick="closeModal()">Cerrar</button>
     </div>
@@ -2818,7 +2832,7 @@ function cuRender(){
     const clickP=CU.selPeriod!==null?CU.selPeriod:new Date().getFullYear();
     const clickY=CU.selPeriod!==null?CU.selIsYear:true;
     rows+=`<tr class="cu-lv${lv}${isSR?' cu-sel-row':''}" data-ci="${ci}">`;
-    rows+=`<td class="cu-cat" style="padding-left:${4+indent}px;width:${cuCatWidth}px;min-width:${cuCatWidth}px;max-width:${cuCatWidth}px" title="${cat.name}" onclick="cuSel(${ci},${clickP},${clickY})" ondblclick="cuToggleCat(${ci})">${prefix}${cat.name}</td>`;
+    rows+=`<td class="cu-cat" style="padding-left:${4+indent}px;width:${cuCatWidth}px;min-width:${cuCatWidth}px;max-width:${cuCatWidth}px" title="${cat.name}" onclick="cuSelCat(${ci})" ondblclick="cuToggleCat(${ci})" title="Clic: todos los movimientos · Clic en celda: mes/año concreto">${prefix}${cat.name}</td>`;
     for(const c of cols){
       let v,sC,isY;
       if(c.type==='M'){v=cuVal(ci,c.p);sC=CU.selPeriod===c.p&&!CU.selIsYear;isY=false;}
@@ -2859,7 +2873,11 @@ function cuRenderMovs(){
   function sub(ci){const r=[ci];for(const c of CU.tree.children[ci])r.push(...sub(c));return r;}
   const cats=new Set(sub(CU.selCat));
   let movs;
-  if(CU.selIsYear){
+  if(CU.selPeriod==='ALL'){
+    // Todos los movimientos de la categoría sin restricción de fecha
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.date);
+    $('cu-movs-title').textContent=`${S.cats[CU.selCat].name} — todos los movimientos`;
+  } else if(CU.selIsYear){
     const y=CU.selPeriod;
     movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&Math.floor(cuP(m.period)/100)===y);
   }else{
@@ -2869,7 +2887,9 @@ function cuRenderMovs(){
   const MN=['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   const pStr=CU.selIsYear?String(CU.selPeriod):(()=>{const mm=CU.selPeriod%100,yy=Math.floor(CU.selPeriod/100);return`${MN[mm]}-${String(yy).slice(-2)}`;})();
   $('cu-movs-title').textContent=`${S.cats[CU.selCat].name} en ${pStr}`;
-  if(!movs.length){list.innerHTML='<div style="padding:8px 16px;color:#999;font-size:12px">Sin movimientos</div>';return;}
+  if(!movs.length){list.innerHTML='<div style="padding:8px 16px;color:#999;font-size:12px">Sin movimientos</div>';
+    const cc=$('cu-movs-count');if(cc)cc.textContent='';return;}
+  const cc=$('cu-movs-count');if(cc)cc.textContent=`(${movs.length})`;
   let html='';
   for(const m of movs){
     const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
@@ -3140,6 +3160,13 @@ function cuSaveEditCats(){
 }
 
 
+// Clic en nombre de categoría → muestra TODOS sus movimientos (cualquier fecha)
+function cuSelCat(ci){
+  CU.selCat=ci; CU.selPeriod='ALL'; CU.selIsYear=false;
+  CU.selMovOi=-1; CU.chartOff=0;
+  cuRender(); cuRenderMovs(); cuRenderBar();
+}
+
 function cuToggleCat(ci){
   if(!CU.tree||!CU.tree.children[ci]||!CU.tree.children[ci].length)return;
   if(CU.collapsedCats.has(ci))CU.collapsedCats.delete(ci);
@@ -3355,6 +3382,8 @@ function _doExportCuMovs(){
 function cuSearch(){
   $('cu-search-q').value='';
   $('cu-search-amt').value='';
+  $('cu-search-desde').value='';
+  $('cu-search-hasta').value='';
   $('cu-search-prev').textContent='';
   showModal('mdl-cu-search');
   setTimeout(()=>$('cu-search-q').focus(),50);
@@ -3417,11 +3446,16 @@ function highlightWords(concept,words){
 // ── Búsqueda en tiempo real ──────────────────────────────────
 
 function cuSearchLive(){
-  const q=$('cu-search-q')?.value||'';   // SIN trim: el espacio final es significativo
+  const q=$('cu-search-q')?.value||'';
   const qAmt=($('cu-search-amt')?.value||'').trim();
-  if(!q&&!qAmt){$('cu-search-prev').textContent='';return;}
+  const desde=($('cu-search-desde')?.value||'').trim();
+  const hasta=($('cu-search-hasta')?.value||'').trim();
+  if(!q&&!qAmt&&!desde&&!hasta){$('cu-search-prev').textContent='';return;}
 
-  const results=S.movs.filter(m=>matchesConcept(m.concept,q)&&matchesAmt(m.amount,qAmt));
+  let results=S.movs.filter(m=>matchesConcept(m.concept,q)&&matchesAmt(m.amount,qAmt));
+  if(desde){const ds=dateSort(desde);results=results.filter(m=>dateSort(m.date)>=ds);}
+  if(hasta){const dh=dateSort(hasta);results=results.filter(m=>dateSort(m.date)<=dh);}
+
   const n=results.length;
   $('cu-search-prev').textContent=`${n} movimiento${n!==1?'s':''} encontrado${n!==1?'s':''}`;
   cuRenderSearch(q,qAmt,results);
@@ -3443,6 +3477,7 @@ function cuRenderSearch(q,qAmt,results){
 
   const label=q&&qAmt?`"${q}" + ${qAmt}€`:q?`"${q}"`:qAmt?`importe ${qAmt}€`:'';
   $('cu-movs-title').textContent=`Búsqueda${label?' de '+label:''} — ${sorted.length} resultado${sorted.length!==1?'s':''}`;
+  const cc=$('cu-movs-count');if(cc)cc.textContent='';
   ['cu-del-btn','cu-div-btn'].forEach(id=>{const b=$(id);if(b)b.classList.add('off');});
 
   if(!sorted.length){
