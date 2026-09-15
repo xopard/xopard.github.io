@@ -3215,35 +3215,47 @@ function cuMovsFltClear(){
 
 function cuMovsFltApply(){
   const qConc = normTxt($('cumf-conc')?.value||'');
-  const qAcc  = $('cumf-acc')?.value||'';
+  const qAcc  = ($('cumf-acc')?.value||'');
   const qAmt  = ($('cumf-amt')?.value||'').trim();
   const desde = ($('cumf-desde')?.value||'').trim();
   const hasta = ($('cumf-hasta')?.value||'').trim();
-  const rows  = $('cu-movs-list')?.querySelectorAll('.cu-mr');
-  if(!rows||!rows.length) return;
-  let vis=0;
-  rows.forEach(row=>{
-    const oi=parseInt(row.dataset?.oi);
-    let show=true;
-    if(!isNaN(oi)&&oi>=0&&oi<S.movs.length){
-      const m=S.movs[oi];
-      if(qConc){
-        const txt=normTxt(m.concept||'');
-        if(!txt.includes(qConc))show=false;
-      }
-      if(show&&qAcc&&String(m.ai)!==qAcc)show=false;
-      if(show&&qAmt&&!matchesAmt(m.amount,qAmt))show=false;
-      if(show&&desde&&dateSort(m.date)<dateSort(desde))show=false;
-      if(show&&hasta&&dateSort(m.date)>dateSort(hasta))show=false;
+  const hasF  = qConc||qAcc||qAmt||desde||hasta;
+
+  const filtered = hasF ? _cuMovsCache.filter(m=>{
+    if(qConc && !normTxt(m.concept||'').includes(qConc)) return false;
+    if(qAcc  && String(m.ai)!==qAcc) return false;
+    if(qAmt  && !matchesAmt(m.amount, qAmt)) return false;
+    if(desde && dateSort(m.date)<dateSort(desde)) return false;
+    if(hasta && dateSort(m.date)>dateSort(hasta)) return false;
+    return true;
+  }) : _cuMovsCache;
+
+  // Re-renderizar la lista con los resultados filtrados
+  const list=$('cu-movs-list'); if(!list) return;
+  if(!filtered.length){
+    list.innerHTML='<div style="padding:8px 16px;color:#999;font-size:12px">Sin resultados</div>';
+  } else {
+    let html='';
+    for(const m of filtered){
+      const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
+      const cat=(m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'';
+      const neg=m.amount<0; const isSel=m.oi===CU.selMovOi;
+      html+=`<div class="cu-mr${isSel?' sel':''}" data-oi="${m.oi}" onclick="cuSelMov(${m.oi})" ondblclick="cuEditMovFromCuadro(${m.oi})">
+        <div class="cu-mr-main">
+          <span class="cu-mr-date">${m.date}</span>
+          <span class="cu-mr-conc">${m.concept||'—'}</span>
+          <span class="cu-mr-amt${neg?' neg':''}">${fmtAmt(m.amount)}</span>
+        </div>
+        <div class="cu-mr-sub">${m.period}&nbsp;&nbsp;${acc}&nbsp;&nbsp;<span style="color:#AAA;font-style:italic">${cat}</span></div>
+      </div>`;
     }
-    row.style.display=show?'':'none';
-    if(show)vis++;
-  });
+    list.innerHTML=html;
+  }
+
   const cc=$('cumf-count');
-  if(cc)cc.textContent=`${vis} de ${rows.length}`;
-  // Actualizar el contador principal del panel
+  if(cc)cc.textContent=`${filtered.length} de ${_cuMovsCache.length}`;
   const mc=$('cu-movs-count');
-  if(mc){const hasFilter=qConc||qAcc||qAmt||desde||hasta;mc.textContent=hasFilter?`(${vis}/${rows.length})`:`(${rows.length})`;}
+  if(mc)mc.textContent=`(${filtered.length}${hasF?'/'+_cuMovsCache.length:''})`;
 }
 
 
