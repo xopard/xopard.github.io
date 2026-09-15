@@ -315,6 +315,14 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   /* Botones: algo más grandes para dedos */
   .rbtn{padding:5px 8px;font-size:14px}
   .hbtn{font-size:17px;padding:4px 7px}
+
+  /* Ocultar gráfico del CUADRO en móvil */
+  #cu-chart-panel{display:none!important}
+  #cu-vdivider{display:none!important}
+  #cu-movs-panel{width:100%!important}
+
+  /* Botón guardar flotante: solo en móvil */
+  #btn-mobile-save{display:flex!important}
 }
 
 </style>
@@ -758,6 +766,13 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   </div>
 
 </div>
+<div id="btn-mobile-save" onclick="mobileSaveNow()"
+  style="display:none;position:fixed;bottom:20px;right:16px;z-index:200;
+         background:var(--wine);color:#fff;border:none;border-radius:28px;
+         padding:12px 20px;font-size:15px;font-weight:700;cursor:pointer;
+         box-shadow:0 3px 12px rgba(0,0,0,.35);align-items:center;gap:8px">
+  💾 Guardar
+</div>
 <div id="dbx-status"></div>
 <datalist id="concepts-list"></datalist>
 
@@ -933,6 +948,7 @@ async function loadFromDropbox(){
 }
 
 async function saveToDropbox(){
+  if(mobilePending()) return; // en móvil: marcar pendiente, no guardar aún
   closeMenu();
   if(!S.accs.length){toast('Sin datos');return;}
   showLoading('Guardando en Dropbox…');
@@ -2589,6 +2605,7 @@ window.addEventListener('resize',()=>{if(S.selAcc>=0)renderChart(S.selAcc);});
 // Si llega otro cambio antes, reinicia el temporizador.
 let _saveTimer = null;
 function deferredSave() {
+  if(mobilePending()) return; // en móvil: marcar pendiente
   setStatus('Pendiente de guardar…');
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => saveToDropbox(), 2500);
@@ -2861,6 +2878,8 @@ function cuRenderMovs(){
   }
   list.innerHTML=html;
   _cuMovsCache=[...movs];
+  // Mostrar siempre los movimientos más recientes (scroll al final)
+  requestAnimationFrame(()=>{ list.scrollTop=list.scrollHeight; });
 }
 
 function cuSelMov(oi){
@@ -3501,12 +3520,27 @@ document.addEventListener('mouseup',()=>{
 // ── NAVEGACIÓN MÓVIL ─────────────────────────────────────────
 function isMobile(){ return window.innerWidth<=640; }
 function mobileShowMovs(){ if(isMobile()) $('rpanel')?.classList.add('mobile-show'); }
-function mobileBack(){
-  $('rpanel')?.classList.remove('mobile-show');
-}
+function mobileBack(){ $('rpanel')?.classList.remove('mobile-show'); }
 window.addEventListener('popstate',()=>{
   if(isMobile()&&$('rpanel')?.classList.contains('mobile-show')) mobileBack();
 });
+
+// ── GUARDADO MÓVIL (solo cuando el usuario lo pide explícitamente) ──
+let _mobilePending = false;
+
+function mobilePending(){
+  if(!isMobile()) return false;
+  _mobilePending = true;
+  const b=$('btn-mobile-save');
+  if(b){ b.style.display='flex'; b.style.animation='pulse .6s ease 2'; }
+  return true; // indica que el save fue interceptado
+}
+
+function mobileSaveNow(){
+  _mobilePending = false;
+  const b=$('btn-mobile-save'); if(b) b.style.display='none';
+  saveToDropbox();
+}
 
 (async()=>{
   // ¿Viene de Dropbox con código OAuth?
