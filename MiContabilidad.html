@@ -497,10 +497,22 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
           <button class="rbtn" id="cu-flt-btn" onclick="cuMovsFltToggle()" title="Filtrar movimientos"><svg width="12" height="11" viewBox="0 0 12 11" fill="white"><path d="M0 0h12L8 5v5l-4-1.5V5Z"/></svg></button>
           <button class="rbtn" title="Ayuda">?</button>
         </div>
-        <div id="cu-movs-flt" style="display:none;padding:4px 8px;background:#F5F5F5;border-bottom:1px solid #E0E0E0;flex-shrink:0">
-          <input id="cu-movs-flt-q" placeholder="Filtrar: concepto, cuenta, importe (ej: *648)…"
-            style="width:100%;font-size:12px;padding:4px 8px;border:1px solid #CCC;border-radius:3px;box-sizing:border-box"
-            oninput="cuMovsFltApply()">
+        <div id="cu-movs-flt" style="display:none;padding:5px 8px;background:#EEF3F8;border-bottom:1px solid #D0D8E4;flex-shrink:0;gap:4px;flex-direction:column">
+          <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+            <input id="cumf-conc" placeholder="Concepto…" style="flex:2;min-width:100px;font-size:11px;padding:3px 6px;border:1px solid #CCC;border-radius:3px" oninput="cuMovsFltApply()">
+            <select id="cumf-acc" style="flex:1;min-width:80px;font-size:11px;padding:3px;border:1px solid #CCC;border-radius:3px" onchange="cuMovsFltApply()">
+              <option value="">Todas las cuentas</option>
+            </select>
+            <input id="cumf-amt" placeholder="Importe (*648)" style="width:80px;font-size:11px;padding:3px 6px;border:1px solid #CCC;border-radius:3px;text-align:right" oninput="cuMovsFltApply()">
+          </div>
+          <div style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:10px;color:#666;white-space:nowrap">Desde</span>
+            <input id="cumf-desde" placeholder="DD-MM-AA" maxlength="8" style="width:78px;font-size:11px;padding:3px 6px;border:1px solid #CCC;border-radius:3px" oninput="cuMovsFltApply()">
+            <span style="font-size:10px;color:#666;white-space:nowrap">Hasta</span>
+            <input id="cumf-hasta" placeholder="DD-MM-AA" maxlength="8" style="width:78px;font-size:11px;padding:3px 6px;border:1px solid #CCC;border-radius:3px" oninput="cuMovsFltApply()">
+            <button onclick="cuMovsFltClear()" style="font-size:10px;padding:2px 7px;border:1px solid #AAA;border-radius:3px;background:#fff;cursor:pointer;color:#555">✕ Limpiar</button>
+            <span id="cumf-count" style="font-size:10px;color:#666;margin-left:auto"></span>
+          </div>
         </div>
         <div id="cu-movs-list"></div>
       </div>
@@ -3173,34 +3185,65 @@ function cuSaveEditCats(){
 function cuMovsFltToggle(){
   const bar=$('cu-movs-flt');if(!bar)return;
   const show=bar.style.display==='none';
-  bar.style.display=show?'block':'none';
-  if(show){$('cu-movs-flt-q').value='';setTimeout(()=>$('cu-movs-flt-q').focus(),50);}
-  else{$('cu-movs-flt-q').value='';cuMovsFltApply();}
+  bar.style.display=show?'flex':'none';
   const btn=$('cu-flt-btn');
   if(btn)btn.style.background=show?'rgba(255,255,255,.25)':'';
+  if(show){
+    // Rellenar dropdown de cuentas con las que aparecen en los movimientos visibles
+    const sel=$('cumf-acc');
+    sel.innerHTML='<option value="">Todas las cuentas</option>';
+    const seenAi=new Set();
+    _cuMovsCache.forEach(m=>{
+      if(m.ai>=0&&m.ai<S.accs.length&&!seenAi.has(m.ai)){
+        seenAi.add(m.ai);
+        const o=document.createElement('option');
+        o.value=m.ai;o.textContent=S.accs[m.ai].name;
+        sel.appendChild(o);
+      }
+    });
+    setTimeout(()=>$('cumf-conc')?.focus(),50);
+  } else {
+    cuMovsFltClear();
+  }
+}
+
+function cuMovsFltClear(){
+  ['cumf-conc','cumf-amt','cumf-desde','cumf-hasta'].forEach(id=>{const el=$(id);if(el)el.value='';});
+  const s=$('cumf-acc');if(s)s.value='';
+  cuMovsFltApply();
 }
 
 function cuMovsFltApply(){
-  const q=normTxt($('cu-movs-flt-q')?.value||'');
-  const rows=$('cu-movs-list')?.querySelectorAll('.cu-mr');
-  if(!rows)return;
+  const qConc = normTxt($('cumf-conc')?.value||'');
+  const qAcc  = $('cumf-acc')?.value||'';
+  const qAmt  = ($('cumf-amt')?.value||'').trim();
+  const desde = ($('cumf-desde')?.value||'').trim();
+  const hasta = ($('cumf-hasta')?.value||'').trim();
+  const rows  = $('cu-movs-list')?.querySelectorAll('.cu-mr');
+  if(!rows||!rows.length) return;
   let vis=0;
   rows.forEach(row=>{
-    const oi=parseInt(row.dataset.oi);
-    let match=true;
-    if(q&&!isNaN(oi)&&oi>=0&&oi<S.movs.length){
+    const oi=parseInt(row.dataset?.oi);
+    let show=true;
+    if(!isNaN(oi)&&oi>=0&&oi<S.movs.length){
       const m=S.movs[oi];
-      const conc=normTxt(m.concept||'');
-      const acc=normTxt((m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'');
-      const cat=normTxt((m.ci>=0&&m.ci<S.cats.length)?S.cats[m.ci].name:'');
-      const amt=fmtAmt(Math.abs(m.amount));
-      match=conc.includes(q)||acc.includes(q)||cat.includes(q)||amt.includes(q)||m.date.includes(q);
+      if(qConc){
+        const txt=normTxt(m.concept||'');
+        if(!txt.includes(qConc))show=false;
+      }
+      if(show&&qAcc&&String(m.ai)!==qAcc)show=false;
+      if(show&&qAmt&&!matchesAmt(m.amount,qAmt))show=false;
+      if(show&&desde&&dateSort(m.date)<dateSort(desde))show=false;
+      if(show&&hasta&&dateSort(m.date)>dateSort(hasta))show=false;
     }
-    row.style.display=match?'':'none';
-    if(match)vis++;
+    row.style.display=show?'':'none';
+    if(show)vis++;
   });
-  const cc=$('cu-movs-count');
-  if(cc)cc.textContent=q?`(${vis}/${rows.length})`:(rows.length?`(${rows.length})`:'');
+  const cc=$('cumf-count');
+  if(cc)cc.textContent=`${vis} de ${rows.length}`;
+  // Actualizar el contador principal del panel
+  const mc=$('cu-movs-count');
+  if(mc){const hasFilter=qConc||qAcc||qAmt||desde||hasta;mc.textContent=hasFilter?`(${vis}/${rows.length})`:`(${rows.length})`;}
 }
 
 
