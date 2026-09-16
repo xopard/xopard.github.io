@@ -429,7 +429,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         </div>
       </div>
       <!-- Barra de edición masiva -->
-      <div id="bulk-bar" style="background:#FFF8E1;border-bottom:1px solid #E0C060;flex-shrink:0;max-height:0;overflow:hidden;transition:max-height .12s ease">
+      <div id="bulk-bar" style="display:none;position:relative;z-index:10;height:34px;margin-bottom:-34px;background:#FFF8E1;border-bottom:2px solid #D4A800;flex-shrink:0;overflow:hidden">
         <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;font-size:11px">
           <span id="bulk-info" style="font-weight:700;color:#7A5800"></span>
           <span style="color:#7A5800">→ cambiar:</span>
@@ -1230,13 +1230,9 @@ function applyBulkEdit() {
 function updateBulkBar() {
   const n=S.selMovs.size;
   const bb=$('bulk-bar');if(!bb)return;
-  clearTimeout(bb._t);
   if(n>1){
-    // Delay > doble clic (~300ms) para que no desplace el contenido durante doble clic
-    bb._t=setTimeout(()=>{
-      if(S.selMovs.size<=1)return;
-      bb.style.maxHeight='60px'; bb.style.padding='5px 8px';
-      $('bulk-info').textContent=`${S.selMovs.size} seleccionados`;
+    bb.style.display='flex';
+    $('bulk-info').textContent=`${n} seleccionados`;
     const bc=$('bulk-cat');bc.innerHTML='<option value="">— Categoría —</option>';
     const sorted=[...Array(S.cats.length).keys()].sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
     sorted.forEach(i=>{const o=document.createElement('option');o.value=i;o.textContent=S.cats[i].name;bc.appendChild(o);});
@@ -1245,9 +1241,8 @@ function updateBulkBar() {
       if(!S.accs[i]||S.accs[i].type!==t)continue;
       const o=document.createElement('option');o.value=i;o.textContent=S.accs[i].name;ba.appendChild(o);
     }
-    },420);
   } else {
-    bb.style.maxHeight='0'; bb.style.padding='0 8px';
+    bb.style.display='none';
   }
 }
 
