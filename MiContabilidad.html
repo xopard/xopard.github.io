@@ -322,6 +322,9 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   #cu-chart-panel{display:none!important}
   #cu-vdivider{display:none!important}
   #cu-movs-panel{width:100%!important}
+  /* Espacio al final de la lista para que el botón flotante no tape el último elemento */
+  #cu-movs-list{padding-bottom:70px}
+  #movarea{padding-bottom:70px}
 
   /* Botón guardar flotante: solo en móvil */
   #btn-mobile-save{display:flex!important}
@@ -493,8 +496,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
           <span id="cu-movs-count" style="font-size:10px;opacity:.7;margin-left:4px"></span>
           <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento">🗑</button>
           <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento">÷</button>
-          <button onclick="cuExportMovs()" title="Exportar resultados a CSV">🖨️</button>
           <button class="rbtn" id="cu-flt-btn" onclick="cuMovsFltToggle()" title="Filtrar movimientos"><svg width="12" height="11" viewBox="0 0 12 11" fill="white"><path d="M0 0h12L8 5v5l-4-1.5V5Z"/></svg></button>
+          <button onclick="cuExportMovs()" title="Exportar resultados a CSV">🖨️</button>
           <button class="rbtn" title="Ayuda">?</button>
         </div>
         <div id="cu-movs-flt" style="display:none;padding:5px 8px;background:#EEF3F8;border-bottom:1px solid #D0D8E4;flex-shrink:0;gap:4px;flex-direction:column">
