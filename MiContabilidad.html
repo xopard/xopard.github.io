@@ -103,7 +103,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 #cu-movs-list{flex:1;overflow-y:auto;font-size:12px}
 #cu-chart-area{flex:1;overflow:hidden;position:relative}
 .cu-mr{border-bottom:1px solid #EBEBEB;padding:2px 8px;cursor:pointer}
-.cu-mr:hover{background:#F7F7F7}.cu-mr.sel{background:var(--sel)}
+.cu-mr:hover{background:#F7F7F7}.cu-mr.sel{background:#FFF3C0!important}
 .cu-mr-main{display:flex;gap:6px;align-items:baseline}
 .cu-mr-date{width:58px;flex-shrink:0;font-weight:700}
 .cu-mr-conc{flex:1;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -429,7 +429,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         </div>
       </div>
       <!-- Barra de edición masiva -->
-      <div id="bulk-bar" style="display:none;background:#FFF8E1;padding:5px 8px;border-bottom:1px solid #E0C060;flex-shrink:0">
+      <div id="bulk-bar" style="background:#FFF8E1;border-bottom:1px solid #E0C060;flex-shrink:0;max-height:0;overflow:hidden;transition:max-height .12s ease">
         <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;font-size:11px">
           <span id="bulk-info" style="font-weight:700;color:#7A5800"></span>
           <span style="color:#7A5800">→ cambiar:</span>
@@ -494,8 +494,9 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <div class="cu-ph">
           <span id="cu-movs-title">Selecciona una celda</span>
           <span id="cu-movs-count" style="font-size:10px;opacity:.7;margin-left:4px"></span>
-          <button class="rbtn off" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento">🗑</button>
+          <button class="rbtn" id="cu-del-btn" onclick="cuDelMov()" title="Eliminar movimiento">🗑</button>
           <button class="rbtn off" id="cu-div-btn" onclick="cuDivMov()" title="Dividir movimiento">÷</button>
+          <button class="rbtn" onclick="cuAddMovFromPanel()" title="Añadir movimiento (basado en el seleccionado si lo hay)">＋</button>
           <button class="rbtn" id="cu-flt-btn" onclick="cuMovsFltToggle()" title="Filtrar movimientos"><svg width="12" height="11" viewBox="0 0 12 11" fill="white"><path d="M0 0h12L8 5v5l-4-1.5V5Z"/></svg></button>
           <button onclick="cuExportMovs()" title="Exportar resultados a CSV">🖨️</button>
           <button class="rbtn" title="Ayuda">?</button>
@@ -1230,7 +1231,7 @@ function updateBulkBar() {
   const n=S.selMovs.size;
   const bb=$('bulk-bar');if(!bb)return;
   if(n>1){
-    bb.style.display='block';
+    bb.style.maxHeight='60px'; bb.style.padding='5px 8px';
     $('bulk-info').textContent=`${n} seleccionados`;
     const bc=$('bulk-cat');bc.innerHTML='<option value="">— Categoría —</option>';
     const sorted=[...Array(S.cats.length).keys()].sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
@@ -1241,7 +1242,7 @@ function updateBulkBar() {
       const o=document.createElement('option');o.value=i;o.textContent=S.accs[i].name;ba.appendChild(o);
     }
   } else {
-    bb.style.display='none';
+    bb.style.maxHeight='0'; bb.style.padding='0 8px';
   }
 }
 
@@ -1892,9 +1893,9 @@ function showAddMov(){
   const base=sel.length===1?S.movs[sel[0]]:null;
   $('mdl-mov-ttl').textContent=base?'Nuevo movimiento (basado en seleccionado)':'Añadir Movimiento';
   fillAccSel('fm-cuenta',base?base.ai:(S.selAcc>=0?S.selAcc:0));
-  $('fm-fecha').value=today();
+  $('fm-fecha').value=base?base.date:today();
   $('fm-texto').value=base?base.concept:'';
-  $('fm-mes').value=todayPeriod();
+  $('fm-mes').value=base?base.period:todayPeriod();
   const fq=$('fm-cat-q');if(fq)fq.value='';
   fillCatSel('fm-cat',base?base.ci:1);
   $('fm-imp').value=base?fmtAmt(base.amount):'0,00';
@@ -2944,7 +2945,11 @@ function cuRenderMovs(){
 
 function cuSelMov(oi){
   CU.selMovOi=oi;
-  document.querySelectorAll('.cu-mr').forEach(r=>r.classList.toggle('sel',parseInt(r.dataset&&r.dataset.oi)===oi));
+  // Scope a cu-movs-list para no confundir con otros .cu-mr del documento
+  const list=$('cu-movs-list');
+  if(list) list.querySelectorAll('.cu-mr').forEach(r=>
+    r.classList.toggle('sel', parseInt(r.dataset?.oi)===oi)
+  );
   ['cu-del-btn','cu-div-btn'].forEach(id=>{const b=$(id);if(b)b.classList.remove('off');});
 }
 function cuEditMovFromCuadro(oi){
@@ -3270,6 +3275,18 @@ function cuMovsFltApply(){
   if(mc)mc.textContent=`(${filtered.length}${hasF?'/'+_cuMovsCache.length:''})`;
 }
 
+
+function cuAddMovFromPanel(){
+  // Si hay un movimiento seleccionado, pre-rellenar desde él
+  if(CU.selMovOi>=0&&CU.selMovOi<S.movs.length){
+    const m=S.movs[CU.selMovOi];
+    S.selAcc=m.ai; // contexto de cuenta para showAddMov
+    S.selMovs=new Set([CU.selMovOi]);
+  } else {
+    S.selMovs=new Set();
+  }
+  showAddMov();
+}
 
 function cuSelCat(ci){
   CU.selCat=ci; CU.selPeriod='ALL'; CU.selIsYear=false;
