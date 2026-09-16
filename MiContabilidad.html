@@ -125,9 +125,9 @@ top:4px;right:8px;display:flex;gap:10px;font-size:10px;color:#777}
 
 /* ── COLORES DE BOTONES (selectores por atributo) ────────────── */
 /* Verde: añadir */
-button[onclick*="showAddMov"],button[onclick*="addAcc"],button[onclick*="showAddAcc"],
+button[onclick*="showAddMov"],button[onclick*="addAcc"],button[onclick*="showAddAcc"],button[onclick*="cuAddMovFromPanel"],
 [onclick*="cuEditAdd"]{background:rgba(30,140,70,.45)!important}
-button[onclick*="showAddMov"]:hover,button[onclick*="addAcc"]:hover,button[onclick*="showAddAcc"]:hover{background:rgba(30,140,70,.65)!important}
+button[onclick*="showAddMov"]:hover,button[onclick*="addAcc"]:hover,button[onclick*="showAddAcc"]:hover,button[onclick*="cuAddMovFromPanel"]:hover{background:rgba(30,140,70,.65)!important}
 /* Rojo: eliminar */
 button[onclick*="delMov"],button[onclick*="delAcc"],button[onclick*="cuDelMov"]{background:rgba(190,40,40,.45)!important}
 button[onclick*="delMov"]:hover,button[onclick*="delAcc"]:hover,button[onclick*="cuDelMov"]:hover{background:rgba(190,40,40,.65)!important}
@@ -1230,9 +1230,13 @@ function applyBulkEdit() {
 function updateBulkBar() {
   const n=S.selMovs.size;
   const bb=$('bulk-bar');if(!bb)return;
+  clearTimeout(bb._t);
   if(n>1){
-    bb.style.maxHeight='60px'; bb.style.padding='5px 8px';
-    $('bulk-info').textContent=`${n} seleccionados`;
+    // Delay > doble clic (~300ms) para que no desplace el contenido durante doble clic
+    bb._t=setTimeout(()=>{
+      if(S.selMovs.size<=1)return;
+      bb.style.maxHeight='60px'; bb.style.padding='5px 8px';
+      $('bulk-info').textContent=`${S.selMovs.size} seleccionados`;
     const bc=$('bulk-cat');bc.innerHTML='<option value="">— Categoría —</option>';
     const sorted=[...Array(S.cats.length).keys()].sort((a,b)=>(parseInt(S.cats[a].id)||0)-(parseInt(S.cats[b].id)||0));
     sorted.forEach(i=>{const o=document.createElement('option');o.value=i;o.textContent=S.cats[i].name;bc.appendChild(o);});
@@ -1241,6 +1245,7 @@ function updateBulkBar() {
       if(!S.accs[i]||S.accs[i].type!==t)continue;
       const o=document.createElement('option');o.value=i;o.textContent=S.accs[i].name;ba.appendChild(o);
     }
+    },420);
   } else {
     bb.style.maxHeight='0'; bb.style.padding='0 8px';
   }
@@ -2928,7 +2933,7 @@ function cuRenderMovs(){
   for(const m of movs){
     const acc=(m.ai>=0&&m.ai<S.accs.length)?S.accs[m.ai].name:'';
     const neg=m.amount<0;const isSel=m.oi===CU.selMovOi;
-    html+=`<div class="cu-mr${isSel?' sel':''}" onclick="cuSelMov(${m.oi})" ondblclick="cuEditMovFromCuadro(${m.oi})">
+    html+=`<div class="cu-mr${isSel?' sel':''}" data-oi="${m.oi}" onclick="cuSelMov(${m.oi})" ondblclick="cuEditMovFromCuadro(${m.oi})">
       <div class="cu-mr-main">
         <span class="cu-mr-date">${m.date}</span>
         <span class="cu-mr-conc">${m.concept||'—'}</span>
