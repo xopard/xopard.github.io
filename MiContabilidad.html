@@ -323,8 +323,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   #cu-vdivider{display:none!important}
   #cu-movs-panel{width:100%!important}
   /* Espacio al final de la lista para que el botón flotante no tape el último elemento */
-  #cu-movs-list{padding-bottom:70px}
-  #movarea{padding-bottom:70px}
+  #cu-movs-list{padding-bottom:110px}
+  #movarea{padding-bottom:110px}
 
   /* Botón guardar flotante: solo en móvil */
   #btn-mobile-save{display:flex!important}
@@ -1020,6 +1020,11 @@ function parseCSV(txt){
   S.selAcc=-1;S.selMov=-1;S.chartOff=0;
   updatePendingCi();
   renderAll();
+  // Auto-seleccionar la primera cuenta visible al cargar
+  setTimeout(()=>{
+    const first=S.displayOrder.find(i=>S.accs[i]&&(S.filter!=='activas'||S.accs[i].active));
+    if(first!==undefined&&S.selAcc<0) selAcc(first);
+  },50);
 }function genCSV(){
   const L=[];
   L.push(S.meta0);L.push(String(S.cats.length));
@@ -2870,7 +2875,11 @@ function cuRender(){
   const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
   for(const i of roots)rowHTML(i);
   tb.innerHTML=rows||'<tr><td colspan="100" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>';
-  setTimeout(()=>{cuApplyCatWidth(cuCatWidth);cuUpdateColHandle();},0);
+  setTimeout(()=>{
+    cuApplyCatWidth(cuCatWidth);cuUpdateColHandle();
+    // Scroll al año/mes actual (columna más a la derecha = más reciente)
+    const gw=$('cu-grid-wrap');if(gw) gw.scrollLeft=gw.scrollWidth;
+  },0);
 }
 
 function cuToggleYear(y){
