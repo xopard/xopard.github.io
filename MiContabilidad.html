@@ -123,6 +123,22 @@ top:4px;right:8px;display:flex;gap:10px;font-size:10px;color:#777}
 .cu-lb{width:11px;height:11px;border-radius:2px;display:inline-block}
 
 
+
+/* ── GRUPOS DE CUENTAS ──────────────────────────────────────── */
+.grp-row{
+  display:flex;align-items:center;gap:5px;
+  padding:3px 8px 3px 6px;font-size:11px;font-weight:600;color:#5A5A5A;
+  background:#F0F0F0;border-bottom:1px solid #E2E2E2;
+  cursor:pointer;user-select:none;
+}
+.grp-row:hover{background:#E8E8E8}
+.grp-caret{font-size:9px;color:#888;width:10px;flex-shrink:0}
+.grp-name{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.grp-total{font-variant-numeric:tabular-nums;font-weight:700}
+.grp-total.neg{color:var(--neg)}
+.acc-row.in-grp{padding-left:20px;background:#FCFCFC}
+.acc-row.in-grp.sel{background:var(--sel)}
+
 /* ── COLORES DE BOTONES (selectores por atributo) ────────────── */
 /* Verde: añadir */
 button[onclick*="showAddMov"],button[onclick*="addAcc"],button[onclick*="showAddAcc"],button[onclick*="cuAddMovFromPanel"],
@@ -574,6 +590,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="fr"><label>Nombre</label><input id="fa-nombre"></div>
     <div class="fr"><input id="fa-desc" placeholder="más datos (descripción opcional)"></div>
     <div class="fr"><label>Banco / Entidad</label><input id="fa-banco"></div>
+    <div class="fr"><label>Grupo <span style="font-size:10px;color:#999">— opcional, agrupa cuentas con subtotal</span></label><input id="fa-grupo" list="grupos-list" placeholder="ej: Kutxabank, Renta Fija, Jubilación…"><datalist id="grupos-list"></datalist></div>
     <div class="fr">
       <label>Tipo</label>
       <select id="fa-tipo" onchange="toggleTarjetaFields()">
@@ -829,7 +846,7 @@ const S = {
   token:'', meta0:'', extra:[], extra2:0, tail1:'', tail2:'',
   cats:[], accs:[], movs:[],
   selAcc:-1, selMov:-1, editMov:-1, editAcc:-1,
-  filter:'activas', chartOff:0, chartYears:1, chartGroup:null,
+  filter:'activas', chartOff:0, chartYears:1, chartGroup:null, collapsedGroups:new Set(),
   selMovs: new Set(), lastMovClick: -1,
   displayOrder: [],  // orden de visualización de cuentas (índices 0-based)
 };
@@ -1008,7 +1025,7 @@ function parseCSV(txt){
   const nc=parseInt(lines[p++]);S.cats=[];
   for(let i=0;i<nc;i++){const f=lines[p++].split(';');S.cats.push({id:f[0]||'',name:f[1]||'',level:parseInt(f[2])||1,expanded:f[3]==='t',c5:f[4]||''});}
   const na=parseInt(lines[p++]);S.accs=[];
-  for(let i=0;i<na;i++){const f=lines[p++].split(';');S.accs.push({type:f[0]||'1',bank:f[1]||'',name:f[2]||'',desc:f[3]||'',level:parseInt(f[4])||1,active:f[5]==='t',c7:f[6]||'0',c8:f[7]||'1',c9:f[8]||'20',c10:f[9]||'1'});}
+  for(let i=0;i<na;i++){const f=lines[p++].split(';');S.accs.push({type:f[0]||'1',bank:f[1]||'',name:f[2]||'',desc:f[3]||'',level:parseInt(f[4])||1,active:f[5]==='t',c7:f[6]||'0',c8:f[7]||'1',c9:f[8]||'20',c10:f[9]||'1',grupo:(f[10]||'').trim()});}
   const ne=parseInt(lines[p++]);S.extra=[];
   for(let i=0;i<ne;i++)S.extra.push(lines[p++]);
   S.extra2=parseInt(lines[p++])||0;
@@ -1031,7 +1048,8 @@ function parseCSV(txt){
   L.push(S.meta0);L.push(String(S.cats.length));
   for(const c of S.cats)L.push([c.id,c.name,c.level,c.expanded?'t':'',c.c5].join(';'));
   L.push(String(S.accs.length));
-  for(const a of S.accs)L.push([a.type,a.bank,a.name,a.desc,a.level,a.active?'t':'',a.c7,a.c8,a.c9,a.c10].join(';'));
+  const hasGrp=S.accs.some(a=>a.grupo&&a.grupo.trim());
+  for(const a of S.accs){const row=[a.type,a.bank,a.name,a.desc,a.level,a.active?'t':'',a.c7,a.c8,a.c9,a.c10];if(hasGrp)row.push(a.grupo||'');L.push(row.join(';'));}
   L.push(String(S.extra.length));for(const x of S.extra)L.push(x);L.push(String(S.extra2));
   L.push(String(S.movs.length));
   for(const m of S.movs)L.push([m.c1,m.ai+1,m.shaded,m.div,m.period,m.date,m.concept,m.c8,m.ci+1,fmtAmt(m.amount)].join(';'));
@@ -1476,12 +1494,47 @@ function renderAccs(){
   for(const tipo of TIPO_ORDER){
     const grupo=grupos[tipo];
     if(!grupo||!grupo.length)continue;
-    for(const{a,i,b} of grupo){
-      const row=document.createElement('div');
-      row.className='acc-row'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
-      row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
-      row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
-      frag.appendChild(row);
+
+    // Construir secuencia respetando displayOrder pero agrupando consecutivos
+    let idx=0;
+    while(idx<grupo.length){
+      const item=grupo[idx];
+      const g=(item.a.grupo||'').trim();
+      if(!g){
+        // Cuenta sin grupo: fila normal
+        const{a,i,b}=item;
+        const row=document.createElement('div');
+        row.className='acc-row'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
+        row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
+        row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
+        frag.appendChild(row);
+        idx++;
+      } else {
+        // Recoger todas las cuentas consecutivas del mismo grupo
+        const members=[];
+        while(idx<grupo.length&&(grupo[idx].a.grupo||'').trim()===g){members.push(grupo[idx]);idx++;}
+        const gKey=tipo+'|'+g;
+        const isCollapsed=S.collapsedGroups.has(gKey);
+        const gTotal=members.reduce((s,x)=>s+x.b,0);
+        // Cabecera del grupo
+        const gh=document.createElement('div');
+        gh.className='grp-row';
+        gh.title='Doble clic para contraer/desplegar';
+        gh.onclick=e=>{e.stopPropagation();};
+        gh.ondblclick=e=>{e.stopPropagation();toggleAccGroup(gKey);};
+        gh.innerHTML=`<span class="grp-caret">${isCollapsed?'▶':'▼'}</span><span class="grp-name">${g}</span><span class="grp-total ${gTotal<0?'neg':''}">${fmtAmt(gTotal)}</span>`;
+        frag.appendChild(gh);
+        // Cuentas del grupo (si no está colapsado)
+        if(!isCollapsed){
+          for(const{a,i,b} of members){
+            const row=document.createElement('div');
+            row.className='acc-row in-grp'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
+            row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
+            row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
+            frag.appendChild(row);
+          }
+        }
+      }
     }
     // Total del grupo según filtro activo
     const total=grupo.filter(x=>showAll||x.a.active).reduce((s,x)=>s+x.b,0);
@@ -1508,6 +1561,12 @@ function renderAccs(){
   if(isMobile()) requestAnimationFrame(()=>{
     const ma=$('movarea');if(ma)ma.scrollTop=ma.scrollHeight;
   });
+}
+
+function toggleAccGroup(gKey){
+  if(S.collapsedGroups.has(gKey))S.collapsedGroups.delete(gKey);
+  else S.collapsedGroups.add(gKey);
+  renderAccs();
 }
 
 function selAcc(idx){
@@ -1931,7 +1990,7 @@ function toggleTarjetaFields(){
 function showAddAcc(){
   S.editAcc=-1;$('mdl-acc-ttl').textContent='Añadir Cuenta';
   $('fa-activa').checked=true;$('fa-nombre').value='';$('fa-desc').value='';
-  $('fa-banco').value='';$('fa-tipo').value='1';
+  $('fa-banco').value='';$('fa-tipo').value='1';$('fa-grupo').value='';buildGruposList();
   $('tarjeta-fields').style.display='none';
   $('fa-dcierre').value='31';$('fa-dcargo').value='1';$('fa-amort').value='0,00';
   showModal('mdl-acc');setTimeout(()=>$('fa-nombre').focus(),50);
@@ -1940,7 +1999,7 @@ function showEditAcc(idx){
   S.editAcc=idx;const a=S.accs[idx];
   $('mdl-acc-ttl').textContent='Editar Cuenta';
   $('fa-activa').checked=a.active;$('fa-nombre').value=a.name;
-  $('fa-desc').value=a.desc;$('fa-banco').value=a.bank;$('fa-tipo').value=a.type;
+  $('fa-desc').value=a.desc;$('fa-banco').value=a.bank;$('fa-tipo').value=a.type;$('fa-grupo').value=a.grupo||'';buildGruposList();
   toggleTarjetaFields();
   if(a.type==='4'){
     $('fa-cargo').value=a.c10||'1';
@@ -1950,6 +2009,13 @@ function showEditAcc(idx){
   }
   showModal('mdl-acc');
 }
+function buildGruposList(){
+  const dl=$('grupos-list');if(!dl)return;
+  const seen=new Set();
+  S.accs.forEach(a=>{const g=(a.grupo||'').trim();if(g)seen.add(g);});
+  dl.innerHTML=[...seen].sort().map(g=>`<option value="${g.replace(/"/g,'&quot;')}">`).join('');
+}
+
 function saveAcc(){
   const tipo=$('fa-tipo').value;
   // Preservar campos originales si no es tarjeta y estamos editando
@@ -1962,7 +2028,8 @@ function saveAcc(){
     c7:  tipo==='4' ? String(Math.round(parseAmt($('fa-amort').value)||0)) : (orig?orig.c7:'0'),
     c8:  tipo==='4' ? ($('fa-dcargo').value||'1')   : (orig?orig.c8:'1'),
     c9:  tipo==='4' ? ($('fa-dcierre').value||'20') : (orig?orig.c9:'20'),
-    c10: tipo==='4' ? ($('fa-cargo').value||'1')    : (orig?orig.c10:'1')
+    c10: tipo==='4' ? ($('fa-cargo').value||'1')    : (orig?orig.c10:'1'),
+    grupo: $('fa-grupo').value.trim()
   };
   if(S.editAcc>=0)S.accs[S.editAcc]=acc;else S.accs.push(acc);
   saveUndo(S.editAcc>=0 ? 'Cuenta editada: '+acc.name : 'Cuenta añadida: '+acc.name);
