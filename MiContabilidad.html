@@ -832,6 +832,10 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       <label>Grupo <span style="font-size:10px;color:#999">— vacío = quitar el grupo · niveles con /</span></label>
       <input id="fg-grupo" list="grupos-list" placeholder="ej: Mediolanum  ·  Mediolanum/Fondos/Renta Fija">
     </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:#555;margin:-2px 0 4px">
+      <input type="checkbox" id="fg-prefix" onchange="grupoUpdCount()">
+      Anteponer: mete lo marcado <b>dentro</b> de ese grupo conservando sus grupos actuales
+    </label>
     <div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
       <button onclick="grupoSelAll(true)" style="font-size:11px;padding:3px 8px;border:1px solid #BBB;border-radius:3px;background:#fff;cursor:pointer">Todas</button>
       <button onclick="grupoSelAll(false)" style="font-size:11px;padding:3px 8px;border:1px solid #BBB;border-radius:3px;background:#fff;cursor:pointer">Ninguna</button>
@@ -1460,9 +1464,9 @@ function renameAccGroup(gKey){
   const [tipo,rest]=gKey.split('|');
   const path=grpPath(rest), level=path.length-1, oldName=path[level];
   const label=level?('subgrupo "'+oldName+'" (dentro de '+path.slice(0,level).join('/')+')'):('grupo "'+oldName+'"');
-  let nn=prompt('Nuevo nombre para el '+label+'\n(vacío: sus cuentas suben al nivel superior)',oldName);
+  let nn=prompt('Nuevo nombre para el '+label+'\n(vacío: sus cuentas suben al nivel superior · usa / para anidar: Fondos/'+oldName+')',oldName);
   if(nn===null) return;
-  nn=nn.replace(/\//g,' ').trim();
+  nn=nn.trim().replace(/^\/+|\/+$/g,'');
   if(nn===oldName) return;
   const match=a=>{const p=grpPath(a.grupo);return path.every((k,n)=>p[n]===k);};
   let allTypes=false;
@@ -1474,11 +1478,11 @@ function renameAccGroup(gKey){
     if(!allTypes&&(a.type||'1')!==tipo) return;
     if(!match(a)) return;
     const p=grpPath(a.grupo);
-    if(nn) p[level]=nn; else p.splice(level,1);
+    if(nn) p.splice(level,1,...grpPath(nn)); else p.splice(level,1);
     a.grupo=p.join('/');
   });
   // Conservar el estado de plegado
-  const newPath=nn?[...path.slice(0,level),nn]:path.slice(0,level);
+  const newPath=nn?[...path.slice(0,level),...grpPath(nn)]:path.slice(0,level);
   const oldK=gKey, newK=grpKey(tipo,newPath);
   if(S.collapsedGroups.has(oldK)){S.collapsedGroups.delete(oldK);if(nn)S.collapsedGroups.add(newK);}
   S.selGroup=nn?newK:null;
@@ -2182,10 +2186,17 @@ function grupoUpdCount(){
 function applyGrupoBulk(){
   const sel=[...document.querySelectorAll('#fg-list .fg-chk:checked')].map(ch=>parseInt(ch.value));
   if(!sel.length){toast('Marca al menos una cuenta');return;}
-  const g=$('fg-grupo').value.trim();
-  if(!g&&!confirm(`Se quitará el grupo a ${sel.length} cuenta${sel.length!==1?'s':''}. ¿Continuar?`))return;
-  saveUndo(g?('Grupo asignado: '+g):'Grupo quitado');
-  sel.forEach(i=>{S.accs[i].grupo=g;});
+  const g=$('fg-grupo').value.trim().replace(/^\/+|\/+$/g,'');
+  const prefix=$('fg-prefix')?.checked;
+  if(!g){
+    if(prefix){toast('Escribe el grupo dentro del que quieres meterlas');return;}
+    if(!confirm(`Se quitará el grupo a ${sel.length} cuenta${sel.length!==1?'s':''}. ¿Continuar?`))return;
+  }
+  saveUndo(g?(prefix?('Anidado en: '+g):('Grupo asignado: '+g)):'Grupo quitado');
+  sel.forEach(i=>{
+    const cur=(S.accs[i].grupo||'').trim();
+    S.accs[i].grupo = prefix ? (cur?g+'/'+cur:g) : g;
+  });
   normalizeGroupOrder();saveCollapsedFlags();
   closeModal();renderAccs();updateMoveButtons();saveToDropbox();
   toast(g?`${sel.length} cuenta${sel.length!==1?'s':''} en "${g}" ✓`:`Grupo quitado a ${sel.length} cuenta${sel.length!==1?'s':''} ✓`);
@@ -2198,7 +2209,8 @@ function buildGruposList(){
     const g=(a.grupo||'').trim();
     if(!g)return;
     seen.add(g);
-    const p=parseGrp(g); if(p.g2) seen.add(p.g1); // también el grupo padre
+    const p=grpPath(g);
+    for(let n=1;n<p.length;n++) seen.add(p.slice(0,n).join('/')); // también los niveles padre
   });
   dl.innerHTML=[...seen].sort().map(g=>`<option value="${g.replace(/"/g,'&quot;')}">`).join('');
 }
