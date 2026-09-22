@@ -600,7 +600,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="fr"><label>Nombre</label><input id="fa-nombre"></div>
     <div class="fr"><input id="fa-desc" placeholder="más datos (descripción opcional)"></div>
     <div class="fr"><label>Banco / Entidad</label><input id="fa-banco"></div>
-    <div class="fr"><label>Grupo <span style="font-size:10px;color:#999">— opcional. Subgrupo: Grupo/Subgrupo</span></label><input id="fa-grupo" list="grupos-list" placeholder="ej: Mediolanum  ·  Mediolanum/Renta Fija"><datalist id="grupos-list"></datalist></div>
+    <div class="fr"><label>Grupo <span style="font-size:10px;color:#999">— opcional. Niveles con /: Grupo/Sub/Sub2</span></label><input id="fa-grupo" list="grupos-list" placeholder="ej: Mediolanum  ·  Mediolanum/Fondos/Renta Fija"><datalist id="grupos-list"></datalist></div>
     <div class="fr">
       <label>Tipo</label>
       <select id="fa-tipo" onchange="toggleTarjetaFields()">
@@ -829,8 +829,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <button class="mcls" onclick="closeModal()">×</button>
     <h3>Asignar grupo a varias cuentas</h3>
     <div class="fr">
-      <label>Grupo <span style="font-size:10px;color:#999">— vacío = quitar el grupo · subgrupo: Grupo/Subgrupo</span></label>
-      <input id="fg-grupo" list="grupos-list" placeholder="ej: Mediolanum  ·  Mediolanum/Renta Fija">
+      <label>Grupo <span style="font-size:10px;color:#999">— vacío = quitar el grupo · niveles con /</span></label>
+      <input id="fg-grupo" list="grupos-list" placeholder="ej: Mediolanum  ·  Mediolanum/Fondos/Renta Fija">
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
       <button onclick="grupoSelAll(true)" style="font-size:11px;padding:3px 8px;border:1px solid #BBB;border-radius:3px;background:#fff;cursor:pointer">Todas</button>
@@ -1055,7 +1055,7 @@ function parseCSV(txt){
   const nc=parseInt(lines[p++]);S.cats=[];
   for(let i=0;i<nc;i++){const f=lines[p++].split(';');S.cats.push({id:f[0]||'',name:f[1]||'',level:parseInt(f[2])||1,expanded:f[3]==='t',c5:f[4]||''});}
   const na=parseInt(lines[p++]);S.accs=[];
-  for(let i=0;i<na;i++){const f=lines[p++].split(';');S.accs.push({type:f[0]||'1',bank:f[1]||'',name:f[2]||'',desc:f[3]||'',level:parseInt(f[4])||1,active:f[5]==='t',c7:f[6]||'0',c8:f[7]||'1',c9:f[8]||'20',c10:f[9]||'1',grupo:(f[10]||'').trim()});}
+  for(let i=0;i<na;i++){const f=lines[p++].split(';');S.accs.push({type:f[0]||'1',bank:f[1]||'',name:f[2]||'',desc:f[3]||'',level:parseInt(f[4])||1,active:f[5]==='t',c7:f[6]||'0',c8:f[7]||'1',c9:f[8]||'20',c10:f[9]||'1',grupo:(f[10]||'').trim(),plegado:(f[11]||'').trim()});}
   const ne=parseInt(lines[p++]);S.extra=[];
   for(let i=0;i<ne;i++)S.extra.push(lines[p++]);
   S.extra2=parseInt(lines[p++])||0;
@@ -1066,6 +1066,7 @@ function parseCSV(txt){
   const _t2 = S.tail2.split(';').map(v=>parseInt(v)).filter(v=>!isNaN(v)&&v>=0&&v<S.accs.length);
   S.displayOrder = _t2.length===S.accs.length ? _t2 : S.accs.map((_,i)=>i);
   normalizeGroupOrder();
+  loadCollapsedFlags();
   S.selAcc=-1;S.selMov=-1;S.chartOff=0;
   updatePendingCi();
   renderAll();
@@ -1080,7 +1081,11 @@ function parseCSV(txt){
   for(const c of S.cats)L.push([c.id,c.name,c.level,c.expanded?'t':'',c.c5].join(';'));
   L.push(String(S.accs.length));
   const hasGrp=S.accs.some(a=>a.grupo&&a.grupo.trim());
-  for(const a of S.accs){const row=[a.type,a.bank,a.name,a.desc,a.level,a.active?'t':'',a.c7,a.c8,a.c9,a.c10];if(hasGrp)row.push(a.grupo||'');L.push(row.join(';'));}
+  for(const a of S.accs){
+    const row=[a.type,a.bank,a.name,a.desc,a.level,a.active?'t':'',a.c7,a.c8,a.c9,a.c10];
+    if(hasGrp){row.push(a.grupo||'');row.push(a.plegado||'');}
+    L.push(row.join(';'));
+  }
   L.push(String(S.extra.length));for(const x of S.extra)L.push(x);L.push(String(S.extra2));
   L.push(String(S.movs.length));
   for(const m of S.movs)L.push([m.c1,m.ai+1,m.shaded,m.div,m.period,m.date,m.concept,m.c8,m.ci+1,fmtAmt(m.amount)].join(';'));
@@ -1352,15 +1357,18 @@ function redo() {
   toast('Rehecho: ' + next.desc);
 }
 
-// ── ORDEN DE CUENTAS CON GRUPOS Y SUBGRUPOS ──────────────────
-// El campo grupo admite "Grupo" o "Grupo/Subgrupo"
-function parseGrp(s){
-  const p=(s||'').split('/');
-  return {g1:(p[0]||'').trim(), g2:(p[1]||'').trim()};
-}
-function grpStr(g1,g2){return g2?(g1+'/'+g2):g1;}
+// ── GRUPOS DE CUENTAS (niveles ilimitados) ───────────────────
+// El campo grupo admite "Grupo", "Grupo/Sub", "Grupo/Sub/Sub2"...
+function grpPath(s){return (s||'').split('/').map(x=>x.trim()).filter(Boolean);}
+function grpKey(tipo,path){return tipo+'|'+path.join('/');}
 function _accVisible(idx){return S.filter==='todas'||S.accs[idx].active;}
 function _tipoSeq(tipo){return S.displayOrder.filter(i=>S.accs[i]&&(S.accs[i].type||'1')===tipo);}
+function _pathOf(i){return grpPath(S.accs[i].grupo);}
+// ¿La cuenta cuelga de este camino?
+function _under(i,prefix){
+  const p=_pathOf(i);
+  return prefix.every((k,n)=>p[n]===k);
+}
 // Agrupa consecutivos por clave; clave vacía = unidad suelta
 function _unitsBy(list,keyFn){
   const u=[];
@@ -1371,11 +1379,51 @@ function _unitsBy(list,keyFn){
   }
   return u;
 }
-const _topUnits=tipo=>_unitsBy(_tipoSeq(tipo),i=>parseGrp(S.accs[i].grupo).g1);
-const _subUnits=members=>_unitsBy(members,i=>parseGrp(S.accs[i].grupo).g2);
-function _writeTipoSeq(tipo,newSeq){
+const _unitsAt=(members,level)=>_unitsBy(members,i=>_pathOf(i)[level]||'');
+function _writeSeq(tipo,members,newOrder){
+  const set=new Set(members);
   let k=0;
-  S.displayOrder=S.displayOrder.map(i=>(S.accs[i]&&(S.accs[i].type||'1')===tipo)?newSeq[k++]:i);
+  const seq=_tipoSeq(tipo).map(i=>set.has(i)?newOrder[k++]:i);
+  let n=0;
+  S.displayOrder=S.displayOrder.map(i=>(S.accs[i]&&(S.accs[i].type||'1')===tipo)?seq[n++]:i);
+}
+// Coloca juntas las cuentas que comparten camino de grupo, nivel a nivel
+function normalizeGroupOrder(){
+  const bucket=(list,level)=>{
+    const out=[],b={};
+    for(const i of list){
+      const k=_pathOf(i)[level]||'';
+      if(!k){out.push([i]);continue;}
+      if(b[k])b[k].push(i); else {b[k]=[i];out.push(b[k]);}
+    }
+    // Ordenar recursivamente dentro de cada bloque con clave
+    return out.flatMap(blk=>(blk.length>1&&_pathOf(blk[0])[level])?bucket(blk,level+1):blk);
+  };
+  for(const tipo of ['1','2','3','4']) {
+    const seq=_tipoSeq(tipo);
+    _writeSeq(tipo,seq,bucket(seq,0));
+  }
+}
+
+// Qué se mueve según la selección: un grupo de cualquier nivel o una cuenta
+function _moveScope(){
+  let tipo,parentPath,level,pos;
+  if(S.selGroup){
+    const [t,rest]=S.selGroup.split('|');
+    const path=grpPath(rest);
+    tipo=t; parentPath=path.slice(0,-1); level=path.length-1;
+    const block=_tipoSeq(tipo).filter(i=>_under(i,parentPath));
+    const units=_unitsAt(block,level);
+    pos=units.findIndex(u=>u.key===path[path.length-1]);
+    return pos<0?null:{tipo,block,units,pos};
+  }
+  if(S.selAcc<0) return null;
+  const a=S.accs[S.selAcc];
+  tipo=a.type||'1'; parentPath=_pathOf(S.selAcc); level=parentPath.length;
+  const block=_tipoSeq(tipo).filter(i=>_under(i,parentPath));
+  const units=_unitsAt(block,level);
+  pos=units.findIndex(u=>u.members.includes(S.selAcc));
+  return pos<0?null:{tipo,block,units,pos};
 }
 function _moveUnit(units,pos,dir){
   const vis=u=>u.members.some(_accVisible);
@@ -1387,81 +1435,16 @@ function _moveUnit(units,pos,dir){
   arr.splice(j,0,u);
   return arr;
 }
-// Coloca juntas las cuentas de un mismo grupo y subgrupo
-function normalizeGroupOrder(){
-  const bucket=(list,keyFn)=>{
-    const out=[],b={};
-    for(const i of list){
-      const k=keyFn(i);
-      if(!k){out.push([i]);continue;}
-      if(b[k])b[k].push(i); else {b[k]=[i];out.push(b[k]);}
-    }
-    return out;
-  };
-  for(const tipo of ['1','2','3','4']){
-    const tops=bucket(_tipoSeq(tipo),i=>parseGrp(S.accs[i].grupo).g1);
-    const out=[];
-    for(const blk of tops) out.push(...bucket(blk,i=>parseGrp(S.accs[i].grupo).g2).flat());
-    _writeTipoSeq(tipo,out);
-  }
-}
-
-// Contexto de movimiento según lo seleccionado
-function _moveContext(){
-  if(S.selGroup){
-    const [tipo,rest]=S.selGroup.split('|');
-    const {g1,g2}=parseGrp(rest);
-    const tops=_topUnits(tipo);
-    const tpos=tops.findIndex(u=>u.key===g1);
-    if(tpos<0) return null;
-    if(!g2) return {tipo,tops,level:'top',pos:tpos};
-    const subs=_subUnits(tops[tpos].members);
-    const spos=subs.findIndex(u=>u.key===g2);
-    return spos<0?null:{tipo,tops,tpos,subs,level:'sub',pos:spos};
-  }
-  if(S.selAcc<0) return null;
-  const a=S.accs[S.selAcc], tipo=a.type||'1', {g1,g2}=parseGrp(a.grupo);
-  const tops=_topUnits(tipo);
-  if(!g1){
-    const pos=tops.findIndex(u=>!u.key&&u.members[0]===S.selAcc);
-    return {tipo,tops,level:'top',pos};
-  }
-  const tpos=tops.findIndex(u=>u.key===g1&&u.members.includes(S.selAcc));
-  const subs=_subUnits(tops[tpos].members);
-  if(!g2){
-    const pos=subs.findIndex(u=>!u.key&&u.members[0]===S.selAcc);
-    return {tipo,tops,tpos,subs,level:'sub',pos};
-  }
-  const spos=subs.findIndex(u=>u.key===g2&&u.members.includes(S.selAcc));
-  const inner=subs[spos].members.map(i=>({key:'',members:[i]}));
-  const pos=inner.findIndex(u=>u.members[0]===S.selAcc);
-  return {tipo,tops,tpos,subs,spos,inner,level:'acc',pos};
-}
-function _ctxList(ctx){
-  return ctx.level==='top'?ctx.tops:ctx.level==='sub'?ctx.subs:ctx.inner;
-}
 function _canMove(dir){
-  const ctx=_moveContext();
-  if(!ctx||ctx.pos<0) return false;
-  return !!_moveUnit(_ctxList(ctx),ctx.pos,dir);
+  const s=_moveScope();
+  return !!(s&&_moveUnit(s.units,s.pos,dir));
 }
 function _doMove(dir){
-  const ctx=_moveContext();
-  if(!ctx||ctx.pos<0) return;
-  const moved=_moveUnit(_ctxList(ctx),ctx.pos,dir);
-  if(!moved) return;
+  const s=_moveScope(); if(!s) return;
+  const moved=_moveUnit(s.units,s.pos,dir); if(!moved) return;
   const name=S.selGroup?('grupo '+S.selGroup.split('|')[1]):S.accs[S.selAcc].name;
   saveUndo((dir<0?'Subido: ':'Bajado: ')+name);
-  if(ctx.level==='top'){
-    _writeTipoSeq(ctx.tipo,moved.flatMap(u=>u.members));
-  } else if(ctx.level==='sub'){
-    ctx.tops[ctx.tpos].members=moved.flatMap(u=>u.members);
-    _writeTipoSeq(ctx.tipo,ctx.tops.flatMap(u=>u.members));
-  } else {
-    ctx.subs[ctx.spos].members=moved.flatMap(u=>u.members);
-    ctx.tops[ctx.tpos].members=ctx.subs.flatMap(u=>u.members);
-    _writeTipoSeq(ctx.tipo,ctx.tops.flatMap(u=>u.members));
-  }
+  _writeSeq(s.tipo,s.block,moved.flatMap(u=>u.members));
   renderAccs();updateMoveButtons();deferredSave();
 }
 function moveAccUp(){_doMove(-1);}
@@ -1472,33 +1455,60 @@ function selAccGroup(gKey){
   renderAccs();updateMoveButtons();
 }
 
-// Renombrar grupo o subgrupo en todas sus cuentas
+// Renombrar un grupo de cualquier nivel en todas sus cuentas
 function renameAccGroup(gKey){
   const [tipo,rest]=gKey.split('|');
-  const {g1,g2}=parseGrp(rest);
-  const isSub=!!g2, oldName=isSub?g2:g1;
-  const label=isSub?`subgrupo "${g2}" (dentro de ${g1})`:`grupo "${g1}"`;
-  let nn=prompt('Nuevo nombre para el '+label+'\n(vacío: '+(isSub?'las cuentas quedan en el grupo padre':'las cuentas quedan sin grupo')+')',oldName);
+  const path=grpPath(rest), level=path.length-1, oldName=path[level];
+  const label=level?('subgrupo "'+oldName+'" (dentro de '+path.slice(0,level).join('/')+')'):('grupo "'+oldName+'"');
+  let nn=prompt('Nuevo nombre para el '+label+'\n(vacío: sus cuentas suben al nivel superior)',oldName);
   if(nn===null) return;
   nn=nn.replace(/\//g,' ').trim();
   if(nn===oldName) return;
+  const match=a=>{const p=grpPath(a.grupo);return path.every((k,n)=>p[n]===k);};
   let allTypes=false;
-  const otherTypes=S.accs.some(a=>(a.type||'1')!==tipo&&(()=>{const p=parseGrp(a.grupo);return isSub?(p.g1===g1&&p.g2===g2):p.g1===g1;})());
-  if(otherTypes) allTypes=confirm('Ese nombre también se usa en otros tipos de cuenta.\n\nAceptar: cambiarlo en todos\nCancelar: solo en este tipo');
-  if(!nn&&!confirm('Se quitará el '+label+' de sus cuentas (las cuentas no se borran). ¿Continuar?')) return;
+  if(S.accs.some(a=>(a.type||'1')!==tipo&&match(a)))
+    allTypes=confirm('Ese nombre también se usa en otros tipos de cuenta.\n\nAceptar: cambiarlo en todos\nCancelar: solo en este tipo');
+  if(!nn&&!confirm('Se quitará el '+label+' (las cuentas no se borran). ¿Continuar?')) return;
   saveUndo(nn?('Renombrado: '+oldName+' → '+nn):('Eliminado: '+oldName));
   S.accs.forEach(a=>{
     if(!allTypes&&(a.type||'1')!==tipo) return;
-    const p=parseGrp(a.grupo);
-    if(isSub){ if(p.g1===g1&&p.g2===g2) a.grupo=grpStr(g1,nn); }
-    else if(p.g1===g1) a.grupo=grpStr(nn,nn?p.g2:'');
+    if(!match(a)) return;
+    const p=grpPath(a.grupo);
+    if(nn) p[level]=nn; else p.splice(level,1);
+    a.grupo=p.join('/');
   });
-  const newKey=tipo+'|'+(isSub?grpStr(g1,nn):grpStr(nn,''));
-  if(S.collapsedGroups.has(gKey)){S.collapsedGroups.delete(gKey);if(nn)S.collapsedGroups.add(newKey);}
-  S.selGroup=nn?newKey:null;
+  // Conservar el estado de plegado
+  const newPath=nn?[...path.slice(0,level),nn]:path.slice(0,level);
+  const oldK=gKey, newK=grpKey(tipo,newPath);
+  if(S.collapsedGroups.has(oldK)){S.collapsedGroups.delete(oldK);if(nn)S.collapsedGroups.add(newK);}
+  S.selGroup=nn?newK:null;
   normalizeGroupOrder();
-  renderAccs();updateMoveButtons();saveToDropbox();
+  renderAccs();updateMoveButtons();saveCollapsedFlags();saveToDropbox();
   toast(nn?('Renombrado a "'+nn+'" ✓'):('"'+oldName+'" eliminado ✓'));
+}
+
+// ── PLEGADO: se guarda en el CSV (columna extra de cada cuenta) ──
+// Cada cuenta lleva un dígito por nivel de su camino: 1 plegado, 0 desplegado
+function saveCollapsedFlags(){
+  S.accs.forEach(a=>{
+    const p=grpPath(a.grupo), tipo=a.type||'1';
+    if(!p.length){a.plegado='';return;}
+    a.plegado=p.map((_,n)=>S.collapsedGroups.has(grpKey(tipo,p.slice(0,n+1)))?'1':'0').join('');
+  });
+}
+function loadCollapsedFlags(){
+  S.collapsedGroups=new Set();
+  S.accs.forEach(a=>{
+    const p=grpPath(a.grupo), f=a.plegado||'', tipo=a.type||'1';
+    p.forEach((_,n)=>{ if(f[n]==='1') S.collapsedGroups.add(grpKey(tipo,p.slice(0,n+1))); });
+  });
+}
+function toggleAccGroup(gKey){
+  if(S.collapsedGroups.has(gKey))S.collapsedGroups.delete(gKey);
+  else S.collapsedGroups.add(gKey);
+  renderAccs();
+  saveCollapsedFlags();
+  deferredSave();
 }
 
 function updateMoveButtons() {
@@ -1632,18 +1642,20 @@ function renderAccs(){
     const grupo=grupos[tipo];
     if(!grupo||!grupo.length)continue;
 
-    // Render con grupos y subgrupos
-    const accRow=(a,i,b,cls)=>{
+    // Render recursivo de grupos (niveles ilimitados)
+    const accRow=(a,i,b,level)=>{
       const row=document.createElement('div');
-      row.className='acc-row'+cls+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
+      row.className='acc-row'+(level?' in-grp':'')+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
+      if(level) row.style.paddingLeft=(6+level*14)+'px';
       row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
       row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
       frag.appendChild(row);
     };
-    const grpHeader=(gKey,label,total,sub)=>{
+    const grpHeader=(gKey,label,total,level)=>{
       const collapsed=S.collapsedGroups.has(gKey);
       const gh=document.createElement('div');
-      gh.className=(sub?'grp-row grp-sub':'grp-row')+(S.selGroup===gKey?' sel':'');
+      gh.className='grp-row'+(level?' grp-sub':'')+(S.selGroup===gKey?' sel':'');
+      gh.style.paddingLeft=(6+level*14)+'px';
       gh.title='Clic: seleccionar (▲▼ lo mueve) · Doble clic: contraer/desplegar';
       gh.onclick=e=>{e.stopPropagation();selAccGroup(gKey);};
       gh.ondblclick=e=>{e.stopPropagation();toggleAccGroup(gKey);};
@@ -1652,27 +1664,19 @@ function renderAccs(){
       frag.appendChild(gh);
       return collapsed;
     };
-    let idx=0;
-    while(idx<grupo.length){
-      const g1=parseGrp(grupo[idx].a.grupo).g1;
-      if(!g1){const{a,i,b}=grupo[idx];accRow(a,i,b,'');idx++;continue;}
-      // Bloque del grupo de primer nivel
-      const block=[];
-      while(idx<grupo.length&&parseGrp(grupo[idx].a.grupo).g1===g1){block.push(grupo[idx]);idx++;}
-      const gKey=tipo+'|'+g1;
-      const collapsed=grpHeader(gKey,g1,block.reduce((s,x)=>s+x.b,0),false);
-      if(collapsed) continue;
+    const renderLevel=(items,level,prefix)=>{
       let k=0;
-      while(k<block.length){
-        const g2=parseGrp(block[k].a.grupo).g2;
-        if(!g2){const{a,i,b}=block[k];accRow(a,i,b,' in-grp');k++;continue;}
-        const sub=[];
-        while(k<block.length&&parseGrp(block[k].a.grupo).g2===g2){sub.push(block[k]);k++;}
-        const sKey=tipo+'|'+g1+'/'+g2;
-        const sCollapsed=grpHeader(sKey,g2,sub.reduce((s,x)=>s+x.b,0),true);
-        if(!sCollapsed) for(const{a,i,b} of sub) accRow(a,i,b,' in-sub');
+      while(k<items.length){
+        const key=grpPath(items[k].a.grupo)[level]||'';
+        if(!key){const{a,i,b}=items[k];accRow(a,i,b,level);k++;continue;}
+        const blk=[];
+        while(k<items.length&&(grpPath(items[k].a.grupo)[level]||'')===key){blk.push(items[k]);k++;}
+        const path=[...prefix,key];
+        const collapsed=grpHeader(grpKey(tipo,path),key,blk.reduce((s,x)=>s+x.b,0),level);
+        if(!collapsed) renderLevel(blk,level+1,path);
       }
-    }
+    };
+    renderLevel(grupo,0,[]);
     // Total del grupo según filtro activo
     const total=grupo.filter(x=>showAll||x.a.active).reduce((s,x)=>s+x.b,0);
     posicionGlobal+=total;
@@ -1698,12 +1702,6 @@ function renderAccs(){
   if(isMobile()) requestAnimationFrame(()=>{
     const ma=$('movarea');if(ma)ma.scrollTop=ma.scrollHeight;
   });
-}
-
-function toggleAccGroup(gKey){
-  if(S.collapsedGroups.has(gKey))S.collapsedGroups.delete(gKey);
-  else S.collapsedGroups.add(gKey);
-  renderAccs();
 }
 
 function selAcc(idx){
@@ -2188,7 +2186,7 @@ function applyGrupoBulk(){
   if(!g&&!confirm(`Se quitará el grupo a ${sel.length} cuenta${sel.length!==1?'s':''}. ¿Continuar?`))return;
   saveUndo(g?('Grupo asignado: '+g):'Grupo quitado');
   sel.forEach(i=>{S.accs[i].grupo=g;});
-  normalizeGroupOrder();
+  normalizeGroupOrder();saveCollapsedFlags();
   closeModal();renderAccs();updateMoveButtons();saveToDropbox();
   toast(g?`${sel.length} cuenta${sel.length!==1?'s':''} en "${g}" ✓`:`Grupo quitado a ${sel.length} cuenta${sel.length!==1?'s':''} ✓`);
 }
@@ -2223,7 +2221,7 @@ function saveAcc(){
   saveUndo(S.editAcc>=0 ? 'Cuenta editada: '+acc.name : 'Cuenta añadida: '+acc.name);
   if(S.editAcc>=0)S.accs[S.editAcc]=acc;
   else{S.accs.push(acc);S.displayOrder.push(S.accs.length-1);}
-  normalizeGroupOrder(); // coloca la cuenta junto al resto de su grupo
+  normalizeGroupOrder();saveCollapsedFlags(); // coloca la cuenta junto al resto de su grupo
   closeModal();renderAll();updateMoveButtons();saveToDropbox();
 }
 function delAcc(){
