@@ -36,6 +36,9 @@ nav.tabs .in{display:flex;max-width:560px;width:100%;flex-wrap:nowrap}
 nav.tabs button{background:none;border:0;border-top:3px solid transparent;color:var(--muted);font:600 .95rem var(--cond);padding:12px 8px 14px;white-space:nowrap;flex-shrink:0}
 nav.tabs button[aria-current="page"]{color:var(--ink);border-top-color:var(--accent)}
 
+.selector-box{background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;font-size:.95rem}
+.selector-box select{flex:1;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px}
+
 .people{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:4px 0 16px}
 .person{position:relative;overflow:hidden;background:var(--surface);border:2px solid var(--line);border-radius:10px;padding:8px 8px 8px 13px;text-align:left;min-height:62px;transition:all .2s}
 .person::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--c,transparent)}
@@ -44,7 +47,6 @@ nav.tabs button[aria-current="page"]{color:var(--ink);border-top-color:var(--acc
 .person .ts{display:block;font-size:.75rem;color:var(--muted);opacity:.7}
 .person.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
 .person.pending{border-color:var(--accent);box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent)}
-.person.me .nm::after{content:" (yo)";font-weight:500;color:var(--muted)}
 
 .pad-head{display:flex;justify-content:space-between;align-items:baseline;margin:0 2px 8px}
 .pad-head h2{font:700 1.6rem/1.1 var(--cond);margin:0}
@@ -68,10 +70,6 @@ nav.tabs button[aria-current="page"]{color:var(--ink);border-top-color:var(--acc
 .linkish{background:none;border:0;color:var(--muted);font:600 1rem var(--cond);text-decoration:underline;padding:4px}
 .warning{background:var(--surface2);border:2px solid var(--bad);color:var(--bad);border-radius:10px;padding:12px 14px;margin:12px 0;font:600 1.05rem var(--body)}
 
-.selector-box{background:var(--surface);border:2px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
-.selector-box h3{font:600 1.15rem var(--cond);margin:0 0 8px;color:var(--muted)}
-.selector-box select{width:100%;padding:8px;font-size:1rem}
-
 .ticket{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:16px;font-variant-numeric:tabular-nums}
 .ticket h2{font:700 1.5rem var(--cond);margin:0 0 8px}
 .line{display:grid;gap:10px;padding:10px 0;border-bottom:1px dashed var(--line)}
@@ -84,7 +82,6 @@ nav.tabs button[aria-current="page"]{color:var(--ink);border-top-color:var(--acc
 .total{display:flex;justify-content:space-between;font:700 1.6rem var(--cond);margin-top:12px}
 input,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;min-width:0}
 input.price{width:5em;text-align:right;padding:6px}
-input[type=text].clarify{font-size:.9rem;color:var(--muted);padding:6px}
 
 .group{--c:var(--line);background:var(--surface);border:1px solid var(--line);border-left:7px solid var(--c);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .group h3{margin:0 0 8px;font:700 1.4rem/1.1 var(--cond);display:flex;justify-content:space-between}
@@ -117,8 +114,7 @@ table.bal th:first-child,table.bal td:first-child{text-align:left}
 .stat-card .stat-item:last-child{border:0}
 
 .drink-item{background:var(--surface2);border-radius:6px;padding:8px;margin-bottom:6px;font-size:.95rem}
-.drink-item .name{font-weight:600;font-size:1.05rem}
-.drink-item .clarify{color:var(--muted);font-size:.85rem;font-style:italic}
+.drink-item .name{font-weight:600}
 .drink-item .meta{color:var(--muted);font-size:.8rem;margin-top:2px}
 
 .toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9;max-width:90vw}
@@ -175,7 +171,6 @@ function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(
 function defaults(){return{config:{people:DEFAULT_PEOPLE.map((n,i)=>({id:"p"+(i+1),name:n})),catalog:clone(DEFAULT_CATALOG),assignerMode:""},current:{n:1,orders:{},delivered:{}},rounds:[]}}
 function loadLocal(){try{const s=JSON.parse(lsGet("ronda.state"));if(s&&s.config&&s.current)return s}catch(e){}return defaults()}
 
-// Firebase config
 const firebaseConfig={
   apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",
   authDomain:"la-ronda-d659f.firebaseapp.com",
@@ -186,17 +181,11 @@ const firebaseConfig={
 };
 
 let app, db;
-try{
-  app=firebase.initializeApp(firebaseConfig);
-  db=firebase.firestore();
-}catch(e){
-  console.error("Error inicializando Firebase:",e);
-  db=null;
-}
+try{app=firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){db=null}
 
-let S=loadLocal(), IDX={}, mode="local", readOnly=false, pending=false;
+let S=loadLocal(), IDX={}, mode="local", pending=false;
 let me=lsGet("ronda.me");
-const ui={tab:"pedir",selPid:null,cat:null,payer:null,confirmReset:false,customName:"",inCustom:false};
+const ui={tab:"pedir",sel:null,cat:null,payer:null,confirmReset:false};
 
 function saveLocal(){if(mode==="local")lsSet("ronda.state",JSON.stringify(S))}
 function reindex(){IDX={};S.config.catalog.forEach(c=>c.items.forEach(it=>{IDX[it.id]=Object.assign({},it,{cat:c})}))}
@@ -209,227 +198,115 @@ const emoji=o=>{if(!o||o.custom)return"";return IDX[o.drink]?IDX[o.drink].emoji:
 
 function flash(t){const el=$("#toast");el.textContent=t;el.classList.add("show");clearTimeout(flash.t);flash.t=setTimeout(()=>el.classList.remove("show"),2200)}
 
-/* ---- escritura en la base compartida ---- */
-async function dbWrite(path,data){
-  if(!db)return;
-  try{
-    const docRef=db.collection(path.split("/")[0]).doc(path.split("/")[1]);
-    await docRef.update(data);
-  }catch(e){
-    if(e.code==="invalid-argument"||e.code==="not-found"){await db.collection(path.split("/")[0]).doc(path.split("/")[1]).set(data)}
-  }
-}
+async function dbWrite(path,data){if(!db)return;try{await db.collection(path.split("/")[0]).doc(path.split("/")[1]).update(data)}catch(e){if(e.code==="invalid-argument"||e.code==="not-found")dbSet(path,data)}}
 async function dbSet(path,data){if(!db)return;try{await db.collection(path.split("/")[0]).doc(path.split("/")[1]).set(data)}catch(e){}}
 async function dbDelete(path){if(!db)return;try{await db.collection(path.split("/")[0]).doc(path.split("/")[1]).delete()}catch(e){}}
 
-/* ---- operaciones ---- */
 function addDrink(pid,drink){
-  if(readOnly)return flash("Solo lectura.");
   if(!S.current.orders[pid])S.current.orders[pid]=[];
   const o={...drink,ts:Date.now(),by:me||"Anónimo"};
   S.current.orders[pid].push(o);
-  if(mode==="firebase")dbWrite("bar/current",{orders:clone(S.current.orders)}).catch(e=>flash("Error al guardar"));
-  else saveLocal();
+  if(mode==="firebase")dbWrite("bar/current",{orders:clone(S.current.orders)}).catch(e=>flash("Error"));else saveLocal();
 }
 function removeDrink(pid,idx){
-  if(readOnly)return;
   if(S.current.orders[pid])S.current.orders[pid].splice(idx,1);
-  if(mode==="firebase")dbWrite("bar/current",{orders:clone(S.current.orders)}).catch(e=>flash("Error al guardar"));
-  else saveLocal();
+  if(mode==="firebase")dbWrite("bar/current",{orders:clone(S.current.orders)}).catch(e=>flash("Error"));else saveLocal();
 }
 function setDelivered(pid,idx,val){
-  if(readOnly)return;
   S.current.delivered=S.current.delivered||{};
   const key=pid+"_"+idx;
-  if(val)S.current.delivered[key]=true;
-  else delete S.current.delivered[key];
-  if(mode==="firebase")dbWrite("bar/current",{delivered:clone(S.current.delivered||{})}).catch(e=>flash("Error al guardar"));
-  else saveLocal();
+  if(val)S.current.delivered[key]=true;else delete S.current.delivered[key];
+  if(mode==="firebase")dbWrite("bar/current",{delivered:clone(S.current.delivered||{})}).catch(e=>flash("Error"));else saveLocal();
 }
-function setConfig(cfg){
-  if(readOnly)return flash("Solo lectura.");
-  S.config=cfg;
-  if(mode==="firebase")dbSet("bar/config",clone(cfg)).catch(e=>flash("Error al guardar"));
-  else saveLocal();
-}
+function setConfig(cfg){S.config=cfg;if(mode==="firebase")dbSet("bar/config",clone(cfg)).catch(e=>flash("Error"));else saveLocal()}
 function editConfig(fn){const c=clone(S.config);fn(c);setConfig(c);render()}
-function roundTotal(){return r2(people().reduce((s,p)=>{const ds=drinks(p.id);return s+ds.reduce((ss,o)=>ss+priceOf(o),0)},0))}
+function roundTotal(){return r2(people().reduce((s,p)=>s+drinks(p.id).reduce((ss,o)=>ss+priceOf(o),0),0))}
 
 function closeRound(payer){
-  if(readOnly)return flash("Solo lectura.");
   const orders={},prices={};let total=0;
-  people().forEach(p=>{
-    const ds=drinks(p.id);
-    if(!ds.length)return;
-    orders[p.id]=ds;
-    ds.forEach(o=>{if(!o.drink||o.drink!=="nada"){const pr=priceOf(o);if(o.drink)prices[o.drink]=pr;total+=pr}})
-  });
+  people().forEach(p=>{const ds=drinks(p.id);if(!ds.length)return;orders[p.id]=ds;ds.forEach(o=>{if(!o.drink||o.drink!=="nada"){const pr=priceOf(o);if(o.drink)prices[o.drink]=pr;total+=pr}})});
   const n=S.current.n, id="r"+String(n).padStart(4,"0");
   const round={n,orders,prices,payer,total:r2(total),ts:Date.now()};
   S.rounds=S.rounds.filter(r=>r.id!==id).concat([Object.assign({id},round)]);
   S.current={n:n+1,orders:{},delivered:{}};
-  if(mode==="firebase"){
-    dbSet("rounds/"+id,clone(round)).catch(e=>flash("Error al guardar"));
-    dbSet("bar/current",{n:n+1,orders:{},delivered:{}}).catch(e=>flash("Error al guardar"));
-  }else saveLocal();
+  if(mode==="firebase"){dbSet("rounds/"+id,clone(round)).catch(e=>flash("Error"));dbSet("bar/current",{n:n+1,orders:{},delivered:{}}).catch(e=>flash("Error"))}else saveLocal();
 }
 function undoLast(){
-  if(readOnly||!S.rounds.length)return;
+  if(!S.rounds.length)return;
   const last=S.rounds.slice().sort((a,b)=>a.n-b.n).pop();
   S.rounds=S.rounds.filter(r=>r.id!==last.id);
   S.current={n:last.n,orders:clone(last.orders||{}),delivered:{}};
-  if(mode==="firebase"){
-    dbDelete("rounds/"+last.id).catch(e=>flash("Error al guardar"));
-    dbSet("bar/current",clone(S.current)).catch(e=>flash("Error al guardar"));
-  }else saveLocal();
+  if(mode==="firebase"){dbDelete("rounds/"+last.id).catch(e=>flash("Error"));dbSet("bar/current",clone(S.current)).catch(e=>flash("Error"))}else saveLocal();
 }
 function newNight(){
-  if(readOnly)return;
-  const ids=S.rounds.map(r=>r.id);
-  S.rounds=[];S.current={n:1,orders:{},delivered:{}};
-  if(mode==="firebase"){
-    ids.forEach(id=>dbDelete("rounds/"+id).catch(e=>{}));
-    dbSet("bar/current",{n:1,orders:{},delivered:{}}).catch(e=>flash("Error al guardar"));
-  }else saveLocal();
+  const ids=S.rounds.map(r=>r.id);S.rounds=[];S.current={n:1,orders:{},delivered:{}};
+  if(mode==="firebase"){ids.forEach(id=>dbDelete("rounds/"+id).catch(e=>{}));dbSet("bar/current",{n:1,orders:{},delivered:{}}).catch(e=>flash("Error"))}else saveLocal();
 }
 
-/* ---- cálculos ---- */
 function sortedRounds(){return S.rounds.slice().sort((a,b)=>a.n-b.n)}
-function lastDrinkOf(pid){const rs=sortedRounds();for(let i=rs.length-1;i>=0;i--){const ds=rs[i].orders&&rs[i].orders[pid];if(ds&&ds.length){const o=ds[ds.length-1];if(o.drink&&o.drink!=="nada"&&(o.drink==="nada"||IDX[o.drink]))return o.drink}}return null}
-function favDrink(pid){
-  const drinks={};
-  S.rounds.forEach(r=>{const ds=r.orders&&r.orders[pid];if(ds)ds.forEach(o=>{const d=o.drink;if(d&&d!=="nada")drinks[d]=(drinks[d]||0)+1})});
-  let best=null,max=0;
-  Object.keys(drinks).forEach(d=>{if(drinks[d]>max){best=d;max=drinks[d]}});
-  return best;
-}
-function balances(){
-  const b={},drank={},paid={},times={};
-  people().forEach(p=>{b[p.id]=0;drank[p.id]=0;paid[p.id]=0;times[p.id]=0});
-  S.rounds.forEach(r=>{
-    Object.keys(r.orders||{}).forEach(pid=>{const ds=r.orders[pid];if(!ds)return;ds.forEach(o=>{drank[pid]+=Number((r.prices||{})[o.drink])||0})});
-    if(r.payer in paid){paid[r.payer]+=Number(r.total)||0;times[r.payer]++}
-  });
-  people().forEach(p=>{b[p.id]=r2(paid[p.id]-drank[p.id])});
-  return{b,drank,paid,times};
-}
-function suggestPayer(B){
-  const ps=people();
-  let cand=ps.filter(p=>{const ds=drinks(p.id);return ds&&ds.some(o=>!o.drink||o.drink!=="nada")});
-  if(!cand.length)cand=ps;
-  return cand.slice().sort((x,y)=>(B.b[x.id]-B.b[y.id])||(B.times[x.id]-B.times[y.id])||(ps.indexOf(x)-ps.indexOf(y)))[0].id;
-}
-function settle(b){
-  const d=[],c=[];
-  people().forEach(p=>{const v=Math.round((b[p.id]||0)*100);if(v<0)d.push({id:p.id,v:-v});else if(v>0)c.push({id:p.id,v})});
-  d.sort((x,y)=>y.v-x.v);c.sort((x,y)=>y.v-x.v);
-  const out=[];let i=0,j=0;
-  while(i<d.length&&j<c.length){const m=Math.min(d[i].v,c[j].v);out.push({from:d[i].id,to:c[j].id,v:m/100});d[i].v-=m;c[j].v-=m;if(!d[i].v)i++;if(!c[j].v)j++}
-  return out;
-}
-function groups(orders){
-  const g={};
-  people().forEach(p=>{const ds=drinks(p.id);if(!ds)return;ds.forEach(o=>{if(!o.drink||o.drink==="nada")return;const d=o.drink;(g[d]=g[d]||[]).push(p.id)})});
-  const out=[];
-  S.config.catalog.forEach(c=>c.items.forEach(it=>{if(g[it.id])out.push({id:it.id,pids:g[it.id]})}));
-  Object.keys(g).forEach(id=>{if(!IDX[id])out.push({id,pids:g[id]})});
-  return out;
-}
-function changesSinceLastRound(){
-  if(S.rounds.length<2)return[];
-  const prev=sortedRounds()[S.rounds.length-2];
-  const changes=[];
-  people().forEach(p=>{
-    const curr=drinks(p.id);
-    const prevDs=prev.orders[p.id];
-    const prevD=prevDs&&prevDs.length?prevDs[prevDs.length-1].drink:null;
-    const currD=curr&&curr.length?curr[curr.length-1].drink:null;
-    if(currD!==prevD)changes.push({pid:p.id,from:prevD,to:currD});
-  });
-  return changes;
-}
+function lastDrinkOf(pid){const rs=sortedRounds();for(let i=rs.length-1;i>=0;i--){const ds=rs[i].orders&&rs[i].orders[pid];if(ds&&ds.length){const o=ds[ds.length-1];if(o.drink&&o.drink!=="nada")return o.drink}}return null}
+function favDrink(pid){const drinks={};S.rounds.forEach(r=>{const ds=r.orders&&r.orders[pid];if(ds)ds.forEach(o=>{const d=o.drink;if(d&&d!=="nada")drinks[d]=(drinks[d]||0)+1})});let best=null,max=0;Object.keys(drinks).forEach(d=>{if(drinks[d]>max){best=d;max=drinks[d]}});return best}
+function balances(){const b={},drank={},paid={},times={};people().forEach(p=>{b[p.id]=0;drank[p.id]=0;paid[p.id]=0;times[p.id]=0});S.rounds.forEach(r=>{Object.keys(r.orders||{}).forEach(pid=>{const ds=r.orders[pid];if(!ds)return;ds.forEach(o=>{drank[pid]+=Number((r.prices||{})[o.drink])||0})});if(r.payer in paid){paid[r.payer]+=Number(r.total)||0;times[r.payer]++}});people().forEach(p=>{b[p.id]=r2(paid[p.id]-drank[p.id])});return{b,drank,paid,times}}
+function suggestPayer(B){const ps=people();let cand=ps.filter(p=>drinks(p.id).some(o=>!o.drink||o.drink!=="nada"));if(!cand.length)cand=ps;return cand.slice().sort((x,y)=>(B.b[x.id]-B.b[y.id])||(B.times[x.id]-B.times[y.id])||(ps.indexOf(x)-ps.indexOf(y)))[0].id}
+function settle(b){const d=[],c=[];people().forEach(p=>{const v=Math.round((b[p.id]||0)*100);if(v<0)d.push({id:p.id,v:-v});else if(v>0)c.push({id:p.id,v})});d.sort((x,y)=>y.v-x.v);c.sort((x,y)=>y.v-x.v);const out=[];let i=0,j=0;while(i<d.length&&j<c.length){const m=Math.min(d[i].v,c[j].v);out.push({from:d[i].id,to:c[j].id,v:m/100});d[i].v-=m;c[j].v-=m;if(!d[i].v)i++;if(!c[j].v)j++}return out}
+function changesSinceLastRound(){if(S.rounds.length<2)return[];const prev=sortedRounds()[S.rounds.length-2];const changes=[];people().forEach(p=>{const curr=drinks(p.id);const prevDs=prev.orders[p.id];const prevD=prevDs&&prevDs.length?prevDs[prevDs.length-1].drink:null;const currD=curr&&curr.length?curr[curr.length-1].drink:null;if(currD!==prevD)changes.push({pid:p.id,from:prevD,to:currD})});return changes}
 
-/* ---- vistas ---- */
 function vPedir(){
-  if(!me)return'<div class="warning">⚠️ Primero debes elegir quién eres</div><div class="selector-box"><h3>Eres:</h3><select id="selectMe" aria-label="¿Quién eres?"><option value="">Elige tu nombre...</option>'+people().map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")+`<option value="@guest">👤 Apuntar para alguien fuera</option></select></div>`;
+  if(!me)return`<div class="selector-box" style="margin:16px 0"><label style="margin:0">Eres: <select id="selectMe"><option value="">Elige...</option>${people().map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></label></div>`;
+  
+  if(S.config.assignerMode)return`<div class="warning">🔐 ${esc(pname(S.config.assignerMode))} está en modo asignador</div><p class="hint">Espera a que termine.</p>`;
+  if(S.config.assignerMode&&me!==S.config.assignerMode)return'';
   
   const ps=people();
-  if(!ui.selPid||!ps.find(p=>p.id===ui.selPid)){const mine=me&&ps.find(p=>p.id===me);ui.selPid=mine?me:(ps.find(p=>!drinks(p.id).length)||ps[0]).id}
+  if(!ui.sel||!ps.find(p=>p.id===ui.sel))ui.sel=ps[0].id;
   
-  let h='';
-  if(S.config.assignerMode){h+=`<div class="warning">🔐 ${esc(pname(S.config.assignerMode))} está en modo asignador — solo puede apuntar él</div>`}
+  let h='<div class="people">'+ps.map(p=>{
+    const ds=drinks(p.id);
+    const c=ds.length&&ds[ds.length-1].drink&&IDX[ds[ds.length-1].drink]?IDX[ds[ds.length-1].drink].cat.color:"transparent";
+    const pending=!ds.length?" pending":"";
+    const em=ds.length?emoji(ds[ds.length-1]):"";
+    return `<button class="person${p.id===ui.sel?" sel":""}${pending}" style="--c:${c}" data-act="sel" data-id="${p.id}"><span class="nm">${em} ${esc(p.name)}</span><span class="dr">${ds.length?esc(label(ds[ds.length-1])):"Sin pedir"}</span>${ds.length?`<span class="ts">${fmtTime(ds[ds.length-1].ts)}</span>`:""}</button>`;
+  }).join("")+'</div>';
   
-  if(S.config.assignerMode&&me!==S.config.assignerMode)return h+'<p class="hint">Espera a que '+esc(pname(S.config.assignerMode))+' termine de apuntar.</p>';
+  const curDs=drinks(ui.sel);
+  h+=`<div class="pad-head"><h2>${esc(pname(ui.sel))}</h2></div>`;
   
-  h+=`<div class="selector-box"><h3>Quien pide:</h3><select id="selectSel" aria-label="Quién pide"><option value="">-- Selecciona --</option>`+ps.map(p=>`<option value="${p.id}"${ui.selPid===p.id?" selected":""}>${esc(p.name)}</option>`).join("")+`<option value="@custom">👤 Alguien que no está aquí</option></select>`;
-  if(ui.selPid==="@custom")h+=`<input type="text" id="customName" placeholder="¿Nombre?" value="${esc(ui.customName)}" style="margin-top:8px">`;
-  h+='</div>';
-  
-  if(!ui.selPid||ui.selPid==="@custom"&&!ui.customName)return h;
-  
-  const cur=ui.selPid==="@custom"?{name:ui.customName}:{name:pname(ui.selPid)};
-  const curDrinks=ui.selPid==="@custom"?[]:drinks(ui.selPid);
-  h+=`<div class="pad-head"><h2>${esc(cur.name)}</h2></div>`;
-  
-  if(curDrinks.length)h+=`<div style="margin-bottom:12px"><strong style="display:block;margin-bottom:6px;font-size:1.05rem">Lleva apuntadas:</strong>`+curDrinks.map((o,i)=>`<div class="drink-item"><span class="name">${emoji(o)} ${esc(label(o))}</span>${o.clarification?`<div class="clarify">${esc(o.clarification)}</div>`:""}${priceOf(o)?`<div class="meta">${eur(priceOf(o))}</div>`:""}${ui.selPid===me||me===S.config.assignerMode?`<button class="linkish" data-act="removeDrink" data-pid="${ui.selPid}" data-idx="${i}" style="display:block;margin-top:4px">Quitar</button>`:""}</div>`).join("")+`</div>`;
+  if(curDs.length)h+=`<div style="margin-bottom:12px"><strong style="display:block;margin-bottom:6px">Apuntadas (${curDs.length}):</strong>`+curDs.map((o,i)=>`<div class="drink-item"><span class="name">${emoji(o)} ${esc(label(o))}</span>${o.clarification?`<div style="color:var(--muted);font-size:.85rem">· ${esc(o.clarification)}</div>`:""}${me===ui.sel?`<button class="linkish" data-act="removeDrink" data-pid="${ui.sel}" data-idx="${i}" style="display:inline;margin-left:8px;font-size:.9rem">Quitar</button>`:""}</div>`).join("")+'</div>';
   
   let cat=ui.cat&&S.config.catalog.find(c=>c.id===ui.cat);
   if(!cat){
-    ui.cat=null;
-    h+='<div class="keys">'+S.config.catalog.map(c=>`<button class="key" style="--c:${c.color}" data-act="cat" data-id="${c.id}">${esc(c.name)}<small>${c.items.length} opciones</small></button>`).join("")+
-      `<button class="key ghost" data-act="pickOther">🔧 Otra bebida<small>Especificar</small></button>`;
-    const prev=lastDrinkOf(ui.selPid);
-    if(prev)h+=`<button class="key ghost" data-act="pick" data-id="${prev}">${emoji({drink:prev})} Lo mismo<small>${esc(label({drink:prev}))}</small></button>`;
-    h+=`</div>`;
+    h+='<div class="keys">'+S.config.catalog.map(c=>`<button class="key" style="--c:${c.color}" data-act="cat" data-id="${c.id}">${esc(c.name)}<small>${c.items.length}</small></button>`).join("")+
+      `<button class="key ghost" data-act="pickOther">🔧 Otra<small>Especificar</small></button>`;
+    const prev=lastDrinkOf(ui.sel);if(prev)h+=`<button class="key ghost" data-act="pick" data-id="${prev}">${emoji({drink:prev})} Lo mismo<small>${esc(label({drink:prev}))}</small></button>`;
+    h+='</div>';
   }else{
-    h+=`<div class="keys"><button class="key ghost" data-act="back">← Volver<small>${esc(cat.name)}</small></button>`+
-      cat.items.map(it=>`<button class="key" style="--c:${cat.color}" data-act="pick" data-id="${it.id}">${it.emoji} ${esc(it.name)}<small>${eur(it.price)}</small></button>`).join("")+"</div>";
+    h+=`<div class="keys"><button class="key ghost" data-act="back">← Atrás</button>`+cat.items.map(it=>`<button class="key" style="--c:${cat.color}" data-act="pick" data-id="${it.id}">${it.emoji} ${esc(it.name)}<small>${eur(it.price)}</small></button>`).join('')+'</div>';
   }
   
   const n=ps.filter(p=>drinks(p.id).length).length;
-  h+=`<p class="status">${n} de ${ps.length} han pedido. Esta ronda va por ${eur(roundTotal())}.</p>`;
+  h+=`<p class="status">${n} de ${ps.length} han pedido. Ronda: ${eur(roundTotal())}</p>`;
   if(S.rounds.length)h+='<button class="btn" data-act="repeatAll">Repetir última ronda a quien falte</button>';
   return h;
 }
 
 function vComanda(){
-  const gs=groups();
-  if(!gs.length)return'<p class="hint">Todavía nadie ha pedido en esta ronda. Empezad en Pedir.</p>';
+  const gs=[];people().forEach(p=>{const ds=drinks(p.id);if(!ds.length)return;ds.forEach(o=>{if(!o.drink||o.drink==="nada")return;const g=gs.find(x=>x.id===o.drink);if(g)g.pids.push(p.id);else gs.push({id:o.drink,pids:[p.id]})})});
+  if(!gs.length)return'<p class="hint">Nadie ha pedido aún.</p>';
   let h=`<div class="ticket"><h2>Ronda ${S.current.n}</h2>`;
   const changes=changesSinceLastRound();
-  if(changes.length)h+=`<div style="background:var(--surface2);border-radius:6px;padding:8px;margin-bottom:10px;font-size:.9rem;color:var(--muted)">Cambios desde ronda anterior: ${changes.map(c=>`${esc(pname(c.pid))}`).join(", ")}</div>`;
-  h+=gs.map(g=>{
-    const pids=g.pids.slice();
-    return `<div class="line full"><div class="line compact"><span class="q">${pids.length}</span><span class="n">${emoji({drink:g.id})} ${esc(label({drink:g.id}))}</span><span class="p">${IDX[g.id]?`<input class="price" type="number" inputmode="decimal" step="0.05" min="0" value="${IDX[g.id].price}" data-price="${g.id}" aria-label="Precio"> €`:""}</span></div><div class="meta">${pids.map(pid=>{const ds=drinks(pid);const o=ds.find(x=>!x.drink||x.drink===g.id);return o?`${esc(pname(pid))} (${fmtTime(o.ts)}, apuntó ${esc(o.by)})`:""}).filter(Boolean).join(" · ")}</div></div>`}).join("")+
-    `<div class="total"><span>Total</span><span>${eur(roundTotal())}</span></div></div>`;
-  const all=people().filter(p=>drinks(p.id).length);
-  const faltan=people().filter(p=>!drinks(p.id).length);
-  if(faltan.length)h+=`<p class="status">Faltan por pedir: ${faltan.map(p=>esc(p.name)).join(", ")}.</p>`;
-  h+='<div class="row"><button class="btn" data-act="copy">Copiar comanda</button><button class="btn primary" data-act="tab" data-id="reparto">Ir al reparto</button></div>';
+  if(changes.length)h+=`<div style="background:var(--surface2);border-radius:6px;padding:8px;margin-bottom:10px;font-size:.9rem;color:var(--muted)">Cambios: ${changes.map(c=>`${esc(pname(c.pid))}`).join(", ")}</div>`;
+  h+=gs.map(g=>`<div class="line full"><div class="line compact"><span class="q">${g.pids.length}</span><span class="n">${emoji({drink:g.id})} ${esc(label({drink:g.id}))}</span><span class="p">${IDX[g.id]?`<input class="price" type="number" step="0.05" min="0" value="${IDX[g.id].price}" data-price="${g.id}"> €`:""}</span></div></div>`).join("")+`<div class="total"><span>Total</span><span>${eur(roundTotal())}</span></div></div>`;
+  h+='<div class="row"><button class="btn" data-act="copy">Copiar</button><button class="btn primary" data-act="tab" data-id="reparto">Reparto</button></div>';
   return h;
 }
 
 function vReparto(){
-  if(!people().some(p=>drinks(p.id).length))return'<p class="hint">Cuando la ronda tenga pedidos, aquí verás de quién es cada bebida.</p>';
+  if(!people().some(p=>drinks(p.id).length))return'<p class="hint">Sin pedidos aún.</p>';
   const del=S.current.delivered||{};
-  let h='';
-  
-  people().forEach(p=>{
-    const ds=drinks(p.id);
-    if(!ds.length)return;
-    h+=`<div class="group"><h3>${esc(pname(p.id))}</h3><div class="chips">`;
-    ds.forEach((o,i)=>{
-      const key=p.id+"_"+i;
-      const done=!!del[key];
-      h+=`<button class="chip${done?" done":""}" data-act="deliver" data-pid="${p.id}" data-idx="${i}" aria-pressed="${done}">${emoji(o)} ${esc(label(o))}${o.clarification?` · ${esc(o.clarification)}`:""}</button>`;
-    });
-    h+='</div></div>';
-  });
-  
-  const all=people().reduce((a,p)=>a+drinks(p.id).length,0);
-  const left=all-Object.keys(del).length;
-  h=`<p class="status">${left?`Quedan ${left} por entregar.`:"Todo entregado."}</p>`+h;
-  if(!left)h+='<div class="row"><button class="btn primary" data-act="tab" data-id="cuentas">Cerrar y apuntar quién paga</button></div>';
+  let h='';people().forEach(p=>{const ds=drinks(p.id);if(!ds.length)return;h+=`<div class="group"><h3>${esc(pname(p.id))}</h3><div class="chips">`;ds.forEach((o,i)=>{const key=p.id+"_"+i;h+=`<button class="chip${del[key]?" done":""}" data-act="deliver" data-pid="${p.id}" data-idx="${i}">${emoji(o)} ${esc(label(o))}</button>`});h+='</div></div>'});
+  const all=people().reduce((a,p)=>a+drinks(p.id).length,0);const left=all-Object.keys(del).length;
+  h=`<p class="status">${left?" "+left+" por entregar":"Todo entregado"}</p>`+h;
+  if(!left)h+='<button class="btn primary" style="margin-top:12px" data-act="tab" data-id="cuentas">Cerrar ronda</button>';
   return h;
 }
 
@@ -440,54 +317,36 @@ function vCuentas(){
   const sug=suggestPayer(B);
   let h=`<section class="card"><h2>Ronda ${S.current.n}: ${eur(tot)}</h2>`;
   if(any){
-    h+=S.rounds.length?`<p class="status" style="margin-top:0">Le toca a <strong>${esc(pname(sug))}</strong>, que es quien menos ha puesto hasta ahora.</p>`:'<p class="status" style="margin-top:0">Primera ronda: elegid quién abre.</p>';
-    h+=`<div class="chips">${people().map(p=>`<button class="chip${ui.payer===p.id?" on":""}${S.rounds.length&&p.id===sug?" sug":""}" data-act="payer" data-id="${p.id}" aria-pressed="${ui.payer===p.id}">${esc(p.name)}</button>`).join("")}</div>`;
-    h+=`<div class="row"><button class="btn primary" data-act="close" ${ui.payer?"":"disabled"}>${ui.payer?`Cerrar ronda: paga ${esc(pname(ui.payer))}`:"Elige quién paga"}</button></div>`;
-  }else h+='<p class="status" style="margin:0">Cuando pidáis, aquí se cierra la ronda y se apunta quién paga.</p>';
+    h+=S.rounds.length?`<p class="status">Le toca a <strong>${esc(pname(sug))}</strong></p>`:'<p class="status">Primera ronda.</p>';
+    h+=`<div class="chips">${people().map(p=>`<button class="chip${ui.payer===p.id?" on":""}${S.rounds.length&&p.id===sug?" sug":""}" data-act="payer" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div>`;
+    h+=`<button class="btn primary" data-act="close" ${ui.payer?"":" disabled"}>${ui.payer?`Cerrar: paga ${esc(pname(ui.payer))}`:"Elige quién"}</button>`;
+  }else h+='<p class="status">Sin bebidas.</p>';
   h+="</section>";
   if(S.rounds.length){
-    h+=`<section class="card"><h2>Cómo vamos</h2><div class="scroll"><table class="bal"><thead><tr><th>Quién</th><th>Bebido</th><th>Pagado</th><th>Saldo</th></tr></thead><tbody>`+
-      people().map(p=>{const v=B.b[p.id];return`<tr><td>${esc(p.name)}</td><td>${eur(B.drank[p.id])}</td><td>${eur(B.paid[p.id])}</td><td class="${v>0.004?"pos":v<-0.004?"neg":""}">${v>0?"+":""}${eur(v)}</td></tr>`}).join("")+
-      "</tbody></table></div>";
-    const st=settle(B.b);
-    h+=st.length?`<h2 style="margin-top:6px">Para quedar en paz ahora</h2>`+st.map(s=>`<p style="margin:4px 0">${esc(pname(s.from))} paga <strong>${eur(s.v)}</strong> a ${esc(pname(s.to))}</p>`).join(""):'<p class="status">Estáis en paz.</p>';
-    h+="</section>";
-    h+='<section class="card"><h2>Rondas de hoy</h2>'+sortedRounds().reverse().map(r=>{
-      return`<div class="hist"><strong>Ronda ${r.n}: pagó ${esc(pname(r.payer))}, ${eur(r.total)}</strong></div>`}).join("")+
-      '<div class="row"><button class="btn" data-act="undo">Reabrir la última ronda</button></div></section>';
+    h+=`<section class="card"><h2>Saldos</h2><div class="scroll"><table class="bal"><thead><tr><th>Quién</th><th>Bebido</th><th>Pagado</th><th>Saldo</th></tr></thead><tbody>`+
+      people().map(p=>{const v=B.b[p.id];return`<tr><td>${esc(p.name)}</td><td>${eur(B.drank[p.id])}</td><td>${eur(B.paid[p.id])}</td><td class="${v>0.004?"pos":v<-0.004?"neg":""}">${v>0?"+":""}${eur(v)}</td></tr>`}).join("")+"</tbody></table></div></section>";
+    const st=settle(B.b);if(st.length)h+=`<h2 style="margin:14px 0 8px">Liquidación</h2>`+st.map(s=>`<p style="margin:4px 0">${esc(pname(s.from))} paga <strong>${eur(s.v)}</strong> a ${esc(pname(s.to))}</p>`).join("");
+    h+='<button class="btn" data-act="undo" style="margin-top:12px">Reabrir última</button>';
   }
-  h+=`<button class="btn warn" data-act="newNight">${ui.confirmReset?"Pulsa otra vez para borrar todas las rondas":"Empezar noche nueva"}</button>`;
+  h+=`<button class="btn warn" style="margin-top:12px" data-act="newNight">${ui.confirmReset?"Confirmar":"Noche nueva"}</button>`;
   return h;
 }
 
 function vStats(){
-  let h='<section class="card"><h2>Bebidas favoritas</h2>';
+  let h='<section class="card"><h2>Favoritas</h2>';
   const fav=people().map(p=>{const f=favDrink(p.id);return{pid:p.id,drink:f}}).filter(x=>x.drink);
-  if(!fav.length)h+='<p class="hint">Aún no hay bastantes rondas para estadísticas.</p>';
-  else fav.forEach(f=>{h+=`<div class="stat-card"><h3>${emoji({drink:f.drink})} ${esc(pname(f.pid))}</h3><p style="margin:0">${esc(label({drink:f.drink}))}</p></div>`});
-  h+='</section>';
-  h+='<section class="card"><h2>Últimas 5 rondas por persona</h2>';
-  people().forEach(p=>{
-    const hist=sortedRounds().slice(-5).map(r=>{const ds=r.orders[p.id];return ds&&ds.length?{drink:ds[ds.length-1].drink,n:r.n}:null}).filter(Boolean).reverse();
-    if(!hist.length)return;
-    h+=`<div class="stat-card"><h3>${esc(pname(p.id))}</h3>`;
-    hist.forEach(h_item=>h+=`<div class="stat-item"><span>Ronda ${h_item.n}</span><span>${emoji({drink:h_item.drink})} ${esc(label({drink:h_item.drink}))}</span></div>`);
-    h+='</div>';
-  });
-  h+='</section>';
-  return h;
+  if(!fav.length)h+='<p class="hint">Sin datos aún.</p>';else fav.forEach(f=>{h+=`<div class="stat-card"><h3>${emoji({drink:f.drink})} ${esc(pname(f.pid))}</h3><p style="margin:0">${esc(label({drink:f.drink}))}</p></div>`});
+  h+='</section><section class="card"><h2>Últimas 5 rondas</h2>';
+  people().forEach(p=>{const hist=sortedRounds().slice(-5).map(r=>{const ds=r.orders[p.id];return ds&&ds.length?{drink:ds[ds.length-1].drink,n:r.n}:null}).filter(Boolean).reverse();if(!hist.length)return;h+=`<div class="stat-card"><h3>${esc(pname(p.id))}</h3>`;hist.forEach(h_item=>h+=`<div class="stat-item"><span>Ronda ${h_item.n}</span><span>${emoji({drink:h_item.drink})} ${esc(label({drink:h_item.drink}))}</span></div>`);h+='</div>'});
+  h+='</section>';return h;
 }
 
 function vAjustes(){
   const ps=people();
-  let h='<section class="card"><h2>Cuadrilla</h2>'+ps.map(p=>`<div class="set-row"><input type="text" value="${esc(p.name)}" data-pname="${p.id}" aria-label="Nombre"><button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar a ${esc(p.name)}">×</button></div>`).join("")+
-    '<button class="btn" data-act="addPerson">Añadir persona</button></section>';
-  h+=`<section class="card"><h2>Modo asignador</h2><p class="status" style="margin-top:0">Si lo activas, solo tú puedes apuntar bebidas hasta que lo desactives. Útil para evitar bromas.</p><div class="chips">${["OFF",...ps.map(p=>p.id)].map(id=>`<button class="chip${S.config.assignerMode===id?" on":""}" data-act="toggleAssigner" data-id="${id}">${id==="OFF"?"Desactivado":esc(pname(id))}</button>`).join("")}</div></section>`;
-  h+='<section class="card"><h2>Carta y precios</h2><p class="status" style="margin-top:0">Precios orientativos. Ajustadlos al bar donde estéis.</p>'+
-    S.config.catalog.map(c=>`<h3 class="cat-h" style="--c:${c.color}">${esc(c.name)}</h3>`+c.items.map(it=>`<div class="set-row"><input type="text" value="${esc(it.name)}" data-iname="${it.id}" aria-label="Nombre de la bebida"><input class="price" type="number" inputmode="decimal" step="0.05" min="0" value="${it.price}" data-price="${it.id}" aria-label="Precio"> €<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Quitar ${esc(it.name)}">×</button></div>`).join("")+
-      `<button class="chip" data-act="addItem" data-id="${c.id}">Añadir en ${esc(c.name)}</button>`).join("")+
-    '<div class="row"><button class="btn" data-act="resetPrices">Volver a los precios genéricos</button></div></section>';
-  h+=`<section class="card"><h2>Sincronización</h2><p style="margin:0">${mode==="firebase"?"✅ Conectada a la nube — todos veis lo mismo en tiempo real.":"⚠️ Solo este móvil — los datos no se sincronizan."}</p></section>`;
+  let h='<section class="card"><h2>Cuadrilla</h2>'+ps.map(p=>`<div class="set-row"><input type="text" value="${esc(p.name)}" data-pname="${p.id}"><button class="x" data-act="rmPerson" data-id="${p.id}">×</button></div>`).join("")+'<button class="btn" data-act="addPerson">Añadir</button></section>';
+  h+=`<section class="card"><h2>Modo asignador</h2><p class="status" style="margin-top:0">Solo puedes apuntar tú.</p><div class="chips">${["OFF",...ps.map(p=>p.id)].map(id=>`<button class="chip${S.config.assignerMode===id?" on":""}" data-act="toggleAssigner" data-id="${id}">${id==="OFF"?"Desactivado":esc(pname(id))}</button>`).join("")}</div></section>`;
+  h+='<section class="card"><h2>Carta</h2>'+S.config.catalog.map(c=>`<h3 class="cat-h" style="--c:${c.color}">${esc(c.name)}</h3>`+c.items.map(it=>`<div class="set-row"><input type="text" value="${esc(it.name)}" data-iname="${it.id}"><input class="price" type="number" step="0.05" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="rmItem" data-id="${it.id}">×</button></div>`).join("")+`<button class="chip" data-act="addItem" data-id="${c.id}">+</button>`).join("")+'<button class="btn" data-act="resetPrices" style="margin-top:12px">Resetear precios</button></section>';
+  h+=`<section class="card"><h2>Sync</h2><p>${mode==="firebase"?"✅ Compartida":"⚠️ Local"}</p></section>`;
   return h;
 }
 
@@ -496,72 +355,55 @@ const VIEWS={pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,sta
 function render(){
   const a=document.activeElement;
   if(a&&$("#view").contains(a)&&(a.tagName==="INPUT"||a.tagName==="SELECT")){pending=true;return}
-  pending=false;reindex();
-  S.current.orders=S.current.orders||{};S.current.delivered=S.current.delivered||{};
+  pending=false;reindex();S.current.orders=S.current.orders||{};S.current.delivered=S.current.delivered||{};
   $("#roundNo").textContent="Ronda "+S.current.n;
   $("#sync").className="sync"+(mode==="firebase"?" on":"");
-  $("#syncTxt").textContent=mode==="firebase"?"Compartida":"Solo este móvil";
-  document.querySelectorAll("nav.tabs button").forEach(b=>{if(b.dataset.id===ui.tab)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
+  $("#syncTxt").textContent=mode==="firebase"?"Compartida":"Local";
+  document.querySelectorAll("nav.tabs button").forEach(b=>{b.dataset.id===ui.tab?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current")});
   $("#view").innerHTML=VIEWS[ui.tab]();
 }
 document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0));
 
-/* ---- eventos ---- */
 document.addEventListener("click",e=>{
-  const b=e.target.closest("[data-act]");if(!b)return;
-  const id=b.dataset.id;
+  const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
     case"tab":ui.tab=id;ui.cat=null;window.scrollTo(0,0);break;
+    case"sel":ui.sel=id;ui.cat=null;break;
     case"cat":ui.cat=id;break;
     case"back":ui.cat=null;break;
-    case"pick":{const drink={drink:id};const clarify=prompt("¿Algo que especificar? (opcional)");if(clarify)drink.clarification=clarify;addDrink(ui.selPid,drink);ui.cat=null;render();break}
-    case"pickOther":{const name=prompt("¿Qué bebida?");if(!name)return;const price=parseFloat(prompt("¿Precio? (opcional, defecto 2€)")||"2")||2;addDrink(ui.selPid,{custom:name,price:r2(price)});ui.cat=null;render();break}
+    case"pick":{const clarify=prompt("¿Aclaración? (opcional)");addDrink(ui.sel,{drink:id,clarification:clarify||""});ui.cat=null;render();break}
+    case"pickOther":{const name=prompt("¿Bebida?");if(!name)return;const price=parseFloat(prompt("¿Precio? (def 2€)")||"2")||2;addDrink(ui.sel,{custom:name,price:r2(price)});ui.cat=null;render();break}
     case"removeDrink":removeDrink(b.dataset.pid,parseInt(b.dataset.idx));render();break;
     case"deliver":setDelivered(b.dataset.pid,parseInt(b.dataset.idx),!(S.current.delivered||{})[b.dataset.pid+"_"+b.dataset.idx]);render();break;
     case"payer":ui.payer=ui.payer===id?null:id;render();break;
-    case"close":if(ui.payer){const n=S.current.n,who=pname(ui.payer);closeRound(ui.payer);ui.payer=null;ui.selPid=null;flash(`Ronda ${n} cerrada. Pagó ${who}.`);render()}break;
-    case"undo":undoLast();flash("Última ronda reabierta");render();break;
-    case"newNight":if(!ui.confirmReset){ui.confirmReset=true;setTimeout(()=>{ui.confirmReset=false;if(ui.tab==="cuentas")render()},4000);render()}else{ui.confirmReset=false;newNight();flash("Noche nueva");render()}break;
-    case"copy":{const txt=`Ronda ${S.current.n}\n`+groups().map(g=>`${g.pids.length} ${label({drink:g.id})}`).join("\n");try{navigator.clipboard.writeText(txt).then(()=>flash("Comanda copiada"),()=>flash("No se pudo copiar"))}catch(err){flash("No se pudo copiar")}return}
+    case"close":if(ui.payer){const n=S.current.n,who=pname(ui.payer);closeRound(ui.payer);ui.payer=null;flash(`Ronda ${n} cerrada. Pagó ${who}`);render()}break;
+    case"undo":undoLast();flash("Reabierta");render();break;
+    case"newNight":if(!ui.confirmReset){ui.confirmReset=true;setTimeout(()=>{ui.confirmReset=false;if(ui.tab==="cuentas")render()},3000);render()}else{ui.confirmReset=false;newNight();flash("Noche nueva");render()}break;
+    case"copy":{const txt=`Ronda ${S.current.n}\n`+Array.from(new Set(people().flatMap(p=>drinks(p.id).map(o=>o.drink)).filter(Boolean))).map(id=>{const cnt=people().reduce((a,p)=>a+(drinks(p.id).some(o=>o.drink===id)?1:0),0);return cnt+" "+label({drink:id})}).join("\n");navigator.clipboard.writeText(txt).then(()=>flash("Copiada")).catch(()=>flash("Error"));return}
     case"addPerson":editConfig(c=>{c.people.push({id:"p"+Date.now().toString(36),name:"Nuevo"})});return;
-    case"rmPerson":{if(S.rounds.some(r=>(r.orders&&r.orders[id])||(r.orders&&Object.keys(r.orders).length>0&&r.payer===id)))return flash("Tiene rondas apuntadas.");if(people().length<=1)return;editConfig(c=>{c.people=c.people.filter(p=>p.id!==id)});return}
-    case"addItem":editConfig(c=>{const cat=c.catalog.find(x=>x.id===id);if(cat)cat.items.push({id:"i"+Date.now().toString(36),name:"Nueva bebida",price:2,emoji:""})});return;
+    case"rmPerson":if(people().length>1)editConfig(c=>{c.people=c.people.filter(p=>p.id!==id)});return;
+    case"addItem":editConfig(c=>{c.catalog.find(x=>x.id===id)?.items.push({id:"i"+Date.now().toString(36),name:"Nueva",price:2,emoji:""})});return;
     case"rmItem":editConfig(c=>{c.catalog.forEach(cat=>{cat.items=cat.items.filter(it=>it.id!==id)})});return;
-    case"resetPrices":{const d={};DEFAULT_CATALOG.forEach(c=>c.items.forEach(it=>{d[it.id]=it.price}));editConfig(c=>{c.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id in d)it.price=d[it.id]}))});flash("Precios genéricos restaurados");return}
+    case"resetPrices":{editConfig(c=>{const d={};DEFAULT_CATALOG.forEach(x=>x.items.forEach(it=>{d[it.id]=it.price}));c.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id in d)it.price=d[it.id]}))});flash("Reseteados");return}
     case"toggleAssigner":editConfig(c=>{c.assignerMode=S.config.assignerMode===id?"":id});return;
-    case"repeatAll":{const last=sortedRounds().pop();const cnt={};people().forEach(p=>{if(drinks(p.id).length)return;const ds=last&&last.orders[p.id];if(ds&&ds.length){const o=ds[ds.length-1];if(o.drink&&o.drink!=="nada"&&(IDX[o.drink]||o.custom)){addDrink(p.id,{drink:o.drink,custom:o.custom,price:o.price,clarification:o.clarification});cnt[p.id]=1}}});if(Object.keys(cnt).length){flash("Repetido para "+Object.keys(cnt).length)}else flash("No hay nada que repetir");render();return}
+    case"repeatAll":{const last=sortedRounds().pop();let cnt=0;people().forEach(p=>{if(drinks(p.id).length)return;const ds=last?.orders[p.id];if(ds?.length){const o=ds[ds.length-1];if(o.drink&&o.drink!=="nada")addDrink(p.id,{drink:o.drink,custom:o.custom,price:o.price,clarification:o.clarification}),cnt++}});flash("Repetidas "+cnt);render();return}
   }
 });
 
 document.addEventListener("change",e=>{
   const t=e.target;
-  if(t.id==="selectMe"){me=t.value||null;lsSet("ronda.me",me);if(me)render()}
-  else if(t.id==="selectSel"){
-    const v=t.value;
-    if(v==="@custom"){ui.selPid="@custom";ui.customName=""}else{ui.selPid=v;ui.customName=""}
-    render();
-  }
-  else if(t.id==="customName"){ui.customName=t.value;pending=true}
-  else if(t.dataset.price){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;const id=t.dataset.price;const c=clone(S.config);c.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===id)it.price=r2(v)}));setConfig(c)}
-  else if(t.dataset.pname){const v=t.value.trim();if(!v)return;const id=t.dataset.pname;const c=clone(S.config);c.people.forEach(p=>{if(p.id===id)p.name=v.slice(0,24)});setConfig(c)}
-  else if(t.dataset.iname){const v=t.value.trim();if(!v)return;const id=t.dataset.iname;const c=clone(S.config);c.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===id)it.name=v.slice(0,30)}));setConfig(c)}
+  if(t.id==="selectMe"){me=t.value||null;lsSet("ronda.me",me);render()}
+  else if(t.dataset.price){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;editConfig(c=>{c.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===t.dataset.price)it.price=r2(v)}))});return}
+  else if(t.dataset.pname){const v=t.value.trim();if(!v)return;editConfig(c=>{c.people.forEach(p=>{if(p.id===t.dataset.pname)p.name=v.slice(0,24)}})};return}
+  else if(t.dataset.iname){const v=t.value.trim();if(!v)return;editConfig(c=>{c.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===t.dataset.iname)it.name=v.slice(0,30)}))});return}
   pending=true;
 });
 
-/* ---- inicializar Firebase y sincronizar ---- */
 function initFirebase(){
-  if(!db){mode="local";$("#syncTxt").textContent="Solo este móvil";render();return}
-  db.collection("bar").doc("config").onSnapshot(snap=>{
-    mode="firebase";if(snap.exists){S.config=clone(snap.data());render()}
-    else{S.config=defaults().config;dbSet("bar/config",clone(S.config))}
-  },err=>{console.error("Error en config:",err);mode="local";$("#syncTxt").textContent="Sin conexión";render()});
-  db.collection("bar").doc("current").onSnapshot(snap=>{
-    mode="firebase";if(snap.exists){const c=snap.data();S.current={n:c.n||1,orders:c.orders||{},delivered:c.delivered||{}};render()}
-    else{S.current={n:1,orders:{},delivered:{}};dbSet("bar/current",clone(S.current))}
-  },err=>{console.error("Error en current:",err);mode="local"});
-  db.collection("rounds").orderBy("n").onSnapshot(qs=>{
-    mode="firebase";S.rounds=qs.docs.map(x=>Object.assign({id:x.id},clone(x.data())));render();
-  },err=>{console.error("Error en rounds:",err);mode="local"});
+  if(!db){mode="local";render();return}
+  db.collection("bar").doc("config").onSnapshot(snap=>{mode="firebase";if(snap.exists)S.config=clone(snap.data());else dbSet("bar/config",clone(S.config));render()},err=>{mode="local";render()});
+  db.collection("bar").doc("current").onSnapshot(snap=>{mode="firebase";if(snap.exists){const c=snap.data();S.current={n:c.n||1,orders:c.orders||{},delivered:c.delivered||{}}}else dbSet("bar/current",clone(S.current));render()},err=>{mode="local"});
+  db.collection("rounds").orderBy("n").onSnapshot(qs=>{S.rounds=qs.docs.map(x=>Object.assign({id:x.id},clone(x.data())));render()},err=>{mode="local"});
 }
 render();setTimeout(initFirebase,500);
 </script>
