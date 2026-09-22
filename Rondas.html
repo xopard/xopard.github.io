@@ -147,6 +147,8 @@ const r2=v=>Math.round(v*100)/100;
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}
 
+function ensureCatalog(cat){if(!cat||!cat.items)return clone(DEFAULT_CATALOG);cat.items=cat.items.map(it=>({...it,emoji:it.emoji||""}));return cat}
+function ensureAllCatalog(catalog){if(!Array.isArray(catalog))return clone(DEFAULT_CATALOG);return catalog.map(c=>({...c,items:(c.items||[]).map(it=>({...it,emoji:it.emoji||""}))}))}
 function defaults(){return{config:{people:DEFAULT_PEOPLE.map((n,i)=>({id:"p"+(i+1),name:n})),catalog:clone(DEFAULT_CATALOG),assignerMode:""},current:{n:1,orders:{},delivered:{}},rounds:[]}}
 function loadLocal(){try{const s=JSON.parse(lsGet("ronda.state"));if(s&&s.config&&s.current)return s}catch(e){}return defaults()}
 
@@ -166,7 +168,7 @@ const pname=id=>(people().find(p=>p.id===id)||{name:"?"}).name;
 const drinks=pid=>(S.current.orders&&S.current.orders[pid])||[];
 const label=o=>{if(!o)return"";if(o.custom)return o.custom;return o.drink==="nada"?"Nada":(IDX[o.drink]?IDX[o.drink].name:"?")};
 const priceOf=o=>{if(!o||o.drink==="nada")return 0;if(o.custom)return o.price||2;return Number(IDX[o.drink]?.price)||0};
-const emoji=o=>{if(!o||o.custom)return"";return IDX[o.drink]?IDX[o.drink].emoji:""};
+const emoji=o=>{if(!o||o.custom)return"";const it=IDX[o.drink];return it?(it.emoji||""):""};
 
 function flash(t){const el=$("#toast");el.textContent=t;el.classList.add("show");clearTimeout(flash.t);flash.t=setTimeout(()=>el.classList.remove("show"),2200)}
 async function dbWrite(path,data){if(!db)return;try{await db.collection(path.split("/")[0]).doc(path.split("/")[1]).update(data)}catch(e){if(e.code==="invalid-argument"||e.code==="not-found")await db.collection(path.split("/")[0]).doc(path.split("/")[1]).set(data)}}
@@ -261,7 +263,7 @@ function vAjustes(){
   const ps=people();
   let h='<section class="card"><h2>Cuadrilla</h2>'+ps.map(p=>`<div class="set-row"><input type="text" value="${esc(p.name)}" data-pname="${p.id}"><button class="x" data-act="rmPerson" data-id="${p.id}">×</button></div>`).join('')+'<button class="btn" data-act="addPerson">Añadir</button></section>';
   h+=`<section class="card"><h2>Modo asignador</h2><div class="chips">${["OFF",...ps.map(p=>p.id)].map(id=>`<button class="chip${S.config.assignerMode===id?" on":""}" data-act="toggleAssigner" data-id="${id}">${id==="OFF"?"OFF":esc(pname(id))}</button>`).join("")}</div></section>`;
-  h+='<section class="card"><h2>Carta</h2>'+S.config.catalog.map(c=>`<h3 style="margin:12px 0 4px;padding-left:8px;border-left:5px solid ${c.color}">${esc(c.name)}</h3>`+c.items.map(it=>`<div class="set-row"><input type="text" value="${esc(it.name)}" data-iname="${it.id}"><input class="price" type="number" step="0.05" value="${it.price}" data-price="${it.id}"> €</div>`).join('')).join('')+'</section>';
+  h+='<section class="card"><h2>Carta</h2><button class="btn" data-act="resetCatalog">↻ Resetear catálogo</button>'+S.config.catalog.map(c=>`<h3 style="margin:12px 0 4px;padding-left:8px;border-left:5px solid ${c.color}">${esc(c.name)}</h3>`+c.items.map(it=>`<div class="set-row"><input type="text" value="${esc(it.name)}" data-iname="${it.id}"><input class="price" type="number" step="0.05" value="${it.price}" data-price="${it.id}"> €</div>`).join('')).join('')+'</section>';
   return h;
 }
 
@@ -301,6 +303,7 @@ function globalClickHandler(e){
     case"addPerson":editConfig(c=>{c.people.push({id:"p"+Date.now().toString(36),name:"Nuevo"})});return;
     case"rmPerson":if(people().length>1)editConfig(c=>{c.people=c.people.filter(p=>p.id!==id)});return;
     case"toggleAssigner":editConfig(c=>{c.assignerMode=S.config.assignerMode===id?"":id});return;
+    case"resetCatalog":editConfig(c=>{c.catalog=clone(DEFAULT_CATALOG);flash("Catálogo restaurado")});return;
   }
 }
 
@@ -316,7 +319,7 @@ function initFirebase(){
   if(!db){mode="local";$("#syncTxt").textContent="Local";render();return}
   try{
     db.collection("bar").doc("config").onSnapshot(snap=>{
-      if(snap.exists){S.config=clone(snap.data());mode="firebase"}else{dbSet("bar/config",clone(defaults().config));mode="firebase"}
+      if(snap.exists){S.config=clone(snap.data());S.config.catalog=ensureAllCatalog(S.config.catalog);mode="firebase"}else{dbSet("bar/config",clone(defaults().config));mode="firebase"}
       render();
     },err=>{console.log("Config error");mode="local";$("#syncTxt").textContent="Local";render()});
     
