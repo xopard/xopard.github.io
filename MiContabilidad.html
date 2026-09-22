@@ -141,6 +141,11 @@ top:4px;right:8px;display:flex;gap:10px;font-size:10px;color:#777}
 .grp-total{font-variant-numeric:tabular-nums;font-weight:700}
 .grp-total.neg{color:var(--neg)}
 .acc-row.in-grp{padding-left:20px;background:#FCFCFC}
+.acc-row.in-sub{padding-left:34px;background:#FCFCFC}
+.acc-row.in-sub.sel{background:var(--sel)}
+.grp-row.grp-sub{padding-left:20px;font-size:10.5px;background:#F7F7F7;font-weight:500;color:#6A6A6A}
+.grp-row.grp-sub:hover{background:#EFEFEF}
+.grp-row.grp-sub.sel{background:#F5EDD5}
 .acc-row.in-grp.sel{background:var(--sel)}
 
 /* ── COLORES DE BOTONES (selectores por atributo) ────────────── */
@@ -412,6 +417,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <button class="hbtn" onclick="delAcc()" title="Eliminar cuenta">🗑</button>
         <button class="hbtn" id="btn-up" onclick="moveAccUp()" title="Subir cuenta">▲</button>
         <button class="hbtn" id="btn-dn" onclick="moveAccDown()" title="Bajar cuenta">▼</button>
+        <button class="hbtn" onclick="showGrupoModal()" title="Asignar grupo a varias cuentas">🏷️</button>
         <button class="hbtn" title="Ayuda">?</button>
       </div>
       <div id="acclist"><div class="empty-msg">Conectando…</div></div>
@@ -594,7 +600,7 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="fr"><label>Nombre</label><input id="fa-nombre"></div>
     <div class="fr"><input id="fa-desc" placeholder="más datos (descripción opcional)"></div>
     <div class="fr"><label>Banco / Entidad</label><input id="fa-banco"></div>
-    <div class="fr"><label>Grupo <span style="font-size:10px;color:#999">— opcional, agrupa cuentas con subtotal</span></label><input id="fa-grupo" list="grupos-list" placeholder="ej: Kutxabank, Renta Fija, Jubilación…"><datalist id="grupos-list"></datalist></div>
+    <div class="fr"><label>Grupo <span style="font-size:10px;color:#999">— opcional. Subgrupo: Grupo/Subgrupo</span></label><input id="fa-grupo" list="grupos-list" placeholder="ej: Mediolanum  ·  Mediolanum/Renta Fija"><datalist id="grupos-list"></datalist></div>
     <div class="fr">
       <label>Tipo</label>
       <select id="fa-tipo" onchange="toggleTarjetaFields()">
@@ -814,6 +820,26 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div id="exp-preview" style="font-size:11px;color:#888;margin-top:10px;height:14px"></div>
     <div class="mbtns">
       <button class="bok" onclick="doExport()">Descargar CSV</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- MODAL: Asignar grupo a varias cuentas -->
+  <div id="mdl-grupos" class="modal" style="display:none;max-width:480px">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <h3>Asignar grupo a varias cuentas</h3>
+    <div class="fr">
+      <label>Grupo <span style="font-size:10px;color:#999">— vacío = quitar el grupo · subgrupo: Grupo/Subgrupo</span></label>
+      <input id="fg-grupo" list="grupos-list" placeholder="ej: Mediolanum  ·  Mediolanum/Renta Fija">
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
+      <button onclick="grupoSelAll(true)" style="font-size:11px;padding:3px 8px;border:1px solid #BBB;border-radius:3px;background:#fff;cursor:pointer">Todas</button>
+      <button onclick="grupoSelAll(false)" style="font-size:11px;padding:3px 8px;border:1px solid #BBB;border-radius:3px;background:#fff;cursor:pointer">Ninguna</button>
+      <span id="fg-count" style="font-size:11px;color:#666;margin-left:auto"></span>
+    </div>
+    <div id="fg-list" style="max-height:340px;overflow-y:auto;border:1px solid #DDD;border-radius:3px;font-size:12px"></div>
+    <div class="mbtns">
+      <button class="bok" onclick="applyGrupoBulk()">Aplicar</button>
       <button class="bcan" onclick="closeModal()">Cancelar</button>
     </div>
   </div>
@@ -1326,26 +1352,31 @@ function redo() {
   toast('Rehecho: ' + next.desc);
 }
 
-// ── ORDEN DE CUENTAS CON GRUPOS ──────────────────────────────
-// Una "unidad" es una cuenta suelta o un grupo completo (bloque contiguo).
+// ── ORDEN DE CUENTAS CON GRUPOS Y SUBGRUPOS ──────────────────
+// El campo grupo admite "Grupo" o "Grupo/Subgrupo"
+function parseGrp(s){
+  const p=(s||'').split('/');
+  return {g1:(p[0]||'').trim(), g2:(p[1]||'').trim()};
+}
+function grpStr(g1,g2){return g2?(g1+'/'+g2):g1;}
 function _accVisible(idx){return S.filter==='todas'||S.accs[idx].active;}
 function _tipoSeq(tipo){return S.displayOrder.filter(i=>S.accs[i]&&(S.accs[i].type||'1')===tipo);}
-function _units(seq){
+// Agrupa consecutivos por clave; clave vacía = unidad suelta
+function _unitsBy(list,keyFn){
   const u=[];
-  for(const i of seq){
-    const g=(S.accs[i].grupo||'').trim();
-    const last=u[u.length-1];
-    if(g&&last&&last.grupo===g) last.members.push(i);
-    else u.push({grupo:g,members:[i]});
+  for(const i of list){
+    const k=keyFn(i), last=u[u.length-1];
+    if(k&&last&&last.key===k) last.members.push(i);
+    else u.push({key:k,members:[i]});
   }
   return u;
 }
+const _topUnits=tipo=>_unitsBy(_tipoSeq(tipo),i=>parseGrp(S.accs[i].grupo).g1);
+const _subUnits=members=>_unitsBy(members,i=>parseGrp(S.accs[i].grupo).g2);
 function _writeTipoSeq(tipo,newSeq){
-  // Reescribe en displayOrder las posiciones de ese tipo con la nueva secuencia
   let k=0;
   S.displayOrder=S.displayOrder.map(i=>(S.accs[i]&&(S.accs[i].type||'1')===tipo)?newSeq[k++]:i);
 }
-// Mueve el elemento pos de una lista de unidades saltando las no visibles
 function _moveUnit(units,pos,dir){
   const vis=u=>u.members.some(_accVisible);
   let j=pos+dir;
@@ -1356,93 +1387,118 @@ function _moveUnit(units,pos,dir){
   arr.splice(j,0,u);
   return arr;
 }
-// Agrupa en bloque contiguo las cuentas de un mismo grupo (en la 1ª aparición)
+// Coloca juntas las cuentas de un mismo grupo y subgrupo
 function normalizeGroupOrder(){
-  for(const tipo of ['1','2','3','4']){
-    const seq=_tipoSeq(tipo);
-    const out=[],buckets={};
-    for(const i of seq){
-      const g=(S.accs[i].grupo||'').trim();
-      if(!g){out.push([i]);continue;}
-      if(buckets[g]) buckets[g].push(i);
-      else{buckets[g]=[i];out.push(buckets[g]);}
+  const bucket=(list,keyFn)=>{
+    const out=[],b={};
+    for(const i of list){
+      const k=keyFn(i);
+      if(!k){out.push([i]);continue;}
+      if(b[k])b[k].push(i); else {b[k]=[i];out.push(b[k]);}
     }
-    _writeTipoSeq(tipo,out.flat());
+    return out;
+  };
+  for(const tipo of ['1','2','3','4']){
+    const tops=bucket(_tipoSeq(tipo),i=>parseGrp(S.accs[i].grupo).g1);
+    const out=[];
+    for(const blk of tops) out.push(...bucket(blk,i=>parseGrp(S.accs[i].grupo).g2).flat());
+    _writeTipoSeq(tipo,out);
   }
 }
 
-// Devuelve {mode, tipo, units, pos} según la selección actual
+// Contexto de movimiento según lo seleccionado
 function _moveContext(){
   if(S.selGroup){
-    const [tipo,g]=S.selGroup.split('|');
-    const units=_units(_tipoSeq(tipo));
-    const pos=units.findIndex(u=>u.grupo===g);
-    return pos<0?null:{mode:'group',tipo,units,pos};
+    const [tipo,rest]=S.selGroup.split('|');
+    const {g1,g2}=parseGrp(rest);
+    const tops=_topUnits(tipo);
+    const tpos=tops.findIndex(u=>u.key===g1);
+    if(tpos<0) return null;
+    if(!g2) return {tipo,tops,level:'top',pos:tpos};
+    const subs=_subUnits(tops[tpos].members);
+    const spos=subs.findIndex(u=>u.key===g2);
+    return spos<0?null:{tipo,tops,tpos,subs,level:'sub',pos:spos};
   }
   if(S.selAcc<0) return null;
-  const a=S.accs[S.selAcc],tipo=a.type||'1',g=(a.grupo||'').trim();
-  const units=_units(_tipoSeq(tipo));
-  if(g){
-    // Cuenta dentro de un grupo: se mueve solo dentro de su grupo
-    const gpos=units.findIndex(u=>u.grupo===g&&u.members.includes(S.selAcc));
-    const inner=units[gpos].members.map(i=>({grupo:'',members:[i]}));
-    const pos=inner.findIndex(u=>u.members[0]===S.selAcc);
-    return {mode:'inner',tipo,units,gpos,inner,pos};
+  const a=S.accs[S.selAcc], tipo=a.type||'1', {g1,g2}=parseGrp(a.grupo);
+  const tops=_topUnits(tipo);
+  if(!g1){
+    const pos=tops.findIndex(u=>!u.key&&u.members[0]===S.selAcc);
+    return {tipo,tops,level:'top',pos};
   }
-  const pos=units.findIndex(u=>!u.grupo&&u.members[0]===S.selAcc);
-  return {mode:'loose',tipo,units,pos};
+  const tpos=tops.findIndex(u=>u.key===g1&&u.members.includes(S.selAcc));
+  const subs=_subUnits(tops[tpos].members);
+  if(!g2){
+    const pos=subs.findIndex(u=>!u.key&&u.members[0]===S.selAcc);
+    return {tipo,tops,tpos,subs,level:'sub',pos};
+  }
+  const spos=subs.findIndex(u=>u.key===g2&&u.members.includes(S.selAcc));
+  const inner=subs[spos].members.map(i=>({key:'',members:[i]}));
+  const pos=inner.findIndex(u=>u.members[0]===S.selAcc);
+  return {tipo,tops,tpos,subs,spos,inner,level:'acc',pos};
+}
+function _ctxList(ctx){
+  return ctx.level==='top'?ctx.tops:ctx.level==='sub'?ctx.subs:ctx.inner;
 }
 function _canMove(dir){
-  const ctx=_moveContext();if(!ctx)return false;
-  return !!_moveUnit(ctx.mode==='inner'?ctx.inner:ctx.units,ctx.pos,dir);
+  const ctx=_moveContext();
+  if(!ctx||ctx.pos<0) return false;
+  return !!_moveUnit(_ctxList(ctx),ctx.pos,dir);
 }
 function _doMove(dir){
-  const ctx=_moveContext();if(!ctx)return;
-  const name=ctx.mode==='group'?'Grupo '+S.selGroup.split('|')[1]:S.accs[S.selAcc].name;
-  if(ctx.mode==='inner'){
-    const moved=_moveUnit(ctx.inner,ctx.pos,dir);if(!moved)return;
-    saveUndo((dir<0?'Subido: ':'Bajado: ')+name);
-    ctx.units[ctx.gpos].members=moved.map(u=>u.members[0]);
-    _writeTipoSeq(ctx.tipo,ctx.units.flatMap(u=>u.members));
-  } else {
-    const moved=_moveUnit(ctx.units,ctx.pos,dir);if(!moved)return;
-    saveUndo((dir<0?'Subido: ':'Bajado: ')+name);
+  const ctx=_moveContext();
+  if(!ctx||ctx.pos<0) return;
+  const moved=_moveUnit(_ctxList(ctx),ctx.pos,dir);
+  if(!moved) return;
+  const name=S.selGroup?('grupo '+S.selGroup.split('|')[1]):S.accs[S.selAcc].name;
+  saveUndo((dir<0?'Subido: ':'Bajado: ')+name);
+  if(ctx.level==='top'){
     _writeTipoSeq(ctx.tipo,moved.flatMap(u=>u.members));
+  } else if(ctx.level==='sub'){
+    ctx.tops[ctx.tpos].members=moved.flatMap(u=>u.members);
+    _writeTipoSeq(ctx.tipo,ctx.tops.flatMap(u=>u.members));
+  } else {
+    ctx.subs[ctx.spos].members=moved.flatMap(u=>u.members);
+    ctx.tops[ctx.tpos].members=ctx.subs.flatMap(u=>u.members);
+    _writeTipoSeq(ctx.tipo,ctx.tops.flatMap(u=>u.members));
   }
   renderAccs();updateMoveButtons();deferredSave();
 }
 function moveAccUp(){_doMove(-1);}
 function moveAccDown(){_doMove(1);}
 
-// Seleccionar un grupo (clic en su cabecera)
 function selAccGroup(gKey){
   S.selGroup=(S.selGroup===gKey)?null:gKey;
   renderAccs();updateMoveButtons();
 }
 
-// Renombrar un grupo en todas sus cuentas
+// Renombrar grupo o subgrupo en todas sus cuentas
 function renameAccGroup(gKey){
-  const [tipo,oldName]=gKey.split('|');
-  let nn=prompt(`Nuevo nombre para el grupo "${oldName}"\n(déjalo vacío para deshacer el grupo)`,oldName);
-  if(nn===null)return;
-  nn=nn.trim();
-  if(nn===oldName)return;
-  // ¿Existe el mismo grupo en otros tipos?
-  const otherTypes=S.accs.some(a=>(a.type||'1')!==tipo&&(a.grupo||'').trim()===oldName);
+  const [tipo,rest]=gKey.split('|');
+  const {g1,g2}=parseGrp(rest);
+  const isSub=!!g2, oldName=isSub?g2:g1;
+  const label=isSub?`subgrupo "${g2}" (dentro de ${g1})`:`grupo "${g1}"`;
+  let nn=prompt('Nuevo nombre para el '+label+'\n(vacío: '+(isSub?'las cuentas quedan en el grupo padre':'las cuentas quedan sin grupo')+')',oldName);
+  if(nn===null) return;
+  nn=nn.replace(/\//g,' ').trim();
+  if(nn===oldName) return;
   let allTypes=false;
-  if(otherTypes) allTypes=confirm(`El grupo "${oldName}" también existe en otros tipos de cuenta.\n\nAceptar: cambiarlo en todos\nCancelar: solo en este tipo`);
-  if(!nn&&!confirm(`Se quitará el grupo "${oldName}" de sus cuentas (las cuentas no se borran). ¿Continuar?`))return;
-  saveUndo(nn?`Grupo renombrado: ${oldName} → ${nn}`:`Grupo eliminado: ${oldName}`);
+  const otherTypes=S.accs.some(a=>(a.type||'1')!==tipo&&(()=>{const p=parseGrp(a.grupo);return isSub?(p.g1===g1&&p.g2===g2):p.g1===g1;})());
+  if(otherTypes) allTypes=confirm('Ese nombre también se usa en otros tipos de cuenta.\n\nAceptar: cambiarlo en todos\nCancelar: solo en este tipo');
+  if(!nn&&!confirm('Se quitará el '+label+' de sus cuentas (las cuentas no se borran). ¿Continuar?')) return;
+  saveUndo(nn?('Renombrado: '+oldName+' → '+nn):('Eliminado: '+oldName));
   S.accs.forEach(a=>{
-    if((a.grupo||'').trim()===oldName&&(allTypes||(a.type||'1')===tipo)) a.grupo=nn;
+    if(!allTypes&&(a.type||'1')!==tipo) return;
+    const p=parseGrp(a.grupo);
+    if(isSub){ if(p.g1===g1&&p.g2===g2) a.grupo=grpStr(g1,nn); }
+    else if(p.g1===g1) a.grupo=grpStr(nn,nn?p.g2:'');
   });
-  // Mantener estado de colapsado y selección
-  const newKey=tipo+'|'+nn;
+  const newKey=tipo+'|'+(isSub?grpStr(g1,nn):grpStr(nn,''));
   if(S.collapsedGroups.has(gKey)){S.collapsedGroups.delete(gKey);if(nn)S.collapsedGroups.add(newKey);}
   S.selGroup=nn?newKey:null;
-  normalizeGroupOrder(); // si se fusiona con otro grupo existente
+  normalizeGroupOrder();
   renderAccs();updateMoveButtons();saveToDropbox();
-  toast(nn?`Grupo renombrado a "${nn}" ✓`:`Grupo "${oldName}" eliminado ✓`);
+  toast(nn?('Renombrado a "'+nn+'" ✓'):('"'+oldName+'" eliminado ✓'));
 }
 
 function updateMoveButtons() {
@@ -1576,46 +1632,45 @@ function renderAccs(){
     const grupo=grupos[tipo];
     if(!grupo||!grupo.length)continue;
 
-    // Construir secuencia respetando displayOrder pero agrupando consecutivos
+    // Render con grupos y subgrupos
+    const accRow=(a,i,b,cls)=>{
+      const row=document.createElement('div');
+      row.className='acc-row'+cls+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
+      row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
+      row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
+      frag.appendChild(row);
+    };
+    const grpHeader=(gKey,label,total,sub)=>{
+      const collapsed=S.collapsedGroups.has(gKey);
+      const gh=document.createElement('div');
+      gh.className=(sub?'grp-row grp-sub':'grp-row')+(S.selGroup===gKey?' sel':'');
+      gh.title='Clic: seleccionar (▲▼ lo mueve) · Doble clic: contraer/desplegar';
+      gh.onclick=e=>{e.stopPropagation();selAccGroup(gKey);};
+      gh.ondblclick=e=>{e.stopPropagation();toggleAccGroup(gKey);};
+      gh.innerHTML=`<span class="grp-caret">${collapsed?'▶':'▼'}</span><span class="grp-name">${label}</span><span class="grp-edit" title="Renombrar">✏️</span><span class="grp-total ${total<0?'neg':''}">${fmtAmt(total)}</span>`;
+      gh.querySelector('.grp-edit').onclick=e=>{e.stopPropagation();renameAccGroup(gKey);};
+      frag.appendChild(gh);
+      return collapsed;
+    };
     let idx=0;
     while(idx<grupo.length){
-      const item=grupo[idx];
-      const g=(item.a.grupo||'').trim();
-      if(!g){
-        // Cuenta sin grupo: fila normal
-        const{a,i,b}=item;
-        const row=document.createElement('div');
-        row.className='acc-row'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
-        row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
-        row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
-        frag.appendChild(row);
-        idx++;
-      } else {
-        // Recoger todas las cuentas consecutivas del mismo grupo
-        const members=[];
-        while(idx<grupo.length&&(grupo[idx].a.grupo||'').trim()===g){members.push(grupo[idx]);idx++;}
-        const gKey=tipo+'|'+g;
-        const isCollapsed=S.collapsedGroups.has(gKey);
-        const gTotal=members.reduce((s,x)=>s+x.b,0);
-        // Cabecera del grupo
-        const gh=document.createElement('div');
-        gh.className='grp-row'+(S.selGroup===gKey?' sel':'');
-        gh.title='Clic: seleccionar (▲▼ mueve el grupo) · Doble clic: contraer/desplegar';
-        gh.onclick=e=>{e.stopPropagation();selAccGroup(gKey);};
-        gh.ondblclick=e=>{e.stopPropagation();toggleAccGroup(gKey);};
-        gh.innerHTML=`<span class="grp-caret">${isCollapsed?'▶':'▼'}</span><span class="grp-name">${g}</span><span class="grp-edit" title="Renombrar grupo">✏️</span><span class="grp-total ${gTotal<0?'neg':''}">${fmtAmt(gTotal)}</span>`;
-        gh.querySelector('.grp-edit').onclick=e=>{e.stopPropagation();renameAccGroup(gKey);};
-        frag.appendChild(gh);
-        // Cuentas del grupo (si no está colapsado)
-        if(!isCollapsed){
-          for(const{a,i,b} of members){
-            const row=document.createElement('div');
-            row.className='acc-row in-grp'+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
-            row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
-            row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
-            frag.appendChild(row);
-          }
-        }
+      const g1=parseGrp(grupo[idx].a.grupo).g1;
+      if(!g1){const{a,i,b}=grupo[idx];accRow(a,i,b,'');idx++;continue;}
+      // Bloque del grupo de primer nivel
+      const block=[];
+      while(idx<grupo.length&&parseGrp(grupo[idx].a.grupo).g1===g1){block.push(grupo[idx]);idx++;}
+      const gKey=tipo+'|'+g1;
+      const collapsed=grpHeader(gKey,g1,block.reduce((s,x)=>s+x.b,0),false);
+      if(collapsed) continue;
+      let k=0;
+      while(k<block.length){
+        const g2=parseGrp(block[k].a.grupo).g2;
+        if(!g2){const{a,i,b}=block[k];accRow(a,i,b,' in-grp');k++;continue;}
+        const sub=[];
+        while(k<block.length&&parseGrp(block[k].a.grupo).g2===g2){sub.push(block[k]);k++;}
+        const sKey=tipo+'|'+g1+'/'+g2;
+        const sCollapsed=grpHeader(sKey,g2,sub.reduce((s,x)=>s+x.b,0),true);
+        if(!sCollapsed) for(const{a,i,b} of sub) accRow(a,i,b,' in-sub');
       }
     }
     // Total del grupo según filtro activo
@@ -1937,7 +1992,7 @@ function _renderChartFromDaily(daily){
 // ── MODALS ───────────────────────────────────────────────────
 function showModal(id){
   $('overlay').classList.add('show');
-  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search','mdl-export'].forEach(m=>$(m).style.display='none');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search','mdl-export','mdl-grupos'].forEach(m=>$(m).style.display='none');
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
@@ -2092,10 +2147,61 @@ function showEditAcc(idx){
   }
   showModal('mdl-acc');
 }
+function showGrupoModal(){
+  if(!S.accs.length)return;
+  buildGruposList();
+  $('fg-grupo').value='';
+  const list=$('fg-list');
+  const showAll=S.filter==='todas';
+  let html='';
+  for(const tipo of TIPO_ORDER){
+    const ids=S.displayOrder.filter(i=>S.accs[i]&&(S.accs[i].type||'1')===tipo&&(showAll||S.accs[i].active));
+    if(!ids.length)continue;
+    html+=`<div style="background:#EBEBEB;padding:3px 8px;font-size:11px;font-weight:700;color:#555">${TIPO_LABEL[tipo]||''}</div>`;
+    for(const i of ids){
+      const a=S.accs[i];
+      const g=(a.grupo||'').trim();
+      html+=`<label style="display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid #F0F0F0;cursor:pointer">
+        <input type="checkbox" class="fg-chk" value="${i}" onchange="grupoUpdCount()">
+        <span style="flex:1">${a.name}</span>
+        <span style="font-size:10px;color:#999">${g||''}</span></label>`;
+    }
+  }
+  list.innerHTML=html;
+  grupoUpdCount();
+  showModal('mdl-grupos');
+  setTimeout(()=>$('fg-grupo').focus(),50);
+}
+function grupoSelAll(v){
+  document.querySelectorAll('#fg-list .fg-chk').forEach(ch=>ch.checked=v);
+  grupoUpdCount();
+}
+function grupoUpdCount(){
+  const n=document.querySelectorAll('#fg-list .fg-chk:checked').length;
+  const el=$('fg-count');
+  if(el)el.textContent=n?`${n} seleccionada${n!==1?'s':''}`:'Marca las cuentas';
+}
+function applyGrupoBulk(){
+  const sel=[...document.querySelectorAll('#fg-list .fg-chk:checked')].map(ch=>parseInt(ch.value));
+  if(!sel.length){toast('Marca al menos una cuenta');return;}
+  const g=$('fg-grupo').value.trim();
+  if(!g&&!confirm(`Se quitará el grupo a ${sel.length} cuenta${sel.length!==1?'s':''}. ¿Continuar?`))return;
+  saveUndo(g?('Grupo asignado: '+g):'Grupo quitado');
+  sel.forEach(i=>{S.accs[i].grupo=g;});
+  normalizeGroupOrder();
+  closeModal();renderAccs();updateMoveButtons();saveToDropbox();
+  toast(g?`${sel.length} cuenta${sel.length!==1?'s':''} en "${g}" ✓`:`Grupo quitado a ${sel.length} cuenta${sel.length!==1?'s':''} ✓`);
+}
+
 function buildGruposList(){
   const dl=$('grupos-list');if(!dl)return;
   const seen=new Set();
-  S.accs.forEach(a=>{const g=(a.grupo||'').trim();if(g)seen.add(g);});
+  S.accs.forEach(a=>{
+    const g=(a.grupo||'').trim();
+    if(!g)return;
+    seen.add(g);
+    const p=parseGrp(g); if(p.g2) seen.add(p.g1); // también el grupo padre
+  });
   dl.innerHTML=[...seen].sort().map(g=>`<option value="${g.replace(/"/g,'&quot;')}">`).join('');
 }
 
