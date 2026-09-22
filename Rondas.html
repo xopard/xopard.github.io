@@ -144,7 +144,6 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;"
 const fmt=new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR"});
 const eur=v=>fmt.format(v||0);
 const r2=v=>Math.round(v*100)/100;
-const fmtTime=ts=>ts?new Date(ts).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"}):"—";
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}
 
@@ -156,7 +155,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let app, db;
 try{app=firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init error:",e);db=null}
 
-let S=loadLocal(), IDX={}, mode="local", pending=false;
+let S=loadLocal(), IDX={}, mode="local";
 let me=lsGet("ronda.me");
 const ui={tab:"pedir",sel:null,cat:null,payer:null,confirmReset:false};
 
@@ -269,44 +268,49 @@ function vAjustes(){
 const VIEWS={pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes};
 
 function render(){
-  if(document.activeElement?.closest("#view")&&(document.activeElement.tagName==="INPUT"||document.activeElement.tagName==="SELECT")){pending=true;return}
-  pending=false;reindex();S.current.orders=S.current.orders||{};S.current.delivered=S.current.delivered||{};
+  reindex();S.current.orders=S.current.orders||{};S.current.delivered=S.current.delivered||{};
   $("#roundNo").textContent="Ronda "+S.current.n;$("#sync").className="sync"+(mode==="firebase"?" on":"");$("#syncTxt").textContent=mode==="firebase"?"Compartida":"Local";
   document.querySelectorAll("nav.tabs button").forEach(b=>{b.dataset.id===ui.tab?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current")});
   $("#view").innerHTML=VIEWS[ui.tab]();
+  attachHandlers();
 }
-document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0));
 
-document.addEventListener("click",e=>{
+function attachHandlers(){
+  document.removeEventListener("click",globalClickHandler);
+  document.removeEventListener("change",globalChangeHandler);
+  document.addEventListener("click",globalClickHandler);
+  document.addEventListener("change",globalChangeHandler);
+}
+
+function globalClickHandler(e){
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
-    case"tab":ui.tab=id;ui.cat=null;window.scrollTo(0,0);break;
-    case"sel":ui.sel=id;ui.cat=null;break;
-    case"cat":ui.cat=id;break;
-    case"back":ui.cat=null;break;
-    case"pick":{const c=prompt("Aclaración? (opcional)");addDrink(ui.sel,{drink:id,clarification:c||""});ui.cat=null;render();break}
-    case"pickOther":{const n=prompt("¿Bebida?");if(!n)return;const p=parseFloat(prompt("¿Precio? (def 2)")||"2")||2;addDrink(ui.sel,{custom:n,price:r2(p)});ui.cat=null;render();break}
-    case"removeDrink":removeDrink(b.dataset.pid,parseInt(b.dataset.idx));render();break;
-    case"deliver":setDelivered(b.dataset.pid,parseInt(b.dataset.idx),!(S.current.delivered||{})[b.dataset.pid+"_"+b.dataset.idx]);render();break;
-    case"payer":ui.payer=ui.payer===id?null:id;render();break;
-    case"close":if(ui.payer){const n=S.current.n;closeRound(ui.payer);ui.payer=null;flash(`Ronda ${n} cerrada`);render()}break;
-    case"undo":undoLast();flash("Reabierta");render();break;
-    case"newNight":if(!ui.confirmReset){ui.confirmReset=true;setTimeout(()=>{ui.confirmReset=false;if(ui.tab==="cuentas")render()},3000);render()}else{ui.confirmReset=false;newNight();flash("Noche nueva");render()}break;
+    case"tab":ui.tab=id;ui.cat=null;window.scrollTo(0,0);render();return;
+    case"sel":ui.sel=id;ui.cat=null;render();return;
+    case"cat":ui.cat=id;render();return;
+    case"back":ui.cat=null;render();return;
+    case"pick":{const c=prompt("Aclaración? (opcional)");if(c===null)return;addDrink(ui.sel,{drink:id,clarification:c});ui.cat=null;render();return}
+    case"pickOther":{const n=prompt("¿Bebida?");if(!n)return;const p=parseFloat(prompt("¿Precio? (def 2)")||"2")||2;addDrink(ui.sel,{custom:n,price:r2(p)});ui.cat=null;render();return}
+    case"removeDrink":removeDrink(b.dataset.pid,parseInt(b.dataset.idx));render();return;
+    case"deliver":setDelivered(b.dataset.pid,parseInt(b.dataset.idx),!(S.current.delivered||{})[b.dataset.pid+"_"+b.dataset.idx]);render();return;
+    case"payer":ui.payer=ui.payer===id?null:id;render();return;
+    case"close":if(ui.payer){const n=S.current.n;closeRound(ui.payer);ui.payer=null;flash(`Ronda ${n} cerrada`);render()}return;
+    case"undo":undoLast();flash("Reabierta");render();return;
+    case"newNight":if(!ui.confirmReset){ui.confirmReset=true;setTimeout(()=>{ui.confirmReset=false;if(ui.tab==="cuentas")render()},3000);render()}else{ui.confirmReset=false;newNight();flash("Noche nueva");render()}return;
     case"copy":{const txt=`Ronda ${S.current.n}\n`+Array.from(new Set(people().flatMap(p=>drinks(p.id).map(o=>o.drink)).filter(Boolean))).map(id=>{const c=people().filter(p=>drinks(p.id).some(o=>o.drink===id)).length;return c+" "+label({drink:id})}).join("\n");navigator.clipboard.writeText(txt).then(()=>flash("Copiada")).catch(()=>flash("Error"));return}
     case"addPerson":editConfig(c=>{c.people.push({id:"p"+Date.now().toString(36),name:"Nuevo"})});return;
     case"rmPerson":if(people().length>1)editConfig(c=>{c.people=c.people.filter(p=>p.id!==id)});return;
     case"toggleAssigner":editConfig(c=>{c.assignerMode=S.config.assignerMode===id?"":id});return;
   }
-});
+}
 
-document.addEventListener("change",e=>{
+function globalChangeHandler(e){
   const t=e.target;
   if(t.id==="selectMe"){me=t.value||null;lsSet("ronda.me",me);render()}
   else if(t.dataset.price){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;editConfig(c=>{c.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===t.dataset.price)it.price=r2(v)}))});return}
   else if(t.dataset.pname){const v=t.value.trim();if(!v)return;editConfig(c=>{c.people.forEach(p=>{if(p.id===t.dataset.pname)p.name=v.slice(0,24)})});return}
   else if(t.dataset.iname){const v=t.value.trim();if(!v)return;editConfig(c=>{c.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===t.dataset.iname)it.name=v.slice(0,30)}))});return}
-  pending=true;
-});
+}
 
 function initFirebase(){
   if(!db){mode="local";$("#syncTxt").textContent="Local";render();return}
