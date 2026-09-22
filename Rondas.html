@@ -108,6 +108,8 @@ input:disabled{opacity:.55}
 .emo{width:3.2em;text-align:center;padding:8px 4px;flex-shrink:0}
 .lock{width:2.2em;text-align:center;flex-shrink:0}
 .paused{opacity:.6}
+.grip{background:none;border:0;color:var(--muted);font-size:1.25rem;padding:6px 4px;flex-shrink:0;cursor:grab;touch-action:none}
+.set-row.dragging,.catbox.dragging{opacity:.75;background:var(--surface2);border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.18)}
 
 table{width:100%;border-collapse:collapse}
 table th,table td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right}
@@ -201,7 +203,7 @@ function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(
 /* ===== Normalización (acepta datos de versiones anteriores) ===== */
 function defaults(){return{
   config:{people:DEFAULT_PEOPLE.map((n,i)=>({id:"p"+(i+1),name:n,paused:false})),
-          menus:[{id:"m1",name:"Carta principal",catalog:clone(DEFAULT_CATALOG)}],menu:"m1",assignerMode:"",pin:""},
+          menus:[{id:"m1",name:"Carta principal",fromDefault:true,catalog:clone(DEFAULT_CATALOG)}],menu:"m1",assignerMode:"",pin:""},
   current:{n:1,name:"",orders:{},delivered:{}},rounds:[]};}
 function normCatalog(cat){
   if(!Array.isArray(cat)||!cat.length)return clone(DEFAULT_CATALOG);
@@ -222,7 +224,7 @@ function normConfig(c){
   const pin=(typeof c.pin==="string"&&c.pin.trim())?c.pin.trim().slice(0,8):"";
   const ppl=Array.isArray(c.people)&&c.people.length?c.people.filter(p=>p&&p.id).map(p=>({id:p.id,name:p.name||"?",paused:!!p.paused})):d.people;
   let ms=Array.isArray(c.menus)&&c.menus.length
-    ? c.menus.filter(m=>m&&m.id).map(m=>({id:m.id,name:m.name||"Carta",catalog:normCatalog(m.catalog)}))
+    ? c.menus.filter(m=>m&&m.id).map(m=>({id:m.id,name:m.name||"Carta",fromDefault:!!m.fromDefault,catalog:normCatalog(m.catalog)}))
     : [{id:"m1",name:"Carta principal",catalog:normCatalog(c.catalog)}];   // migra la carta única antigua
   if(!ms.length)ms=clone(d.menus);
   const am=c.assignerMode;
@@ -247,7 +249,7 @@ let netCache=false,netPending=false;
 let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",sel:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null};
+const ui={tab:"pedir",sel:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state",JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -274,7 +276,31 @@ function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>
 function personUsed(pid){if(drinks(pid).length)return true;return S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid)}
 
 function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,items:c.items.map(it=>({id:uid("x"),name:it.name,price:it.price,emoji:it.emoji}))}))}
-function move(arr,i,dir){const j=i+dir;if(i<0||j<0||j>=arr.length)return false;const t=arr[i];arr[i]=arr[j];arr[j]=t;return true}
+const hasDefaultMenu=()=>menus().some(m=>m.fromDefault);
+function commitOrder(kind,ids){
+  const by=(a,b)=>ids.indexOf(a.id)-ids.indexOf(b.id);
+  if(kind==="people")editConfig(c=>{c.people.sort(by)});
+  else if(kind==="cats")editMenu(m=>{m.catalog.sort(by)});
+  else if(kind.indexOf("items:")===0){const cid=kind.slice(6);editMenu(m=>{const c=m.catalog.find(x=>x.id===cid);if(c)c.items.sort(by)})}
+}
+function exportMenu(){
+  const m=curMenu();
+  return JSON.stringify({ronda:1,name:m.name,catalog:m.catalog.map(c=>({name:c.name,color:c.color,items:c.items.map(it=>({name:it.name,price:it.price,emoji:it.emoji}))}))},null,1);
+}
+function parseMenu(txt){
+  let o;try{o=JSON.parse(txt)}catch(e){return{error:"No es un texto de carta válido (JSON)."}}
+  const cats=Array.isArray(o)?o:(o&&o.catalog);
+  if(!Array.isArray(cats)||!cats.length)return{error:"No encuentro categorías dentro."};
+  const catalog=[];
+  cats.forEach((c,i)=>{
+    if(!c||!Array.isArray(c.items))return;
+    catalog.push({id:uid("c"),name:String(c.name||"Categoría "+(i+1)).slice(0,30),color:c.color||PALETTE[catalog.length%PALETTE.length],
+      items:c.items.filter(it=>it&&it.name).map(it=>({id:uid("x"),name:String(it.name).slice(0,30),price:r2(Number(String(it.price).replace(",","."))||0),emoji:String(it.emoji||"").slice(0,4)}))});
+  });
+  if(!catalog.length)return{error:"Las categorías no tienen bebidas."};
+  const n=catalog.reduce((a,c)=>a+c.items.length,0);
+  return{menu:{id:uid("m"),name:String((o&&o.name)||"Carta importada").slice(0,30),catalog},count:n};
+}
 function flash(t){const el=$("#toast");el.textContent=t;el.classList.add("show");clearTimeout(flash.t);flash.t=setTimeout(()=>el.classList.remove("show"),2200)}
 function docRef(path){const a=path.split("/");return db.collection(a[0]).doc(a[1])}
 function dbSet(path,data){if(!db||mode!=="firebase")return Promise.resolve();return docRef(path).set(data).catch(e=>{console.error(e);flash("Error guardando")})}
@@ -444,6 +470,29 @@ const gLabel=o=>label(o)+(o.clarification?" · "+o.clarification:"");
 function vMe(){
   return `<div class="selector-box${me?"":" need"}"><label for="selectMe">Eres:</label><select id="selectMe"><option value="">Elige quién eres…</option>${people().map(p=>`<option value="${p.id}"${p.id===me?" selected":""}>${esc(p.name)}${p.paused?" (en pausa)":""}</option>`).join("")}</select></div>`;
 }
+function vKeys(){
+  const cat=ui.cat&&catalog().find(x=>x.id===ui.cat);
+  let h="";
+  if(!cat){
+    h+='<div class="keys">';
+    const prev=(ui.multi||ui.flow==="bebida")?null:lastDrinkOf(ui.sel);
+    if(prev)h+=`<button class="key" style="--c:${IDX[prev].cat.color}" data-act="pick" data-id="${prev}">Lo mismo<small>${emoji({drink:prev})} ${esc(IDX[prev].name)}</small></button>`;
+    h+=catalog().map(c=>`<button class="key" style="--c:${c.color}" data-act="cat" data-id="${c.id}">${esc(c.name)}</button>`).join("");
+    h+=`<button class="key ghost" data-act="pickOther">🔧 Otra bebida<small>Fuera de la carta</small></button>`;
+    h+=`<button class="key ghost" data-act="pick" data-id="nada">🚫 No toma nada<small>Queda apuntado, paga 0 €</small></button></div>`;
+  }else{
+    h+=`<div class="keys"><button class="key ghost" data-act="back">← Atrás</button>`+cat.items.map(it=>`<button class="key" style="--c:${cat.color}" data-act="pick" data-id="${it.id}">${it.emoji?it.emoji+" ":""}${esc(it.name)}<small>${eur(it.price)}</small></button>`).join("")+'</div>';
+  }
+  return h;
+}
+function vGrid(ps,multi){
+  return '<div class="people">'+ps.map(p=>{
+    const ods=drinks(p.id),last=ods[ods.length-1];
+    const txt=last?(ods.length>1?ods.length+"× · ":"")+label(last):"Sin pedir";
+    const on=multi?ui.group.includes(p.id):p.id===ui.sel;
+    return `<button class="person${on?" sel":""}${last?"":" pending"}" style="--c:${colorOf(last)}" data-act="sel" data-id="${p.id}"><span class="nm">${multi?(on?"☑ ":"☐ "):""}${esc(p.name)}</span><span class="dr">${last?emoji(last)+" ":""}${esc(txt)}</span>${last?`<span class="ts">${hhmm(last.ts)}</span>`:""}</button>`;
+  }).join("")+'</div>';
+}
 function vPedir(){
   let h=vMe();
   if(!me)return h+`<p class="hint">👆 Elige quién eres para poder apuntar. Solo se pregunta una vez en cada móvil.</p>`;
@@ -452,15 +501,28 @@ function vPedir(){
   if(am)h+=`<p class="status">🔐 Modo asignador: ${am===me?"lo tienes tú":esc(pname(am))+" apunta por todos. Solo puedes mirar."}</p>`;
   if(!ui.sel||!findP(ui.sel)||(findP(ui.sel).paused&&ui.sel!==me))ui.sel=(ps[0]||people()[0]).id;
   ui.group=ui.group.filter(id=>findP(id)&&!findP(id).paused);
+  if(locked){ui.multi=false;ui.flow="personas";ui.pending=null}
 
-  h+='<div class="people">'+ps.map(p=>{
-    const ods=drinks(p.id),last=ods[ods.length-1];
-    const txt=last?(ods.length>1?ods.length+"× · ":"")+label(last):"Sin pedir";
-    const on=ui.multi?ui.group.includes(p.id):p.id===ui.sel;
-    return `<button class="person${on?" sel":""}${last?"":" pending"}" style="--c:${colorOf(last)}" data-act="sel" data-id="${p.id}"><span class="nm">${ui.multi?(on?"☑ ":"☐ "):""}${esc(p.name)}</span><span class="dr">${last?emoji(last)+" ":""}${esc(txt)}</span>${last?`<span class="ts">${hhmm(last.ts)}</span>`:""}</button>`;
-  }).join("")+'</div>';
+  if(!locked)h+=`<div class="row2" style="margin-bottom:10px"><button class="mini${ui.flow==="personas"?" on":""}" data-act="flow" data-id="personas">1º persona</button><button class="mini${ui.flow==="bebida"?" on":""}" data-act="flow" data-id="bebida">1º bebida</button></div>`;
+
+  /* --- flujo: primero la bebida, luego a quién --- */
+  if(!locked&&ui.flow==="bebida"){
+    if(!ui.pending){
+      h+=`<div class="pad-head"><h2>¿Qué se pide?</h2></div><p class="note" style="margin:0 2px 10px">Elige la bebida y después marcas a quién se le apunta.</p>`;
+      return h+vKeys();
+    }
+    const d=ui.pending,n=ui.group.length;
+    h+=`<div class="pad-head"><h2>${emoji(d)} ${esc(label(d))} → ¿para quién?</h2><button class="mini on" data-act="pendingCancel">✕</button></div>`;
+    h+=vGrid(ps,true);
+    if(paused.length)h+=`<p class="note" style="margin:-4px 2px 12px">⏸ En pausa: ${esc(paused.map(p=>p.name).join(", "))}</p>`;
+    h+=`<div class="chips" style="margin-bottom:10px"><button class="chip" data-act="groupAll">Todos</button><button class="chip" data-act="groupMissing">Los que faltan</button><button class="chip" data-act="groupNone">Ninguno</button></div>`;
+    h+=`<button class="btn primary" data-act="assignPending"${n?"":" disabled"}>${n?`Apuntar ${esc(label(d))} a ${n} persona${n===1?"":"s"}`:"Marca al menos a una persona"}</button>`;
+    return h;
+  }
+
+  /* --- flujo normal: primero la persona --- */
+  h+=vGrid(ps,ui.multi);
   if(paused.length)h+=`<p class="note" style="margin:-4px 2px 12px">⏸ En pausa: ${esc(paused.map(p=>p.name).join(", "))} · se reanudan en Ajustes</p>`;
-
   if(ui.multi){
     const n=ui.group.length;
     h+=`<div class="pad-head"><h2>Para ${n} persona${n===1?"":"s"}</h2><button class="mini on" data-act="multiOff">✕ Cancelar</button></div>`;
@@ -477,18 +539,7 @@ function vPedir(){
     }
   }
   if(locked)return h;
-
-  const cat=ui.cat&&catalog().find(x=>x.id===ui.cat);
-  if(!cat){
-    h+='<div class="keys">';
-    const prev=ui.multi?null:lastDrinkOf(ui.sel);
-    if(prev)h+=`<button class="key" style="--c:${IDX[prev].cat.color}" data-act="pick" data-id="${prev}">Lo mismo<small>${emoji({drink:prev})} ${esc(IDX[prev].name)}</small></button>`;
-    h+=catalog().map(c=>`<button class="key" style="--c:${c.color}" data-act="cat" data-id="${c.id}">${esc(c.name)}</button>`).join("");
-    h+=`<button class="key ghost" data-act="pickOther">🔧 Otra bebida<small>Fuera de la carta</small></button>`;
-    h+=`<button class="key ghost" data-act="pick" data-id="nada">🚫 No toma nada<small>Queda apuntado, paga 0 €</small></button></div>`;
-  }else{
-    h+=`<div class="keys"><button class="key ghost" data-act="back">← Atrás</button>`+cat.items.map(it=>`<button class="key" style="--c:${cat.color}" data-act="pick" data-id="${it.id}">${it.emoji?it.emoji+" ":""}${esc(it.name)}<small>${eur(it.price)}</small></button>`).join("")+'</div>';
-  }
+  h+=vKeys();
   if(S.rounds.length&&!ui.multi)h+=`<button class="btn" data-act="repeatLast">Repetir última ronda a quien falte</button>`;
   return h;
 }
@@ -594,11 +645,12 @@ function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
   let h=`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
 
-  h+='<section class="card"><h2>Cuadrilla</h2>';
+  h+='<section class="card"><h2>Cuadrilla</h2><p class="note">Arrastra por ⠿ para cambiar el orden.</p><div data-droplist="people">';
   ps.forEach(p=>{
     const u=personUsed(p.id);
-    h+=`<div class="set-row${p.paused?" paused":""}"><button class="x" data-act="movePerson" data-id="${p.id}" data-dir="-1" aria-label="Subir">▲</button><button class="x" data-act="movePerson" data-id="${p.id}" data-dir="1" aria-label="Bajar">▼</button><input type="text" value="${esc(p.name)}" data-pname="${p.id}"><button class="mini${p.paused?" on":""}" data-act="pausePerson" data-id="${p.id}">${p.paused?"▶":"⏸"}</button>${u?'<span class="lock" title="Ha participado esta noche">🔒</span>':`<button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar">×</button>`}</div>`;
+    h+=`<div class="set-row${p.paused?" paused":""}" data-key="${p.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" value="${esc(p.name)}" data-pname="${p.id}"><button class="mini${p.paused?" on":""}" data-act="pausePerson" data-id="${p.id}">${p.paused?"▶":"⏸"}</button>${u?'<span class="lock" title="Ha participado esta noche">🔒</span>':`<button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar">×</button>`}</div>`;
   });
+  h+='</div>';
   h+='<p class="note">⏸ Pausar = se va un rato o a casa: desaparece de Pedir, pero conserva sus saldos y puede volver. 🔒 = ya ha participado esta noche, así que no se puede borrar (púsalo en pausa).</p><button class="btn" data-act="addPerson">+ Añadir persona</button></section>';
 
   h+='<section class="card"><h2>Modo asignador</h2><p class="note">Mientras está activo, solo esa persona puede apuntar o quitar bebidas en todos los móviles.</p>';
@@ -610,20 +662,23 @@ function vAjustes(){
 
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
-  h+=`<button class="btn small" data-act="menuFromDefault">+ Añadir la carta completa de la app (${DEFAULT_CATALOG.reduce((a,c)=>a+c.items.length,0)} productos)</button>`;
+  if(!hasDefaultMenu())h+=`<button class="btn small" data-act="menuFromDefault">+ Añadir la carta completa de la app (${DEFAULT_CATALOG.reduce((a,c)=>a+c.items.length,0)} productos)</button>`;
+  h+=`<div class="row2"><button class="btn small" data-act="menuExport">⬆️ Exportar esta carta</button><button class="btn small" data-act="menuImport">⬇️ Importar carta</button></div><p class="note">Las cartas se guardan en la base de datos compartida, así que las ve toda la cuadrilla. Exportar te da un texto que puedes enviar por WhatsApp o guardar; importar lo pega de vuelta como carta nueva.</p>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuRename">✏️ Renombrar</button><button class="btn small warn" data-act="menuDel"${menus().length>1?"":" disabled"}>🗑 Borrar carta</button></div>`;
   h+=`<button class="btn small warn" data-act="menuDefaults">↻ Restaurar esta carta a la de por defecto</button><p class="note">Al restaurar se guarda antes una copia de seguridad de la carta actual, así que no se pierde nada.</p></section>`;
 
   h+=`<section class="card"><h2>Carta activa: ${esc(curMenu().name)}</h2><p class="note">🔒 = ya pedida esta noche: se puede cambiar el precio, pero no el nombre ni borrarla. ⧉ = duplicar para partir de algo que ya existe.</p>`;
+  h+='<div data-droplist="cats">';
   catalog().forEach(c=>{
     const cUsed=c.items.some(it=>used.has(it.id));
-    h+=`<div class="catbox" style="border-left:5px solid ${c.color}"><div class="set-row"><button class="x" data-act="moveCat" data-id="${c.id}" data-dir="-1" aria-label="Subir">▲</button><button class="x" data-act="moveCat" data-id="${c.id}" data-dir="1" aria-label="Bajar">▼</button><input type="text" class="catname" value="${esc(c.name)}" data-cname="${c.id}"${cUsed?" disabled":""}><button class="x" data-act="dupCat" data-id="${c.id}" title="Duplicar categoría">⧉</button>${cUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${c.id}" aria-label="Borrar categoría">🗑</button>`}</div>`;
+    h+=`<div class="catbox" style="border-left:5px solid ${c.color}" data-key="${c.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover categoría">⠿</button><input type="text" class="catname" value="${esc(c.name)}" data-cname="${c.id}"${cUsed?" disabled":""}><button class="x" data-act="dupCat" data-id="${c.id}" title="Duplicar categoría">⧉</button>${cUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${c.id}" aria-label="Borrar categoría">🗑</button>`}</div><div data-droplist="items:${c.id}">`;
     c.items.forEach(it=>{
       const u=used.has(it.id);
-      h+=`<div class="set-row"><button class="x" data-act="moveItem" data-id="${it.id}" data-dir="-1" aria-label="Subir">▲</button><button class="x" data-act="moveItem" data-id="${it.id}" data-dir="1" aria-label="Bajar">▼</button><input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}"${u?" disabled":""}><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div>`;
+      h+=`<div class="set-row" data-key="${it.id}"><button class="grip" data-grip aria-label="Mover bebida">⠿</button><input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}"${u?" disabled":""}><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div>`;
     });
-    h+=`<button class="btn small" data-act="addItem" data-id="${c.id}">+ Bebida en ${esc(c.name)}</button></div>`;
+    h+=`</div><button class="btn small" data-act="addItem" data-id="${c.id}">+ Bebida en ${esc(c.name)}</button></div>`;
   });
+  h+='</div>';
   h+='<button class="btn" data-act="addCat">+ Nueva categoría</button></section>';
   h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: noche nueva, vaciar o reabrir rondas, cambiar el pagador de una ronda cerrada, borrar personas o cartas y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
   return h;
@@ -632,6 +687,7 @@ function vAjustes(){
 const VIEWS={pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes};
 
 function render(force){
+  if(dragging){pending=true;return}
   const ae=document.activeElement;
   if(!force&&ae&&ae.tagName==="INPUT"&&ae.closest("#view")){pending=true;return}
   pending=false;
@@ -654,15 +710,16 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
     case"tab":ui.tab=id;ui.cat=null;window.scrollTo(0,0);break;
-    case"sel":if(ui.multi){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.cat=null}break;
+    case"sel":if(ui.multi||ui.pending){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.cat=null}break;
     case"cat":ui.cat=id;break;
     case"back":ui.cat=null;break;
 
     case"pick":case"pickOther":{
       if(isLocked())return;
-      const pids=ui.multi?ui.group.slice():[ui.sel];
-      if(!pids.length){flash("Elige al menos una persona");return}
-      const who=pids.length>1?pids.length+" personas":pname(pids[0]);
+      const first=ui.flow==="bebida"&&!ui.pending;
+      const pids=first?[]:(ui.multi?ui.group.slice():[ui.sel]);
+      if(!first&&!pids.length){flash("Elige al menos una persona");return}
+      const who=pids.length>1?pids.length+" personas":(pids.length?pname(pids[0]):"");
       let d;
       if(b.dataset.act==="pickOther"){
         const n=prompt(`${who}: ¿qué bebida?`);if(!n||!n.trim())return;
@@ -673,6 +730,7 @@ document.addEventListener("click",e=>{
         d={drink:id};
         if(askNote){const c=prompt(`${who}: ${IDX[id]?IDX[id].name:""}\nAclaración (opcional):`,"");if(c&&c.trim())d.clarification=c.trim().slice(0,60)}
       }
+      if(first){ui.pending=tidy(d);ui.cat=null;ui.group=[];break}
       addDrinks(pids,d);ui.cat=null;ui.multi=false;ui.group=[];flash(`${label(d)} → ${who}`);break;
     }
     case"note":{
@@ -690,6 +748,15 @@ document.addEventListener("click",e=>{
       const t=String(v).trim();
       setItemPrice(b.dataset.pid,parseInt(b.dataset.idx,10),t===""?null:(parseFloat(t.replace(",","."))||0));
       break;
+    }
+    case"flow":ui.flow=id;ui.pending=null;ui.cat=null;ui.group=[];ui.multi=false;break;
+    case"pendingCancel":ui.pending=null;ui.group=[];break;
+    case"assignPending":{
+      if(isLocked()||!ui.pending||!ui.group.length)return;
+      const d=ui.pending,n=ui.group.length;
+      addDrinks(ui.group.slice(),d);
+      ui.pending=null;ui.group=[];ui.cat=null;
+      flash(`${label(d)} → ${n} persona${n===1?"":"s"}`);break;
     }
     case"multiOn":ui.multi=true;ui.group=ui.sel?[ui.sel]:[];ui.cat=null;break;
     case"multiOff":ui.multi=false;ui.group=[];break;
@@ -745,9 +812,6 @@ document.addEventListener("click",e=>{
     case"toggleAsk":askNote=!askNote;lsSet("ronda.ask",askNote?"1":null);break;
 
     case"addPerson":{const n=prompt("Nombre:","Nuevo");if(!n||!n.trim())return;editConfig(c=>{c.people.push({id:uid("p"),name:n.trim().slice(0,24),paused:false})});return}
-    case"movePerson":editConfig(c=>{move(c.people,c.people.findIndex(p=>p.id===id),parseInt(b.dataset.dir,10))});return;
-    case"moveCat":editMenu(m=>{move(m.catalog,m.catalog.findIndex(c=>c.id===id),parseInt(b.dataset.dir,10))});return;
-    case"moveItem":editMenu(m=>{m.catalog.forEach(c=>{const i=c.items.findIndex(it=>it.id===id);if(i>=0)move(c.items,i,parseInt(b.dataset.dir,10))})});return;
     case"setPin":{
       if(S.config.pin&&!requirePin())return;
       const v=prompt("PIN nuevo (vacío para quitarlo):",S.config.pin||"");
@@ -781,8 +845,23 @@ document.addEventListener("click",e=>{
       editConfig(c=>{c.menus.push(m);c.menu=m.id});flash("Carta creada");return;
     }
     case"menuRename":{const n=prompt("Nombre de la carta:",curMenu().name);if(!n||!n.trim())return;editConfig(c=>{const m=c.menus.find(x=>x.id===c.menu);if(m)m.name=n.trim().slice(0,30)});return}
+    case"menuExport":{
+      const txt=exportMenu();
+      (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject())
+        .then(()=>flash("Carta copiada al portapapeles"))
+        .catch(()=>prompt("Copia este texto para guardar o enviar la carta:",txt));
+      return;
+    }
+    case"menuImport":{
+      const txt=prompt("Pega aquí el texto de la carta:");
+      if(!txt||!txt.trim())return;
+      const res=parseMenu(txt.trim());
+      if(res.error){alert(res.error);return}
+      if(!confirm(`Se añadirá "${res.menu.name}" con ${res.count} productos. ¿Seguir?`))return;
+      editConfig(c=>{c.menus.push(res.menu);c.menu=res.menu.id});ui.cat=null;flash("Carta importada");return;
+    }
     case"menuFromDefault":{
-      const m={id:uid("m"),name:"Carta completa",catalog:freshCatalog(DEFAULT_CATALOG)};
+      const m={id:uid("m"),name:"Carta completa",fromDefault:true,catalog:freshCatalog(DEFAULT_CATALOG)};
       editConfig(c=>{c.menus.push(m);c.menu=m.id});ui.cat=null;flash("Carta completa añadida y activada");return;
     }
     case"menuDel":{
@@ -797,7 +876,7 @@ document.addEventListener("click",e=>{
       if(!confirm("Se guardará una copia de la carta actual y esta pasará a ser la de por defecto. ¿Seguir?"))return;
       if(!requirePin())return;
       const backup={id:uid("m"),name:(curMenu().name+" "+hhmm(Date.now())).slice(0,30),catalog:clone(catalog())};
-      editConfig(c=>{c.menus.push(backup);const m=c.menus.find(x=>x.id===c.menu);if(m)m.catalog=freshCatalog(DEFAULT_CATALOG)});
+      editConfig(c=>{c.menus.push(backup);const m=c.menus.find(x=>x.id===c.menu);if(m){m.catalog=freshCatalog(DEFAULT_CATALOG);m.fromDefault=true}});
       flash("Restaurada. La anterior se guardó como copia");return;
     }
 
@@ -846,6 +925,42 @@ document.addEventListener("click",e=>{
   }
   render(true);
 });
+
+/* --- arrastrar y soltar (ratón y dedo) --- */
+let dragging=null;
+const kids=list=>Array.prototype.filter.call(list.children,c=>c.dataset&&c.dataset.key);
+document.addEventListener("pointerdown",e=>{
+  const g=e.target.closest&&e.target.closest("[data-grip]");if(!g)return;
+  const row=g.closest("[data-key]"),list=g.closest("[data-droplist]");
+  if(!row||!list)return;
+  e.preventDefault();
+  dragging={row,list,ptr:e.pointerId};
+  row.classList.add("dragging");
+  try{g.setPointerCapture(e.pointerId)}catch(_){}
+});
+document.addEventListener("pointermove",e=>{
+  if(!dragging)return;
+  e.preventDefault();
+  const rows=kids(dragging.list);
+  for(let k=0;k<rows.length;k++){
+    const r=rows[k];if(r===dragging.row)continue;
+    const b=r.getBoundingClientRect();
+    if(e.clientY>=b.top&&e.clientY<=b.bottom){
+      dragging.list.insertBefore(dragging.row,e.clientY<b.top+b.height/2?r:r.nextSibling);
+      break;
+    }
+  }
+});
+function endDrag(){
+  if(!dragging)return;
+  const list=dragging.list;
+  dragging.row.classList.remove("dragging");
+  const ids=kids(list).map(r=>r.dataset.key),kind=list.dataset.droplist;
+  dragging=null;
+  commitOrder(kind,ids);
+}
+document.addEventListener("pointerup",endDrag);
+document.addEventListener("pointercancel",endDrag);
 
 document.addEventListener("change",e=>{
   const t=e.target;
