@@ -159,6 +159,7 @@ const MIX_RON={def:"con cola",options:[{name:"con cola"},{name:"con cola zero"},
 const MIX_GIN={def:"con tónica",options:[{name:"con tónica"},{name:"con tónica premium",extra:1},{name:"con limón"},{name:"con naranja"},{name:"solo"}]};
 const MIX_WHISKY={def:"con cola",options:[{name:"con cola"},{name:"con hielo"},{name:"solo"},{name:"con soda"},{name:"con agua"}]};
 const MIX_VODKA={def:"con limón",options:[{name:"con limón"},{name:"con naranja"},{name:"con tónica"},{name:"con cola"},{name:"solo"}]};
+const MIX_CAFE={def:"",options:[{name:"descafeinado"},{name:"con hielo"},{name:"descafeinado con hielo"},{name:"con leche fría"},{name:"con sacarina"},{name:"en vaso"},{name:"corto de café"}]};
 const MIX_LICOR={def:"solo",options:[{name:"solo"},{name:"con hielo"},{name:"con cola"},{name:"con piña"},{name:"con naranja"}]};
 const DEFAULT_CATALOG=[
   {id:"cerveza",name:"Cervezas",color:"#B97C0C",items:[
@@ -184,11 +185,12 @@ const DEFAULT_CATALOG=[
     prod("zumonatural","Zumo natural",3,"🍊"),prod("agua","Agua",1.6,"💧"),prod("aguagas","Agua con gas",1.9,"🫧"),
     prod("aguagrande","Agua grande",2.5,"💧")]},
   {id:"cafe",name:"Cafés e infusiones",color:"#6A4630",items:[
-    prod("solo","Café solo",1.4,"☕"),prod("cortado","Cortado",1.5,"☕"),prod("conleche","Café con leche",1.7,"☕"),
-    prod("manchado","Manchado",1.6,"☕"),prod("descafe","Descafeinado",1.8,"☕"),prod("bombon","Bombón",2,"☕"),
-    prod("carajillo","Carajillo",2.4,"🥃"),prod("capuchino","Capuchino",2.2,"☕"),prod("americano","Americano",1.7,"☕"),
+    grp("g_cafe","Cafés","☕",MIX_CAFE,[
+      prod("solo","Café solo",1.4,"☕"),prod("cortado","Cortado",1.5,"☕"),prod("conleche","Café con leche",1.7,"☕"),
+      prod("manchado","Manchado",1.6,"☕"),prod("bombon","Bombón",2,"☕"),prod("capuchino","Capuchino",2.2,"☕"),
+      prod("americano","Americano",1.7,"☕"),prod("carajillo","Carajillo",2.4,"🥃")]),
     prod("leche","Leche",1.5,"🥛"),prod("colacao","Cola Cao",2,"🥛"),prod("te","Té",1.7,"🍵"),
-    prod("manzanilla","Manzanilla",1.7,"🍵"),prod("poleo","Poleo menta",1.7,"🍵")]},
+    prod("manzanilla","Manzanilla",1.7,"🍵"),prod("poleo","Poleo menta",1.7,"🍵"),prod("infusion","Otra infusión",1.7,"🍵")]},
   {id:"copas",name:"Copas",color:"#2B7458",items:[
     grp("g_ron","Ron","🥃",MIX_RON,[
       prod("ron_barcelo","Barceló",7,"🥃"),prod("ron_brugal","Brugal",7,"🥃"),prod("ron_cacique","Cacique",7,"🥃"),
@@ -746,10 +748,10 @@ function vKeys(){
     h+=`<button class="key ghost" data-act="pick" data-id="nada">🚫 No toma nada<small>Queda apuntado, paga 0 €</small></button></div>`;
   }else{
     const ruta=esc(at.cat.name)+(at.group?" › "+esc(at.group.name):"");
-    h+=`<p class="note" style="margin:0 2px 6px">${ruta}${at.group&&at.group.mix?` · por defecto ${esc(at.group.mix.def)}`:""}</p>`;
+    h+=`<p class="note" style="margin:0 2px 6px">${ruta}${at.group&&at.group.mix&&at.group.mix.def?` · por defecto ${esc(at.group.mix.def)}`:""}</p>`;
     h+=`<div class="keys"><button class="key ghost" data-act="back">← Atrás<small>${at.group?esc(at.cat.name):"Categorías"}</small></button>`;
     h+=(at.items||[]).map(n=>n.group
-      ? `<button class="key" style="--c:${at.cat.color}" data-act="cat" data-id="${n.id}">${n.emoji?n.emoji+" ":""}${esc(n.name)} ▸<small>${n.items.length} opciones${n.mix?" · "+esc(n.mix.def):""}</small></button>`
+      ? `<button class="key" style="--c:${at.cat.color}" data-act="cat" data-id="${n.id}">${n.emoji?n.emoji+" ":""}${esc(n.name)} ▸<small>${n.items.length} opciones${n.mix&&n.mix.def?" · "+esc(n.mix.def):(n.mix?" · con opciones":"")}</small></button>`
       : keyFor(n.id,null,at.cat.color)).join("");
     h+='</div>';
   }
