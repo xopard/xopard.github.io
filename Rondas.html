@@ -69,6 +69,8 @@ nav.tabs button[aria-current="page"]{color:var(--ink);border-top-color:var(--acc
 .note{font-size:.8rem;color:var(--muted)}
 .linkish{background:none;border:0;color:var(--muted);font:600 .9rem var(--body);padding:4px 6px}
 .linkish.rm{color:var(--bad)}
+.linkish.on{background:var(--ink);color:var(--bg);border-radius:6px}
+.mixbox{background:var(--surface2);border-radius:8px;padding:8px;margin:0 0 8px}
 
 .btn{display:block;width:100%;background:var(--surface);border:2px solid var(--line);border-radius:10px;padding:12px 14px;font:600 1.15rem var(--cond);margin-top:10px}
 .btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
@@ -290,7 +292,7 @@ let netCache=false,netPending=false;
 let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",sel:null,path:[],lastAdd:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null};
+const ui={tab:"pedir",sel:null,path:[],lastAdd:null,editMix:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state",JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -710,14 +712,20 @@ function keyFor(id,clar,color){
   const txt=(it.emoji?it.emoji+" ":"")+esc(it.name);
   return `<button class="key" style="--c:${color||(it.cat?it.cat.color:"#555")}" data-act="pick" data-id="${id}"${clar!=null?` data-mix="${esc(clar)}"`:""}>${txt}<small>${clar?esc(clar)+" · ":""}${eur(priceWith(id,clar!=null?clar:defMix(id)))}</small></button>`;
 }
-function vMixRow(){
-  if(!ui.lastAdd)return"";
-  const m=mixOf(ui.lastAdd.itemId);if(!m)return"";
-  const first=(drinks(ui.lastAdd.items[0].pid)[ui.lastAdd.items[0].idx]||{}).clarification||"";
-  const it=IDX[ui.lastAdd.itemId];
-  return `<div class="card" style="margin-top:10px"><p class="note" style="margin:0 0 6px">${esc(it?it.name:"")} · ¿con qué? (cambia lo último apuntado)</p><div class="chips">`+
-    m.options.map(o=>`<button class="chip${canon(o.name)===canon(first)?" on":""}" data-act="setMix" data-name="${esc(o.name)}">${esc(o.name)}${o.extra?` <span class="note">+${eur(o.extra)}</span>`:""}</button>`).join("")+
-    `<button class="chip" data-act="setMix" data-name="">sin nota</button></div></div>`;
+function mixTargets(){
+  if(ui.editMix)return[ui.editMix];
+  if(ui.lastAdd)return ui.lastAdd.items;
+  return[];
+}
+function vMixChips(title){
+  const tg=mixTargets();if(!tg.length)return"";
+  const o0=drinks(tg[0].pid)[tg[0].idx];if(!o0||!o0.drink)return"";
+  const m=mixOf(o0.drink);if(!m)return"";
+  const cur=o0.clarification||"";
+  return `<div class="mixbox">${title?`<p class="note" style="margin:0 0 6px">${title}</p>`:""}<div class="chips">`+
+    m.options.map(x=>`<button class="chip${canon(x.name)===canon(cur)?" on":""}" data-act="setMix" data-name="${esc(x.name)}">${esc(x.name)}${x.extra?` <span class="note">+${eur(x.extra)}</span>`:""}</button>`).join("")+
+    `<button class="chip" data-act="setMix" data-name="">sin nota</button>`+
+    `<button class="chip" data-act="freeNote">✏️ otra nota</button></div></div>`;
 }
 function vKeys(){
   const at=ui.path.length?nodeAt():null;
@@ -745,7 +753,7 @@ function vKeys(){
       : keyFor(n.id,null,at.cat.color)).join("");
     h+='</div>';
   }
-  return h+vMixRow();
+  return h;
 }
 function vGrid(ps,multi){
   return '<div class="people">'+ps.map(p=>{
@@ -794,10 +802,17 @@ function vPedir(){
     const ds=drinks(ui.sel);
     h+=`<div class="pad-head"><h2>${esc(pname(ui.sel))}</h2>${locked?"":'<button class="mini" data-act="multiOn">👥 Varios a la vez</button>'}</div>`;
     if(ds.length){
+      const tg=mixTargets();
       h+='<div class="mine">'+ds.map((o,i)=>{
         const pr=(o.custom||hasOverride(o))?` <span class="note">· ${eur(priceOf(o))}</span>`:"";
-        return `<div class="drow"><div><div>${emoji(o)} ${esc(label(o))}${o.clarification?` <span class="note">· ${esc(o.clarification)}</span>`:""}${pr}</div><div class="note">${hhmm(o.ts)||"—"} · apuntó ${esc(byName(o.by))}</div></div>${locked?"":`<div class="acts"><button class="linkish" data-act="itemPrice" data-pid="${ui.sel}" data-idx="${i}" title="Precio">€</button><button class="linkish" data-act="note" data-pid="${ui.sel}" data-idx="${i}">${o.clarification?"✏️":"+ nota"}</button><button class="linkish rm" data-act="removeDrink" data-pid="${ui.sel}" data-idx="${i}">Quitar</button></div>`}</div>`;
+        const conMezcla=!!(o.drink&&mixOf(o.drink));
+        const abierto=tg.some(x=>x.pid===ui.sel&&x.idx===i);
+        let row=`<div class="drow"><div><div>${emoji(o)} ${esc(label(o))}${o.clarification?` <span class="note">· ${esc(o.clarification)}</span>`:""}${pr}</div><div class="note">${hhmm(o.ts)||"—"} · apuntó ${esc(byName(o.by))}</div></div>${locked?"":`<div class="acts"><button class="linkish" data-act="itemPrice" data-pid="${ui.sel}" data-idx="${i}" title="Precio">€</button><button class="linkish${abierto?" on":""}" data-act="note" data-pid="${ui.sel}" data-idx="${i}">${conMezcla?"🍹 con…":(o.clarification?"✏️":"+ nota")}</button><button class="linkish rm" data-act="removeDrink" data-pid="${ui.sel}" data-idx="${i}">Quitar</button></div>`}</div>`;
+        if(!locked&&abierto)row+=vMixChips("");
+        return row;
       }).join("")+'</div>';
+      if(!locked&&ui.lastAdd&&!ui.editMix&&!ui.lastAdd.items.some(x=>x.pid===ui.sel))
+        h+=vMixChips(`${esc(IDX[ui.lastAdd.itemId]?IDX[ui.lastAdd.itemId].name:"")} · ¿con qué? (${ui.lastAdd.items.length} personas)`);
     }
   }
   if(locked)return h;
@@ -1004,9 +1019,9 @@ document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0)
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
-    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;window.scrollTo(0,0);break;
-    case"sel":if(ui.multi||ui.pending){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.path=[];ui.lastAdd=null}break;
-    case"cat":ui.path=ui.path.length?[ui.path[0],id]:[id];ui.lastAdd=null;break;
+    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;window.scrollTo(0,0);break;
+    case"sel":if(ui.multi||ui.pending){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.path=[];ui.lastAdd=null;ui.editMix=null}break;
+    case"cat":ui.path=ui.path.length?[ui.path[0],id]:[id];ui.lastAdd=null;ui.editMix=null;break;
     case"back":ui.path=ui.path.slice(0,-1);ui.lastAdd=null;break;
 
     case"pick":case"pickOther":{
@@ -1030,12 +1045,18 @@ document.addEventListener("click",e=>{
       }
       if(first){ui.pending=tidy(d);ui.path=[];ui.group=[];break}
       addDrinks(pids,d);
+      ui.editMix=null;
       ui.lastAdd=(d.drink&&d.drink!=="nada"&&mixOf(d.drink))?{itemId:d.drink,items:pids.map(p=>({pid:p,idx:drinks(p).length-1}))}:null;
       ui.path=[];ui.multi=false;ui.group=[];flash(`${label(d)}${d.clarification?" "+d.clarification:""} → ${who}`);break;
     }
     case"note":{
       if(isLocked())return;
-      const cur=(drinks(b.dataset.pid)[b.dataset.idx]||{}).clarification||"";
+      const pid=b.dataset.pid,idx=parseInt(b.dataset.idx,10),o=drinks(pid)[idx];
+      if(o&&o.drink&&mixOf(o.drink)){                       // tiene mezclas: abre los botones
+        ui.editMix=(ui.editMix&&ui.editMix.pid===pid&&ui.editMix.idx===idx)?null:{pid,idx};
+        ui.lastAdd=null;break;
+      }
+      const cur=(o||{}).clarification||"";
       const v=prompt("Aclaración (p. ej. sin espuma, con hielo). Vacío para quitarla:",cur);
       if(v===null)return;setNote(b.dataset.pid,parseInt(b.dataset.idx,10),v.trim().slice(0,60));break;
     }
@@ -1060,10 +1081,20 @@ document.addEventListener("click",e=>{
     }
     case"multiOn":ui.multi=true;ui.group=ui.sel?[ui.sel]:[];ui.path=[];ui.lastAdd=null;break;
     case"multiOff":ui.multi=false;ui.group=[];break;
+    case"freeNote":{
+      if(isLocked())return;
+      const tg=mixTargets();if(!tg.length)return;
+      const cur=(drinks(tg[0].pid)[tg[0].idx]||{}).clarification||"";
+      const v=prompt("Aclaración libre (vacío para quitarla):",cur);
+      if(v===null)return;
+      tg.forEach(x=>setNote(x.pid,x.idx,v.trim().slice(0,60)));
+      ui.editMix=null;ui.lastAdd=null;break;
+    }
     case"setMix":{
-      if(isLocked()||!ui.lastAdd)return;
+      if(isLocked())return;
+      const tg=mixTargets();if(!tg.length)return;
       const name=b.dataset.name||"";
-      ui.lastAdd.items.forEach(x=>{
+      tg.forEach(x=>{
         const arr=drinks(x.pid).slice(),o=arr[x.idx];if(!o)return;
         const n=Object.assign({},o);
         if(name)n.clarification=name;else delete n.clarification;
