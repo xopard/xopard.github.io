@@ -105,6 +105,7 @@ textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1p
 .set-row input[type=text]{flex:1;min-width:0}
 .x{background:none;border:0;color:var(--muted);font-size:1.2rem;padding:6px;flex-shrink:0}
 .catbox{padding:6px 0 10px 10px;margin:12px 0}
+.grpbox{border:1px dashed var(--line);border-radius:8px;padding:8px 8px 10px;margin:8px 0}
 .catname{font:700 1.1rem var(--cond)}
 .emo{width:3.2em;text-align:center;padding:8px 4px;flex-shrink:0}
 .lock{width:2.2em;text-align:center;flex-shrink:0}
@@ -150,42 +151,68 @@ table th:first-child,table td:first-child{text-align:left}
 /* ===== Catálogo y cuadrilla por defecto ===== */
 const DEFAULT_PEOPLE=["Aitor","Amigo 2","Amigo 3","Amigo 4","Amigo 5","Amigo 6","Amigo 7","Amigo 8","Amigo 9"];
 const mk=(id,name,price,emoji)=>({id,name,price,emoji:emoji||""});
+const prod=(id,name,price,emoji)=>({id,name,price,emoji:emoji||""});
+const grp=(id,name,emoji,mix,items)=>({id,name,emoji:emoji||"",group:true,mix:mix||null,items:items||[]});
+const MIX_RON={def:"con cola",options:[{name:"con cola"},{name:"con cola zero"},{name:"con limón"},{name:"con naranja"},{name:"solo"},{name:"con hielo"}]};
+const MIX_GIN={def:"con tónica",options:[{name:"con tónica"},{name:"con tónica premium",extra:1},{name:"con limón"},{name:"con naranja"},{name:"solo"}]};
+const MIX_WHISKY={def:"con cola",options:[{name:"con cola"},{name:"con hielo"},{name:"solo"},{name:"con soda"},{name:"con agua"}]};
+const MIX_VODKA={def:"con limón",options:[{name:"con limón"},{name:"con naranja"},{name:"con tónica"},{name:"con cola"},{name:"solo"}]};
+const MIX_LICOR={def:"solo",options:[{name:"solo"},{name:"con hielo"},{name:"con cola"},{name:"con piña"},{name:"con naranja"}]};
 const DEFAULT_CATALOG=[
-  {id:"cerveza",name:"Cerveza",color:"#B97C0C",items:[
-    mk("zurito","Zurito",1.8,"🍺"),mk("cana","Caña",2.5,"🍺"),mk("doble","Doble",3.5,"🍺"),mk("tercio","Tercio",3,"🍺"),
-    mk("pinta","Pinta",4.5,"🍺"),mk("jarra","Jarra",5,"🍺"),mk("katxi","Katxi",5,"🍺"),mk("clara","Clara",2.5,"🍋"),
-    mk("radler","Radler",3,"🍋"),mk("sin","Sin alcohol",2.5,"🍺"),mk("tostada","Tostada",2.8,"🍺"),
-    mk("ipa","IPA / artesana",4,"🍺"),mk("negra","Negra",3.5,"🍺"),mk("shandy","Shandy",2.5,"🍋")]},
-  {id:"vino",name:"Vino y cava",color:"#86243A",items:[
-    mk("tinto","Tinto",2,"🍷"),mk("crianza","Crianza",2.5,"🍷"),mk("reserva","Reserva",3.5,"🍷"),mk("rioja","Rioja",2.5,"🍷"),
-    mk("ribera","Ribera",3,"🍷"),mk("blanco","Blanco",2.2,"🥂"),mk("verdejo","Verdejo",2.5,"🥂"),mk("albarino","Albariño",3,"🥂"),
-    mk("txakoli","Txakoli",2.5,"🥂"),mk("rosado","Rosado",2,"🍷"),mk("tintoverano","Tinto de verano",3,"🍹"),
-    mk("sangria","Sangría",3.5,"🍹"),mk("cava","Cava",3,"🥂"),mk("dulce","Vino dulce",3,"🍷")]},
-  {id:"mezclas",name:"Kalimotxo, vermú y sidra",color:"#5A2E63",items:[
-    mk("kalimotxo","Kalimotxo",2.5,"🍷"),mk("katximotxo","Katxi de kalimotxo",5,"🍷"),mk("vermurojo","Vermú rojo",3,"🍸"),
-    mk("vermublanco","Vermú blanco",3,"🍸"),mk("vermusifon","Vermú con sifón",3.2,"🍸"),mk("martini","Martini",3.5,"🍸"),
-    mk("sidra","Sidra",2.5,"🍏"),mk("sidranatural","Sidra natural (txotx)",2.8,"🍏"),mk("mistela","Mistela",2.5,"🍷")]},
-  {id:"refresco",name:"Refrescos, zumos y agua",color:"#1F68A0",items:[
-    mk("cola","Cola",2.5,"🥤"),mk("colazero","Cola zero",2.5,"🥤"),mk("naranja","Naranja",2.5,"🍊"),mk("limon","Limón",2.5,"🍋"),
-    mk("tonica","Tónica",2.5,"🫧"),mk("bitter","Bitter",2.5,"🍅"),mk("gaseosa","Gaseosa",1.8,"🫧"),mk("tefrio","Té frío",2.5,"🧊"),
-    mk("isotonica","Isotónica",2.5,"💪"),mk("mosto","Mosto",2,"🍇"),mk("zumo","Zumo",2.5,"🧃"),mk("zumonatural","Zumo natural",3,"🍊"),
-    mk("agua","Agua",1.8,"💧"),mk("aguagas","Agua con gas",2,"🫧"),mk("aguagrande","Agua grande",3,"💧")]},
+  {id:"cerveza",name:"Cervezas",color:"#B97C0C",items:[
+    prod("zurito","Zurito",1.6,"🍺"),prod("cana","Caña",2.2,"🍺"),prod("katxi","Katxi",5,"🍺"),prod("doble","Doble",3.2,"🍺"),
+    prod("tercio","Botellín / tercio",2.8,"🍺"),prod("pinta","Pinta",4.2,"🍺"),prod("clara","Clara",2.3,"🍋"),
+    prod("tostada","Tostada",2.6,"🍺"),prod("negra","Negra",3.2,"🍺"),prod("ipa","Artesana / IPA",4,"🍺"),
+    prod("radler","Radler",2.6,"🍋"),prod("sinalcohol","Sin alcohol",2.4,"🍺")]},
+  {id:"vino",name:"Vinos y txakoli",color:"#86243A",items:[
+    prod("tintocasa","Tinto de la casa",1.8,"🍷"),prod("rioja","Rioja",2.4,"🍷"),prod("crianza","Crianza",2.6,"🍷"),
+    prod("reserva","Reserva",3.6,"🍷"),prod("ribera","Ribera",2.8,"🍷"),prod("blanco","Blanco",2,"🥂"),
+    prod("verdejo","Verdejo",2.4,"🥂"),prod("txakoli","Txakoli",2.4,"🥂"),prod("albarino","Albariño",3,"🥂"),
+    prod("rosado","Rosado",2,"🍷"),prod("cava","Cava",3,"🥂"),prod("vinodulce","Vino dulce",2.8,"🍷")]},
+  {id:"kalimotxo",name:"Kalimotxo y marianitos",color:"#5A2E63",items:[
+    prod("kalimotxo","Kalimotxo",2.4,"🍷"),prod("katximotxo","Katxi de kalimotxo",5,"🍷"),
+    prod("marianito","Marianito",2.6,"🍸"),prod("vermurojo","Vermú rojo",2.6,"🍸"),prod("vermublanco","Vermú blanco",2.6,"🍸"),
+    prod("vermusifon","Vermú con sifón",2.8,"🍸"),prod("sidra","Sidra",2.4,"🍏"),prod("sidranatural","Sidra natural (txotx)",2.6,"🍏"),
+    prod("tintoverano","Tinto de verano",2.6,"🍹"),prod("mistela","Mistela",2.4,"🍷")]},
+  {id:"refresco",name:"Refrescos y aguas",color:"#1F68A0",items:[
+    prod("cocacola","Coca-Cola",2.2,"🥤"),prod("cocacolazero","Coca-Cola zero",2.2,"🥤"),prod("fantanaranja","Fanta de naranja",2.2,"🍊"),
+    prod("fantalimon","Fanta de limón",2.2,"🍋"),prod("kaslimon","Kas de limón",2.2,"🍋"),prod("bitterkas","Bitter Kas",2.2,"🍅"),
+    prod("tonica","Tónica",2.2,"🫧"),prod("aquarius","Aquarius",2.4,"💪"),prod("nestea","Nestea",2.4,"🧊"),
+    prod("gaseosa","Gaseosa",1.6,"🫧"),prod("mosto","Mosto",2,"🍇"),prod("zumo","Zumo",2.4,"🧃"),
+    prod("zumonatural","Zumo natural",3,"🍊"),prod("agua","Agua",1.6,"💧"),prod("aguagas","Agua con gas",1.9,"🫧"),
+    prod("aguagrande","Agua grande",2.5,"💧")]},
   {id:"cafe",name:"Cafés e infusiones",color:"#6A4630",items:[
-    mk("solo","Solo",1.5,"☕"),mk("cortado","Cortado",1.6,"☕"),mk("conleche","Con leche",1.8,"☕"),mk("descafe","Descafeinado",1.8,"☕"),
-    mk("americano","Americano",1.8,"☕"),mk("capuchino","Capuchino",2.2,"☕"),mk("bombon","Bombón",2,"☕"),mk("carajillo","Carajillo",2.5,"🥃"),
-    mk("leche","Leche",1.5,"🥛"),mk("colacao","Colacao",2,"🥛"),mk("te","Té",1.8,"🍵"),mk("manzanilla","Manzanilla",1.8,"🍵"),
-    mk("poleo","Poleo menta",1.8,"🍵"),mk("infusion","Otra infusión",1.8,"🍵")]},
-  {id:"copas",name:"Copas y chupitos",color:"#2B7458",items:[
-    mk("gintonic","Gin-tonic",8,"🍸"),mk("ginpremium","Gin-tonic premium",10,"🍸"),mk("roncola","Ron-cola",7,"🥃"),
-    mk("whiskycola","Whisky-cola",7,"🥃"),mk("vodkalimon","Vodka-limón",7,"🍸"),mk("mojito","Mojito",8,"🍹"),
-    mk("whiskysolo","Whisky solo",6,"🥃"),mk("brandy","Brandy",5,"🥃"),mk("tequila","Tequila",5,"🥃"),
-    mk("pacharan","Pacharán",3,"🥃"),mk("orujo","Orujo",3,"🥃"),mk("licorcafe","Licor de café",3,"🥃"),
-    mk("jager","Jäger",4,"🥃"),mk("chupito","Chupito",2,"🥃")]},
-  {id:"picar",name:"Para picar",color:"#A04A1F",items:[
-    mk("pintxotortilla","Pintxo de tortilla",2.5,"🍳"),mk("croquetas","Croquetas",2.5,"🍢"),mk("gilda","Gilda",2,"🫒"),
-    mk("rabas","Rabas",4,"🦑"),mk("bravas","Patatas bravas",4,"🥔"),mk("jamon","Jamón",4,"🥓"),mk("queso","Queso",4,"🧀"),
-    mk("tortillapincho","Tortilla",3,"🍳"),mk("aceitunas","Aceitunas",2,"🫒"),mk("cacahuetes","Cacahuetes",1.5,"🥜"),
-    mk("bocata","Bocata pequeño",3.5,"🥪"),mk("empanada","Empanada",2.5,"🥟")]}
+    prod("solo","Café solo",1.4,"☕"),prod("cortado","Cortado",1.5,"☕"),prod("conleche","Café con leche",1.7,"☕"),
+    prod("manchado","Manchado",1.6,"☕"),prod("descafe","Descafeinado",1.8,"☕"),prod("bombon","Bombón",2,"☕"),
+    prod("carajillo","Carajillo",2.4,"🥃"),prod("capuchino","Capuchino",2.2,"☕"),prod("americano","Americano",1.7,"☕"),
+    prod("leche","Leche",1.5,"🥛"),prod("colacao","Cola Cao",2,"🥛"),prod("te","Té",1.7,"🍵"),
+    prod("manzanilla","Manzanilla",1.7,"🍵"),prod("poleo","Poleo menta",1.7,"🍵")]},
+  {id:"copas",name:"Copas",color:"#2B7458",items:[
+    grp("g_ron","Ron","🥃",MIX_RON,[
+      prod("ron_barcelo","Barceló",7,"🥃"),prod("ron_brugal","Brugal",7,"🥃"),prod("ron_cacique","Cacique",7,"🥃"),
+      prod("ron_havana","Havana 7",8,"🥃"),prod("ron_legendario","Legendario",8,"🥃"),prod("ron_matusalem","Matusalem",8.5,"🥃")]),
+    grp("g_gin","Ginebra","🍸",MIX_GIN,[
+      prod("gin_larios","Larios",7,"🍸"),prod("gin_beefeater","Beefeater",7.5,"🍸"),prod("gin_seagrams","Seagram's",8,"🍸"),
+      prod("gin_bombay","Bombay Sapphire",8.5,"🍸"),prod("gin_tanqueray","Tanqueray",8.5,"🍸"),
+      prod("gin_puertoindias","Puerto de Indias",8.5,"🍸"),prod("gin_nordes","Nordés",9,"🍸"),prod("gin_hendricks","Hendrick's",9.5,"🍸")]),
+    grp("g_whisky","Whisky","🥃",MIX_WHISKY,[
+      prod("wh_jb","J&B",7,"🥃"),prod("wh_ballantines","Ballantine's",7,"🥃"),prod("wh_johnnie","Johnnie Walker",7.5,"🥃"),
+      prod("wh_jack","Jack Daniel's",8,"🥃"),prod("wh_cardhu","Cardhu",9,"🥃"),prod("wh_macallan","Macallan",12,"🥃")]),
+    grp("g_vodka","Vodka","🍸",MIX_VODKA,[
+      prod("vk_smirnoff","Smirnoff",7,"🍸"),prod("vk_eristoff","Eristoff",7,"🍸"),
+      prod("vk_absolut","Absolut",7.5,"🍸"),prod("vk_greygoose","Grey Goose",9,"🍸")]),
+    grp("g_licor","Otros licores","🍹",MIX_LICOR,[
+      prod("lc_malibu","Malibú",7,"🥥"),prod("lc_baileys","Baileys",4,"🥛"),prod("lc_jager","Jägermeister",4,"🦌"),
+      prod("lc_tequila","Tequila",5,"🌵"),prod("lc_brandy","Brandy",5,"🥃"),prod("lc_amaretto","Amaretto",4.5,"🥃")]),
+    grp("g_chupito","Chupitos","🥃",null,[
+      prod("ch_patxaran","Patxaran",2.5,"🥃"),prod("ch_orujo","Orujo",2.5,"🥃"),prod("ch_hierbas","Hierbas",2.5,"🌿"),
+      prod("ch_licorcafe","Licor de café",2.5,"☕"),prod("ch_jager","Chupito de Jäger",2.5,"🦌"),prod("ch_varios","Chupito",2,"🥃")]),
+    prod("cubata","Cubata de la casa",6,"🥃"),prod("gintonic","Gin-tonic de la casa",7,"🍸")]},
+  {id:"pintxos",name:"Pintxos y picar",color:"#A04A1F",items:[
+    prod("tortilla","Pintxo de tortilla",2.2,"🍳"),prod("gilda","Gilda",1.8,"🫒"),prod("croquetas","Croquetas",2.4,"🍢"),
+    prod("txistorra","Txistorra",3,"🌭"),prod("bacalao","Bacalao rebozado",3,"🐟"),prod("rabas","Rabas",4.5,"🦑"),
+    prod("jamon","Jamón",4,"🥓"),prod("idiazabal","Queso Idiazabal",4,"🧀"),prod("bravas","Patatas bravas",4,"🥔"),
+    prod("pulguita","Pulguita",3,"🥪"),prod("aceitunas","Aceitunas",1.8,"🫒"),prod("cacahuetes","Cacahuetes",1.5,"🥜")]}
 ];
 const PALETTE=["#B97C0C","#86243A","#5A2E63","#1F68A0","#6A4630","#2B7458","#A04A1F","#3D5A80","#7A6A12","#8E3B6E"];
 
@@ -205,11 +232,24 @@ function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(
 function defaults(){return{
   config:{people:DEFAULT_PEOPLE.map((n,i)=>({id:"p"+(i+1),name:n,paused:false})),
           menus:[{id:"m1",name:"Carta principal",fromDefault:true,catalog:clone(DEFAULT_CATALOG)}],menu:"m1",assignerMode:"",pin:""},
-  current:{n:1,name:"",orders:{},delivered:{}},rounds:[]};}
+  current:{n:1,name:"",night:"",orders:{},delivered:{}},rounds:[]};}
+function normMix(m){
+  if(!m)return null;
+  const opts=(Array.isArray(m.options)?m.options:[]).map(o=>typeof o==="string"?{name:o,extra:0}:{name:String(o&&o.name||""),extra:Number(o&&o.extra)||0}).filter(o=>o.name);
+  if(!opts.length)return null;
+  return{def:typeof m.def==="string"?m.def:opts[0].name,options:opts};
+}
+function normNode(n,depth){
+  if(!n||!n.id)return null;
+  if(n.group||Array.isArray(n.items))
+    return{id:n.id,name:n.name||"?",emoji:n.emoji||"",group:true,mix:normMix(n.mix),
+      items:depth>=1?[]:(n.items||[]).map(x=>normNode(x,depth+1)).filter(Boolean)};
+  return{id:n.id,name:n.name||"?",price:Number(n.price)||0,emoji:n.emoji||""};
+}
 function normCatalog(cat){
   if(!Array.isArray(cat)||!cat.length)return clone(DEFAULT_CATALOG);
   return cat.filter(c=>c&&c.id).map(c=>({id:c.id,name:c.name||"?",color:c.color||"#555",
-    items:(Array.isArray(c.items)?c.items:[]).filter(it=>it&&it.id).map(it=>({id:it.id,name:it.name||"?",price:Number(it.price)||0,emoji:it.emoji||""}))}));
+    items:(Array.isArray(c.items)?c.items:[]).map(n=>normNode(n,0)).filter(Boolean)}));
 }
 function normList(v){
   if(v==null)return[];
@@ -219,7 +259,7 @@ function normList(v){
   return[];
 }
 function normOrders(o){const r={};if(o&&typeof o==="object")Object.keys(o).forEach(k=>{const l=normList(o[k]);if(l.length)r[k]=l});return r}
-function normCurrent(c){c=c||{};return{n:Number(c.n)||1,name:typeof c.name==="string"?c.name.slice(0,40):"",orders:normOrders(c.orders),delivered:(c.delivered&&typeof c.delivered==="object")?c.delivered:{}}}
+function normCurrent(c){c=c||{};return{n:Number(c.n)||1,name:typeof c.name==="string"?c.name.slice(0,40):"",night:typeof c.night==="string"?c.night:"",orders:normOrders(c.orders),delivered:(c.delivered&&typeof c.delivered==="object")?c.delivered:{}}}
 function normConfig(c){
   const d=defaults().config;c=c||{};
   const pin=(typeof c.pin==="string"&&c.pin.trim())?c.pin.trim().slice(0,8):"";
@@ -250,7 +290,7 @@ let netCache=false,netPending=false;
 let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",sel:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null};
+const ui={tab:"pedir",sel:null,path:[],lastAdd:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state",JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -260,7 +300,36 @@ const pname=id=>(findP(id)||{name:id||"?"}).name;
 const menus=()=>S.config.menus;
 const curMenu=()=>menus().find(m=>m.id===S.config.menu)||menus()[0];
 const catalog=()=>curMenu().catalog;
-function reindex(){IDX={};menus().forEach(m=>m.catalog.forEach(c=>c.items.forEach(it=>{if(!IDX[it.id])IDX[it.id]=Object.assign({},it,{cat:c})})))}
+function walkNodes(items,fn,cat,parent){(items||[]).forEach(n=>{fn(n,cat,parent);if(n.group)walkNodes(n.items,fn,cat,n)})}
+function eachCatalog(catalog,fn){(catalog||[]).forEach(c=>walkNodes(c.items,fn,c,null))}
+function reindex(){IDX={};menus().forEach(m=>eachCatalog(m.catalog,(n,c,p)=>{if(!IDX[n.id])IDX[n.id]=Object.assign({},n,{cat:c,parent:p})}))}
+function findNode(catalog,id){
+  let res=null;
+  (catalog||[]).forEach(c=>{
+    if(c.id===id&&!res){res={node:c,list:catalog,cat:c,parent:null};return}
+    walkNodes(c.items,(n,cc,p)=>{if(n.id===id&&!res)res={node:n,list:p?p.items:cc.items,cat:cc,parent:p}},c,null);
+  });
+  return res;
+}
+function containerItems(catalog,id){
+  const f=findNode(catalog,id);
+  if(!f)return null;
+  return f.node.items?f.node.items:null;
+}
+function mixOf(itemId){const it=IDX[itemId];return it&&it.parent&&it.parent.mix?it.parent.mix:null}
+function defMix(itemId){const m=mixOf(itemId);return m?m.def||"":""}
+function extraOf(itemId,clar){
+  const m=mixOf(itemId);if(!m||!clar)return 0;
+  const o=m.options.find(x=>canon(x.name)===canon(clar));
+  return o?(Number(o.extra)||0):0;
+}
+function priceWith(itemId,clar){const it=IDX[itemId];return r2((it?Number(it.price)||0:0)+extraOf(itemId,clar))}
+function groupUsed(node,used){let hit=false;walkNodes([node],n=>{if(!n.group&&used.has(n.id))hit=true});return hit}
+function cloneNode(n){
+  return n.group
+    ?{id:uid("g"),name:n.name,emoji:n.emoji,group:true,mix:n.mix?clone(n.mix):null,items:(n.items||[]).map(x=>({id:uid("x"),name:x.name,price:x.price,emoji:x.emoji}))}
+    :{id:uid("x"),name:n.name,price:n.price,emoji:n.emoji};
+}
 const drinks=pid=>(S.current.orders&&S.current.orders[pid])||[];
 const isNada=o=>!!o&&o.drink==="nada";
 const label=o=>{if(!o)return"";if(o.custom)return o.custom;if(o.drink==="nada")return"No toma nada";return IDX[o.drink]?IDX[o.drink].name:"(bebida borrada)"};
@@ -276,13 +345,13 @@ const roundLabel=r=>"Ronda "+r.n+(r.name?" · "+r.name:"");
 function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>(o[k]||[]).forEach(x=>{if(x&&x.drink&&x.drink!=="nada")s.add(x.drink)}));add(S.current.orders);S.rounds.forEach(r=>add(r.orders));return s}
 function personUsed(pid){if(drinks(pid).length)return true;return S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid)}
 
-function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,items:c.items.map(it=>({id:uid("x"),name:it.name,price:it.price,emoji:it.emoji}))}))}
-function defaultNames(){const s=new Set();DEFAULT_CATALOG.forEach(c=>c.items.forEach(it=>s.add(canon(it.name))));return s}
+function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,items:(c.items||[]).map(cloneNode)}))}
+function defaultNames(){const s=new Set();eachCatalog(DEFAULT_CATALOG,n=>{if(!n.group)s.add(canon(n.name))});return s}
 function hasDefaultMenu(){
   const def=defaultNames();if(!def.size)return true;
   return menus().some(m=>{
     if(m.fromDefault)return true;
-    const names=new Set();m.catalog.forEach(c=>c.items.forEach(it=>names.add(canon(it.name))));
+    const names=new Set();eachCatalog(m.catalog,n=>{if(!n.group)names.add(canon(n.name))});
     let hit=0;def.forEach(n=>{if(names.has(n))hit++});
     return hit/def.size>=0.8;
   });
@@ -337,29 +406,42 @@ function parseTable(txt){
   });
   return{cats:cats.filter(c=>c.items.length),count,skipped};
 }
+function splitPath(name){return String(name||"").split(/\s*[>›|\/]\s*/).map(x=>x.trim()).filter(Boolean)}
+function destFor(catalog,pathName){
+  const parts=splitPath(pathName),top=parts[0]||"Importado",sub=parts[1]||null;
+  let t=catalog.find(x=>canon(x.name)===canon(top));
+  if(!t){t={id:uid("c"),name:top.slice(0,30),color:PALETTE[catalog.length%PALETTE.length],items:[]};catalog.push(t)}
+  if(!sub)return t;
+  let g=t.items.find(x=>x.group&&canon(x.name)===canon(sub));
+  if(!g){g={id:uid("g"),name:sub.slice(0,30),emoji:"",group:true,mix:null,items:[]};t.items.push(g)}
+  return g;
+}
 function catsToMenu(cats,name){
-  return{id:uid("m"),name:String(name||"Carta importada").slice(0,30),
-    catalog:cats.map((c,i)=>({id:uid("c"),name:c.name,color:PALETTE[i%PALETTE.length],
-      items:c.items.map(it=>({id:uid("x"),name:it.name,price:r2(it.price)||0,emoji:it.emoji||""}))}))};
+  const catalog=[];
+  cats.forEach(c=>{const dest=destFor(catalog,c.name);
+    c.items.forEach(it=>dest.items.push({id:uid("x"),name:it.name,price:r2(it.price)||0,emoji:it.emoji||""}))});
+  return{id:uid("m"),name:String(name||"Carta importada").slice(0,30),catalog};
 }
 function mergeCats(cats){
   let added=0,dup=0;
   editMenu(m=>{
     cats.forEach(c=>{
-      let t=m.catalog.find(x=>canon(x.name)===canon(c.name));
-      if(!t){t={id:uid("c"),name:c.name,color:PALETTE[m.catalog.length%PALETTE.length],items:[]};m.catalog.push(t)}
+      const dest=destFor(m.catalog,c.name);
       c.items.forEach(it=>{
-        const exists=m.catalog.some(x=>x.items.some(y=>canon(y.name)===canon(it.name)));
+        let exists=false;eachCatalog(m.catalog,n=>{if(!n.group&&canon(n.name)===canon(it.name))exists=true});
         if(exists){dup++;return}
-        t.items.push({id:uid("x"),name:it.name,price:r2(it.price)||0,emoji:it.emoji||""});added++;
+        dest.items.push({id:uid("x"),name:it.name,price:r2(it.price)||0,emoji:it.emoji||""});added++;
       });
     });
   });
   return{added,dup};
 }
 function exportTable(){
-  const m=curMenu(),out=["Categoría\tProducto\tPrecio"];
-  m.catalog.forEach(c=>c.items.forEach(it=>out.push(`${c.name}\t${it.name}\t${String(it.price).replace(".",",")}`)));
+  const out=["Categoría\tProducto\tPrecio"];
+  curMenu().catalog.forEach(c=>walkNodes(c.items,(n,cc,p)=>{
+    if(n.group)return;
+    out.push(`${c.name}${p?" > "+p.name:""}\t${n.name}\t${String(n.price).replace(".",",")}`);
+  },c,null));
   return out.join("\n");
 }
 const OCR_PROMPT='Transcribe esta carta de bar a una tabla de tres columnas separadas por tabulador, sin cabecera y sin ningún texto adicional: Categoría, Producto, Precio. Usa un producto por línea y el precio en euros con coma decimal. Si un producto no tiene precio visible, omítelo.';
@@ -367,7 +449,16 @@ function commitOrder(kind,ids){
   const by=(a,b)=>ids.indexOf(a.id)-ids.indexOf(b.id);
   if(kind==="people")editConfig(c=>{c.people.sort(by)});
   else if(kind==="cats")editMenu(m=>{m.catalog.sort(by)});
-  else if(kind.indexOf("items:")===0){const cid=kind.slice(6);editMenu(m=>{const c=m.catalog.find(x=>x.id===cid);if(c)c.items.sort(by)})}
+  else if(kind.indexOf("nodes:")===0){const cid=kind.slice(6);editMenu(m=>{const f=findNode(m.catalog,cid);if(f&&f.node.items)f.node.items.sort(by)})}
+}
+function parseMix(txt){
+  const parts=String(txt||"").split(",").map(x=>x.trim()).filter(Boolean);
+  if(!parts.length)return null;
+  const options=parts.map(p=>{
+    const m=p.match(/^(.*?)\s*\+\s*([\d.,]+)\s*\u20ac?$/);
+    return m?{name:m[1].trim().slice(0,30),extra:r2(parseFloat(m[2].replace(",","."))||0)}:{name:p.slice(0,30),extra:0};
+  }).filter(o=>o.name);
+  return options.length?{def:options[0].name,options}:null;
 }
 function exportMenu(){
   const m=curMenu();
@@ -401,8 +492,8 @@ function writeOrders(pid){
 }
 function findItemByName(txt){
   const c=canon(txt);if(!c)return null;let hit=null;
-  catalog().forEach(cat=>cat.items.forEach(it=>{if(!hit&&canon(it.name)===c)hit=it}));
-  if(!hit)menus().forEach(m=>m.catalog.forEach(cat=>cat.items.forEach(it=>{if(!hit&&canon(it.name)===c)hit=it})));
+  eachCatalog(catalog(),n=>{if(!hit&&!n.group&&canon(n.name)===c)hit=n});
+  if(!hit)menus().forEach(m=>eachCatalog(m.catalog,n=>{if(!hit&&!n.group&&canon(n.name)===c)hit=n}));
   return hit;
 }
 function tidy(d){
@@ -486,33 +577,83 @@ function setRoundPayer(rid,payer){
   r.payer=payer||"";
   r.log=(r.log||[]).concat([logLine(`Pagador: ${before} → ${payer?pname(payer):"sin pagar"}`)]);
   const doc=Object.assign({},r);delete doc.id;
-  if(mode==="firebase")dbSet("rounds/"+rid,clone(doc));else saveLocal();
+  if(mode==="firebase"){dbSet("rounds/"+rid,clone(doc));archiveNote(rid,`Pagador: ${before} → ${payer?pname(payer):"sin pagar"}`)}else saveLocal();
+}
+function ensureNight(){
+  if(!S.current.night){
+    S.current.night="n"+Date.now().toString(36);
+    if(mode==="firebase")dbUpdate("bar/current",{night:S.current.night},()=>clone(S.current));else saveLocal();
+  }
+  return S.current.night;
+}
+function archiveKey(night,rid){return night+"-"+rid}
+function archiveRound(night,rid,round){
+  if(mode!=="firebase")return;
+  const names={};people().forEach(p=>{names[p.id]=p.name});
+  dbSet("archive/"+archiveKey(night,rid),Object.assign({},clone(round),{night,roundId:rid,people:names,savedTs:Date.now(),savedBy:me||""}));
+}
+function archiveNote(rid,what){
+  if(mode!=="firebase"||!S.current.night)return;
+  const r=S.rounds.find(x=>x.id===rid)||{};
+  dbUpdate("archive/"+archiveKey(S.current.night,rid),{log:clone((r&&r.log)||[]).concat([logLine(what)]),payer:(r&&r.payer)||"",savedTs:Date.now()});
 }
 function closeRound(payer){
+  const night=ensureNight();
   const orders=clone(S.current.orders),prices={};let total=0;
   Object.keys(orders).forEach(pid=>orders[pid].forEach(o=>{const pr=priceOf(o);if(o.drink&&!o.custom&&!isNada(o))prices[o.drink]=pr;total+=pr}));
   const n=S.current.n,id="r"+String(n).padStart(4,"0");
   const round={n,name:S.current.name||"",orders,prices,payer:payer||"",total:r2(total),ts:Date.now(),log:[logLine(payer?"Cerrada, paga "+pname(payer):"Cerrada sin pagar")]};
   S.rounds=S.rounds.filter(r=>r.id!==id).concat([Object.assign({id},round)]);
-  S.current={n:n+1,name:S.current.name||"",orders:{},delivered:{}};
-  if(mode==="firebase"){dbSet("rounds/"+id,round);dbSet("bar/current",clone(S.current))}else saveLocal();
+  S.current={n:n+1,name:S.current.name||"",night,orders:{},delivered:{}};
+  if(mode==="firebase"){dbSet("rounds/"+id,round);archiveRound(night,id,round);dbSet("bar/current",clone(S.current))}else saveLocal();
 }
-function clearRound(){S.current={n:S.current.n,name:S.current.name||"",orders:{},delivered:{}};if(mode==="firebase")dbSet("bar/current",clone(S.current));else saveLocal()}
+function clearRound(){S.current={n:S.current.n,name:S.current.name||"",night:S.current.night||"",orders:{},delivered:{}};if(mode==="firebase")dbSet("bar/current",clone(S.current));else saveLocal()}
 function undoLast(){
   if(!S.rounds.length)return;
   const last=sortedRounds().pop();
   S.rounds=S.rounds.filter(r=>r.id!==last.id);
   S.current={n:last.n,name:last.name||"",orders:clone(last.orders||{}),delivered:{}};
-  if(mode==="firebase"){dbDelete("rounds/"+last.id);dbSet("bar/current",clone(S.current))}else saveLocal();
+  if(mode==="firebase"){archiveNote(last.id,"Ronda reabierta para editarla");dbDelete("rounds/"+last.id);dbSet("bar/current",clone(S.current))}else saveLocal();
 }
 function newNight(){
-  const ids=S.rounds.map(r=>r.id);S.rounds=[];S.current={n:1,name:"",orders:{},delivered:{}};
+  const ids=S.rounds.map(r=>r.id);S.rounds=[];
+  S.current={n:1,name:"",night:"n"+Date.now().toString(36),orders:{},delivered:{}};
   if(mode==="firebase"){ids.forEach(id=>dbDelete("rounds/"+id));dbSet("bar/current",clone(S.current))}else saveLocal();
 }
 
 /* ===== Cálculos ===== */
 function sortedRounds(){return S.rounds.slice().sort((a,b)=>a.n-b.n)}
 function lastDrinkOf(pid){const rs=sortedRounds();for(let i=rs.length-1;i>=0;i--){const ds=(rs[i].orders||{})[pid];if(ds&&ds.length){const o=ds[ds.length-1];if(o.drink&&!isNada(o)&&IDX[o.drink])return o.drink}}return null}
+function inActive(id){                       // traduce un producto a su equivalente en la carta activa
+  const it=IDX[id];if(!it)return{id,same:true};
+  let here=null,alt=null;const c0=canon(it.name);
+  eachCatalog(catalog(),n=>{if(n.group)return;if(n.id===id)here=n.id;if(!alt&&canon(n.name)===c0)alt=n.id});
+  if(here)return{id:here,same:true};
+  return alt?{id:alt,same:true,moved:true}:{id,same:false};
+}
+function shortcuts(pid,max){
+  const rs=sortedRounds(),n=rs.length,w={},meta={};
+  const bump=(o,weight)=>{
+    if(!o||o.custom||isNada(o)||!o.drink)return;
+    const act=inActive(o.drink);if(!act.same)return;
+    const key=act.id+"|"+(o.clarification||"");
+    w[key]=(w[key]||0)+weight;meta[key]={id:act.id,clar:o.clarification||""};
+  };
+  rs.forEach((r,i)=>{const w0=Math.pow(0.5,Math.max(0,(n-1-i)-1));((r.orders||{})[pid]||[]).forEach(o=>bump(o,w0))});
+  drinks(pid).forEach(o=>bump(o,1));
+  let keys=Object.keys(w).sort((a,b)=>w[b]-w[a]);
+  let lastKey=null;
+  for(let i=rs.length-1;i>=0&&!lastKey;i--){
+    const ds=(rs[i].orders||{})[pid]||[];
+    for(let k=ds.length-1;k>=0;k--){
+      const o=ds[k];if(o.custom||isNada(o)||!o.drink)continue;
+      const act=inActive(o.drink);if(!act.same)continue;
+      lastKey=act.id+"|"+(o.clarification||"");meta[lastKey]=meta[lastKey]||{id:act.id,clar:o.clarification||""};break;
+    }
+  }
+  if(lastKey)keys=[lastKey].concat(keys.filter(k=>k!==lastKey));
+  return keys.slice(0,max).map(k=>meta[k]).filter(m=>m&&IDX[m.id]&&!IDX[m.id].group);
+}
 function favDrink(pid){const d={};S.rounds.forEach(r=>((r.orders||{})[pid]||[]).forEach(o=>{if(isNada(o))return;const k=o.custom||o.drink;if(k)d[k]=(d[k]||0)+1}));let best=null,max=0;Object.keys(d).forEach(x=>{if(d[x]>max){best=x;max=d[x]}});return best?{k:best,n:max}:null}
 function balances(){
   const b={},drank={},paid={},times={};
@@ -556,20 +697,54 @@ const gLabel=o=>label(o)+(o.clarification?" · "+o.clarification:"");
 function vMe(){
   return `<div class="selector-box${me?"":" need"}"><label for="selectMe">Eres:</label><select id="selectMe"><option value="">Elige quién eres…</option>${people().map(p=>`<option value="${p.id}"${p.id===me?" selected":""}>${esc(p.name)}${p.paused?" (en pausa)":""}</option>`).join("")}</select></div>`;
 }
+function nodeAt(){
+  const cat=catalog().find(c=>c.id===ui.path[0]);
+  if(!cat)return null;
+  if(ui.path.length<2)return{items:cat.items,cat,group:null};
+  const g=(cat.items||[]).find(n=>n.id===ui.path[1]&&n.group);
+  return g?{items:g.items,cat,group:g}:{items:cat.items,cat,group:null};
+}
+function keyFor(id,clar,color){
+  const it=IDX[id];if(!it)return"";
+  const txt=(it.emoji?it.emoji+" ":"")+esc(it.name);
+  return `<button class="key" style="--c:${color||(it.cat?it.cat.color:"#555")}" data-act="pick" data-id="${id}"${clar!=null?` data-mix="${esc(clar)}"`:""}>${txt}<small>${clar?esc(clar)+" · ":""}${eur(priceWith(id,clar!=null?clar:defMix(id)))}</small></button>`;
+}
+function vMixRow(){
+  if(!ui.lastAdd)return"";
+  const m=mixOf(ui.lastAdd.itemId);if(!m)return"";
+  const first=(drinks(ui.lastAdd.items[0].pid)[ui.lastAdd.items[0].idx]||{}).clarification||"";
+  const it=IDX[ui.lastAdd.itemId];
+  return `<div class="card" style="margin-top:10px"><p class="note" style="margin:0 0 6px">${esc(it?it.name:"")} · ¿con qué? (cambia lo último apuntado)</p><div class="chips">`+
+    m.options.map(o=>`<button class="chip${canon(o.name)===canon(first)?" on":""}" data-act="setMix" data-name="${esc(o.name)}">${esc(o.name)}${o.extra?` <span class="note">+${eur(o.extra)}</span>`:""}</button>`).join("")+
+    `<button class="chip" data-act="setMix" data-name="">sin nota</button></div></div>`;
+}
 function vKeys(){
-  const cat=ui.cat&&catalog().find(x=>x.id===ui.cat);
+  const at=ui.path.length?nodeAt():null;
   let h="";
-  if(!cat){
+  if(!at){
+    const single=!ui.multi&&ui.flow!=="bebida"&&ui.sel;
+    if(single){
+      const sc=shortcuts(ui.sel,4);
+      if(sc.length)h+=`<p class="note" style="margin:0 2px 6px">Lo que más pide ${esc(pname(ui.sel))}</p><div class="keys" style="margin-bottom:12px">`+
+        sc.map(x=>keyFor(x.id,x.clar)).join("")+'</div>';
+    }
     h+='<div class="keys">';
-    const prev=(ui.multi||ui.flow==="bebida")?null:lastDrinkOf(ui.sel);
-    if(prev)h+=`<button class="key" style="--c:${IDX[prev].cat.color}" data-act="pick" data-id="${prev}">Lo mismo<small>${emoji({drink:prev})} ${esc(IDX[prev].name)}</small></button>`;
-    h+=catalog().map(c=>`<button class="key" style="--c:${c.color}" data-act="cat" data-id="${c.id}">${esc(c.name)}</button>`).join("");
+    h+=catalog().map(c=>{
+      const n=(c.items||[]).reduce((a,x)=>a+(x.group?x.items.length:1),0);
+      return `<button class="key" style="--c:${c.color}" data-act="cat" data-id="${c.id}">${esc(c.name)}<small>${n} productos</small></button>`;
+    }).join("");
     h+=`<button class="key ghost" data-act="pickOther">🔧 Otra bebida<small>Fuera de la carta</small></button>`;
     h+=`<button class="key ghost" data-act="pick" data-id="nada">🚫 No toma nada<small>Queda apuntado, paga 0 €</small></button></div>`;
   }else{
-    h+=`<div class="keys"><button class="key ghost" data-act="back">← Atrás</button>`+cat.items.map(it=>`<button class="key" style="--c:${cat.color}" data-act="pick" data-id="${it.id}">${it.emoji?it.emoji+" ":""}${esc(it.name)}<small>${eur(it.price)}</small></button>`).join("")+'</div>';
+    const ruta=esc(at.cat.name)+(at.group?" › "+esc(at.group.name):"");
+    h+=`<p class="note" style="margin:0 2px 6px">${ruta}${at.group&&at.group.mix?` · por defecto ${esc(at.group.mix.def)}`:""}</p>`;
+    h+=`<div class="keys"><button class="key ghost" data-act="back">← Atrás<small>${at.group?esc(at.cat.name):"Categorías"}</small></button>`;
+    h+=(at.items||[]).map(n=>n.group
+      ? `<button class="key" style="--c:${at.cat.color}" data-act="cat" data-id="${n.id}">${n.emoji?n.emoji+" ":""}${esc(n.name)} ▸<small>${n.items.length} opciones${n.mix?" · "+esc(n.mix.def):""}</small></button>`
+      : keyFor(n.id,null,at.cat.color)).join("");
+    h+='</div>';
   }
-  return h;
+  return h+vMixRow();
 }
 function vGrid(ps,multi){
   return '<div class="people">'+ps.map(p=>{
@@ -587,7 +762,7 @@ function vPedir(){
   if(am)h+=`<p class="status">🔐 Modo asignador: ${am===me?"lo tienes tú":esc(pname(am))+" apunta por todos. Solo puedes mirar."}</p>`;
   if(!ui.sel||!findP(ui.sel)||(findP(ui.sel).paused&&ui.sel!==me))ui.sel=(ps[0]||people()[0]).id;
   ui.group=ui.group.filter(id=>findP(id)&&!findP(id).paused);
-  if(locked){ui.multi=false;ui.flow="personas";ui.pending=null}
+  if(locked){ui.multi=false;ui.flow="personas";ui.pending=null;ui.lastAdd=null}
 
   if(!locked)h+=`<div class="row2" style="margin-bottom:10px"><button class="mini${ui.flow==="personas"?" on":""}" data-act="flow" data-id="personas">1º persona</button><button class="mini${ui.flow==="bebida"?" on":""}" data-act="flow" data-id="bebida">1º bebida</button></div>`;
 
@@ -727,6 +902,10 @@ function vStats(){
   return h+'</section>';
 }
 
+function vItemRow(it,used){
+  const u=used.has(it.id);
+  return `<div class="set-row" data-key="${it.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}"${u?" disabled":""}><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div>`;
+}
 function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
   let h=`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
@@ -748,23 +927,29 @@ function vAjustes(){
 
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
-  if(!hasDefaultMenu())h+=`<button class="btn small" data-act="menuFromDefault">+ Añadir la carta completa de la app (${DEFAULT_CATALOG.reduce((a,c)=>a+c.items.length,0)} productos)</button>`;
+  h+=`<button class="btn small" data-act="menuFromDefault">+ Carta de ejemplo de la app (${DEFAULT_CATALOG.reduce((a,c)=>a+c.items.length,0)} productos)${hasDefaultMenu()?" · ya la tienes":""}</button>`;
   h+=`<button class="btn small primary" data-act="tab" data-id="importar">⬇️ Importar productos (Excel, Word, foto…)</button>`;
   h+=`<div class="row2"><button class="btn small" data-act="expTable">⬆️ Copiar como tabla</button><button class="btn small" data-act="expJson">⬆️ Copia de seguridad</button></div>`;
   h+=`<p class="note">Las cartas se guardan en la base de datos compartida (bar/config → menus), así que las ve toda la cuadrilla y se editan desde cualquier móvil. "Copiar como tabla" da un texto que se pega tal cual en Excel.</p>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuRename">✏️ Renombrar</button><button class="btn small warn" data-act="menuDel"${menus().length>1?"":" disabled"}>🗑 Borrar carta</button></div>`;
   h+=`<button class="btn small warn" data-act="menuDefaults">↻ Restaurar esta carta a la de por defecto</button><p class="note">Al restaurar se guarda antes una copia de seguridad de la carta actual, así que no se pierde nada.</p></section>`;
 
-  h+=`<section class="card"><h2>Carta activa: ${esc(curMenu().name)}</h2><p class="note">🔒 = ya pedida esta noche: se puede cambiar el precio, pero no el nombre ni borrarla. ⧉ = duplicar para partir de algo que ya existe.</p>`;
+  h+=`<section class="card"><h2>Carta activa: ${esc(curMenu().name)}</h2><p class="note">🔒 = ya pedido esta noche: se puede cambiar el precio, pero no el nombre ni borrarlo. ⧉ = duplicar. Un subgrupo (Ron, Ginebra…) añade un nivel y puede llevar mezclas por defecto.</p>`;
   h+='<div data-droplist="cats">';
   catalog().forEach(c=>{
-    const cUsed=c.items.some(it=>used.has(it.id));
-    h+=`<div class="catbox" style="border-left:5px solid ${c.color}" data-key="${c.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover categoría">⠿</button><input type="text" class="catname" value="${esc(c.name)}" data-cname="${c.id}"${cUsed?" disabled":""}><button class="x" data-act="dupCat" data-id="${c.id}" title="Duplicar categoría">⧉</button>${cUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${c.id}" aria-label="Borrar categoría">🗑</button>`}</div><div data-droplist="items:${c.id}">`;
-    c.items.forEach(it=>{
-      const u=used.has(it.id);
-      h+=`<div class="set-row" data-key="${it.id}"><button class="grip" data-grip aria-label="Mover bebida">⠿</button><input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}"${u?" disabled":""}><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div>`;
+    const cUsed=groupUsed(c,used);
+    h+=`<div class="catbox" style="border-left:5px solid ${c.color}" data-key="${c.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover categoría">⠿</button><input type="text" class="catname" value="${esc(c.name)}" data-cname="${c.id}"${cUsed?" disabled":""}><button class="x" data-act="dupCat" data-id="${c.id}" title="Duplicar">⧉</button>${cUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${c.id}" aria-label="Borrar">🗑</button>`}</div><div data-droplist="nodes:${c.id}">`;
+    (c.items||[]).forEach(n=>{
+      if(n.group){
+        const gUsed=groupUsed(n,used);
+        h+=`<div class="grpbox" data-key="${n.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover grupo">⠿</button><input type="text" class="emo" value="${esc(n.emoji)}" data-iemoji="${n.id}" aria-label="Emoji"><input type="text" class="catname" value="${esc(n.name)}" data-cname="${n.id}"${gUsed?" disabled":""}><button class="x" data-act="dupItem" data-id="${n.id}" title="Duplicar">⧉</button>${gUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${n.id}" aria-label="Borrar">🗑</button>`}</div>`;
+        h+=`<button class="btn small" data-act="editMix" data-id="${n.id}">🍹 Mezclas: ${n.mix?esc(n.mix.options.map(o=>o.name+(o.extra?" +"+eur(o.extra):"")).join(", ")):"ninguna"}</button>`;
+        h+=`<div data-droplist="nodes:${n.id}">`;
+        (n.items||[]).forEach(it=>{h+=vItemRow(it,used)});
+        h+=`</div><button class="btn small" data-act="addItem" data-id="${n.id}">+ Producto en ${esc(n.name)}</button></div>`;
+      }else h+=vItemRow(n,used);
     });
-    h+=`</div><button class="btn small" data-act="addItem" data-id="${c.id}">+ Bebida en ${esc(c.name)}</button></div>`;
+    h+=`</div><div class="row2"><button class="btn small" data-act="addItem" data-id="${c.id}">+ Producto</button><button class="btn small" data-act="addGroup" data-id="${c.id}">+ Subgrupo</button></div></div>`;
   });
   h+='</div>';
   h+='<button class="btn" data-act="addCat">+ Nueva categoría</button></section>';
@@ -818,10 +1003,10 @@ document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0)
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
-    case"tab":ui.tab=id;ui.cat=null;window.scrollTo(0,0);break;
-    case"sel":if(ui.multi||ui.pending){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.cat=null}break;
-    case"cat":ui.cat=id;break;
-    case"back":ui.cat=null;break;
+    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;window.scrollTo(0,0);break;
+    case"sel":if(ui.multi||ui.pending){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.path=[];ui.lastAdd=null}break;
+    case"cat":ui.path=ui.path.length?[ui.path[0],id]:[id];ui.lastAdd=null;break;
+    case"back":ui.path=ui.path.slice(0,-1);ui.lastAdd=null;break;
 
     case"pick":case"pickOther":{
       if(isLocked())return;
@@ -837,10 +1022,15 @@ document.addEventListener("click",e=>{
       }else if(id==="nada"){d={drink:"nada"}}
       else{
         d={drink:id};
-        if(askNote){const c=prompt(`${who}: ${IDX[id]?IDX[id].name:""}\nAclaración (opcional):`,"");if(c&&c.trim())d.clarification=c.trim().slice(0,60)}
+        const mix=b.dataset.mix!==undefined?b.dataset.mix:defMix(id);
+        if(mix)d.clarification=mix;
+        const ex=extraOf(id,mix);if(ex)d.price=priceWith(id,mix);
+        if(askNote&&!mix){const c=prompt(`${who}: ${IDX[id]?IDX[id].name:""}\nAclaración (opcional):`,"");if(c&&c.trim())d.clarification=c.trim().slice(0,60)}
       }
-      if(first){ui.pending=tidy(d);ui.cat=null;ui.group=[];break}
-      addDrinks(pids,d);ui.cat=null;ui.multi=false;ui.group=[];flash(`${label(d)} → ${who}`);break;
+      if(first){ui.pending=tidy(d);ui.path=[];ui.group=[];break}
+      addDrinks(pids,d);
+      ui.lastAdd=(d.drink&&d.drink!=="nada"&&mixOf(d.drink))?{itemId:d.drink,items:pids.map(p=>({pid:p,idx:drinks(p).length-1}))}:null;
+      ui.path=[];ui.multi=false;ui.group=[];flash(`${label(d)}${d.clarification?" "+d.clarification:""} → ${who}`);break;
     }
     case"note":{
       if(isLocked())return;
@@ -858,29 +1048,52 @@ document.addEventListener("click",e=>{
       setItemPrice(b.dataset.pid,parseInt(b.dataset.idx,10),t===""?null:(parseFloat(t.replace(",","."))||0));
       break;
     }
-    case"flow":ui.flow=id;ui.pending=null;ui.cat=null;ui.group=[];ui.multi=false;break;
+    case"flow":ui.flow=id;ui.pending=null;ui.path=[];ui.lastAdd=null;ui.group=[];ui.multi=false;break;
     case"pendingCancel":ui.pending=null;ui.group=[];break;
     case"assignPending":{
       if(isLocked()||!ui.pending||!ui.group.length)return;
       const d=ui.pending,n=ui.group.length;
       addDrinks(ui.group.slice(),d);
-      ui.pending=null;ui.group=[];ui.cat=null;
+      ui.pending=null;ui.group=[];ui.path=[];
       flash(`${label(d)} → ${n} persona${n===1?"":"s"}`);break;
     }
-    case"multiOn":ui.multi=true;ui.group=ui.sel?[ui.sel]:[];ui.cat=null;break;
+    case"multiOn":ui.multi=true;ui.group=ui.sel?[ui.sel]:[];ui.path=[];ui.lastAdd=null;break;
     case"multiOff":ui.multi=false;ui.group=[];break;
+    case"setMix":{
+      if(isLocked()||!ui.lastAdd)return;
+      const name=b.dataset.name||"";
+      ui.lastAdd.items.forEach(x=>{
+        const arr=drinks(x.pid).slice(),o=arr[x.idx];if(!o)return;
+        const n=Object.assign({},o);
+        if(name)n.clarification=name;else delete n.clarification;
+        const ex=extraOf(o.drink,name);
+        if(ex)n.price=priceWith(o.drink,name);else delete n.price;
+        arr[x.idx]=n;S.current.orders[x.pid]=arr;writeOrders(x.pid);
+      });
+      flash(name?"Cambiado: "+name:"Nota quitada");break;
+    }
     case"groupAll":ui.group=activePeople().map(p=>p.id);break;
     case"groupMissing":ui.group=activePeople().filter(p=>!drinks(p.id).length).map(p=>p.id);break;
     case"groupNone":ui.group=[];break;
     case"repeatLast":{
       if(isLocked())return;
       const last=sortedRounds().pop();if(!last)return;let k=0;
+      let fuera=0;
       activePeople().forEach(p=>{
         if(drinks(p.id).length)return;
         const prev=(last.orders||{})[p.id];
-        if(prev&&prev.length){prev.forEach(o=>{const d=o.custom?{custom:o.custom,price:o.price}:{drink:o.drink};if(o.clarification)d.clarification=o.clarification;addDrink(p.id,d)});k++}
+        if(prev&&prev.length){
+          prev.forEach(o=>{
+            let d;
+            if(o.custom)d={custom:o.custom,price:o.price};
+            else{const pv=inActive(o.drink);if(!pv.same)fuera++;d={drink:pv.id}}
+            if(o.clarification)d.clarification=o.clarification;
+            addDrink(p.id,d);
+          });
+          k++;
+        }
       });
-      flash(k?`Repetido a ${k} persona${k>1?"s":""}`:"No falta nadie de la última ronda");break;
+      flash(k?`Repetido a ${k} persona${k>1?"s":""}${fuera?` · ${fuera} no está${fuera>1?"n":""} en esta carta`:""}`:"No falta nadie de la última ronda");break;
     }
     case"rename":{
       const v=prompt("Nombre de la ronda (p. ej. el bar). Las siguientes lo heredan. Vacío para quitarlo:",S.current.name||"");
@@ -942,7 +1155,7 @@ document.addEventListener("click",e=>{
       editConfig(c=>{c.assignerMode=""});return;
     }
 
-    case"menuPick":if(id!==S.config.menu)editConfig(c=>{c.menu=id});ui.cat=null;return;
+    case"menuPick":if(id!==S.config.menu)editConfig(c=>{c.menu=id});ui.path=[];return;
     case"menuDup":{
       const n=prompt("Nombre de la copia:",curMenu().name+" (copia)");if(!n||!n.trim())return;
       const copy={id:uid("m"),name:n.trim().slice(0,30),catalog:catalog().map(c=>({id:uid("c"),name:c.name,color:c.color,items:c.items.map(it=>({id:uid("x"),name:it.name,price:it.price,emoji:it.emoji}))}))};
@@ -963,7 +1176,7 @@ document.addEventListener("click",e=>{
       const n=prompt("Nombre de la carta nueva:",r.name||("Carta "+(menus().length+1)));
       if(!n||!n.trim())return;
       const m=catsToMenu(r.cats,n.trim());
-      ui.impText="";ui.cat=null;ui.tab="ajustes";
+      ui.impText="";ui.path=[];ui.tab="ajustes";
       editConfig(c=>{c.menus.push(m);c.menu=m.id});
       flash(`Carta "${m.name}" creada con ${r.count} productos`);return;
     }
@@ -976,7 +1189,7 @@ document.addEventListener("click",e=>{
     }
     case"menuFromDefault":{
       const m={id:uid("m"),name:"Carta completa",fromDefault:true,catalog:freshCatalog(DEFAULT_CATALOG)};
-      editConfig(c=>{c.menus.push(m);c.menu=m.id});ui.cat=null;flash("Carta completa añadida y activada");return;
+      editConfig(c=>{c.menus.push(m);c.menu=m.id});ui.path=[];flash("Carta completa añadida y activada");return;
     }
     case"menuDel":{
       if(menus().length<2)return;
@@ -984,7 +1197,7 @@ document.addEventListener("click",e=>{
       const used=usedIds(),m=curMenu();
       if(m.catalog.some(c=>c.items.some(it=>used.has(it.id)))){flash("Tiene bebidas pedidas esta noche");return}
       if(!confirm(`¿Borrar la carta "${m.name}"?`))return;
-      editConfig(c=>{c.menus=c.menus.filter(x=>x.id!==m.id);c.menu=c.menus[0].id});ui.cat=null;return;
+      editConfig(c=>{c.menus=c.menus.filter(x=>x.id!==m.id);c.menu=c.menus[0].id});ui.path=[];return;
     }
     case"menuDefaults":{
       if(!confirm("Se guardará una copia de la carta actual y esta pasará a ser la de por defecto. ¿Seguir?"))return;
@@ -999,41 +1212,61 @@ document.addEventListener("click",e=>{
       const usedCol=catalog().map(c=>c.color),col=PALETTE.find(x=>!usedCol.includes(x))||PALETTE[catalog().length%PALETTE.length];
       editMenu(m=>{m.catalog.push({id:uid("c"),name:n.trim().slice(0,30),color:col,items:[]})});flash("Categoría creada");return;
     }
+    case"addGroup":{
+      const n=prompt("Nombre del subgrupo (p. ej. Ginebra):");if(!n||!n.trim())return;
+      const mix=prompt('Mezclas separadas por coma. La primera es la de por defecto. Añade "+1" para suplemento. Vacío = sin mezcla:',"con tónica, con limón, solo");
+      editMenu(m=>{const f=findNode(m.catalog,id);if(f)f.node.items.push({id:uid("g"),name:n.trim().slice(0,30),emoji:"",group:true,mix:parseMix(mix),items:[]})});
+      flash("Subgrupo creado");return;
+    }
+    case"editMix":{
+      const f=findNode(catalog(),id);if(!f||!f.node.group)return;
+      const cur=f.node.mix?f.node.mix.options.map(o=>o.name+(o.extra?" +"+String(o.extra).replace(".",","):"")).join(", "):"";
+      const v=prompt('Mezclas de "'+f.node.name+'", separadas por coma. La primera es la de por defecto. Añade "+1" para suplemento. Vacío = sin mezcla:',cur);
+      if(v===null)return;
+      editMenu(m=>{const g=findNode(m.catalog,id);if(g)g.node.mix=parseMix(v)});
+      flash(v.trim()?"Mezclas guardadas":"Mezclas quitadas");return;
+    }
     case"dupCat":{
       const cat=catalog().find(c=>c.id===id);if(!cat)return;
       const n=prompt("Nombre de la copia:",cat.name+" (copia)");if(!n||!n.trim())return;
       const usedCol=catalog().map(c=>c.color),col=PALETTE.find(x=>!usedCol.includes(x))||cat.color;
-      editMenu(m=>{m.catalog.push({id:uid("c"),name:n.trim().slice(0,30),color:col,items:cat.items.map(it=>({id:uid("x"),name:it.name,price:it.price,emoji:it.emoji}))})});
+      editMenu(m=>{m.catalog.push({id:uid("c"),name:n.trim().slice(0,30),color:col,items:(cat.items||[]).map(cloneNode)})});
       flash("Categoría duplicada");return;
     }
     case"rmCat":{
-      const cat=catalog().find(c=>c.id===id);if(!cat)return;
-      const used=usedIds();if(cat.items.some(it=>used.has(it.id))){flash("Tiene bebidas pedidas esta noche");return}
-      if(!confirm(`¿Borrar la categoría "${cat.name}"${cat.items.length?` y sus ${cat.items.length} bebidas`:""}?`))return;
-      if(ui.cat===id)ui.cat=null;
-      editMenu(m=>{m.catalog=m.catalog.filter(x=>x.id!==id)});return;
+      const f=findNode(catalog(),id);if(!f)return;
+      if(groupUsed(f.node,usedIds())){flash("Contiene productos pedidos esta noche");return}
+      const cuantos=(f.node.items||[]).length;
+      if(!confirm(`¿Borrar "${f.node.name}"${cuantos?` y sus ${cuantos} elementos`:""}?`))return;
+      ui.path=[];
+      editMenu(m=>{const g=findNode(m.catalog,id);if(g)g.list.splice(g.list.indexOf(g.node),1)});return;
     }
     case"addItem":{
-      const cat=catalog().find(c=>c.id===id);if(!cat)return;
-      const n=prompt(`Nueva bebida en ${cat.name}:`);if(!n||!n.trim())return;
+      const f=findNode(catalog(),id);if(!f)return;
+      const n=prompt(`Nuevo producto en ${f.node.name}:`);if(!n||!n.trim())return;
       const pr=parseFloat(String(prompt("Precio en €:","2")||"0").replace(",","."))||0;
       const em=(prompt("Emoji (opcional):","")||"").trim().slice(0,4);
-      editMenu(m=>{m.catalog.forEach(x=>{if(x.id===id)x.items.push({id:uid("x"),name:n.trim().slice(0,30),price:r2(pr),emoji:em})})});
-      flash("Añadida: "+n.trim());return;
+      editMenu(m=>{const g=findNode(m.catalog,id);if(g)g.node.items.push({id:uid("x"),name:n.trim().slice(0,30),price:r2(pr),emoji:em})});
+      flash("Añadido: "+n.trim());return;
     }
     case"dupItem":{
-      let src=null,catId=null;
-      catalog().forEach(c=>c.items.forEach(it=>{if(it.id===id){src=it;catId=c.id}}));
-      if(!src)return;
+      const f=findNode(catalog(),id);if(!f)return;
+      const src=f.node;
       const n=prompt("Nombre de la copia:",src.name+" (copia)");if(!n||!n.trim())return;
-      const pr=parseFloat(String(prompt("Precio en €:",String(src.price))||"0").replace(",","."))||0;
-      editMenu(m=>{m.catalog.forEach(c=>{if(c.id===catId)c.items.push({id:uid("x"),name:n.trim().slice(0,30),price:r2(pr),emoji:src.emoji})})});
-      flash("Duplicada: "+n.trim());return;
+      let pr=src.price;
+      if(!src.group)pr=parseFloat(String(prompt("Precio en €:",String(src.price))||"0").replace(",","."))||0;
+      editMenu(m=>{
+        const g=findNode(m.catalog,id);if(!g)return;
+        const copy=cloneNode(g.node);copy.name=n.trim().slice(0,30);
+        if(!copy.group)copy.price=r2(pr);
+        g.list.splice(g.list.indexOf(g.node)+1,0,copy);
+      });
+      flash("Duplicado: "+n.trim());return;
     }
     case"rmItem":{
       if(usedIds().has(id)){flash("Ya se ha pedido esta noche");return}
       if(!confirm(`¿Borrar "${IDX[id]?IDX[id].name:""}" de la carta?`))return;
-      editMenu(m=>{m.catalog.forEach(c=>{c.items=c.items.filter(it=>it.id!==id)})});return;
+      editMenu(m=>{const g=findNode(m.catalog,id);if(g)g.list.splice(g.list.indexOf(g.node),1)});return;
     }
     default:return;
   }
@@ -1087,11 +1320,11 @@ document.addEventListener("change",e=>{
   const t=e.target;
   if(t.id==="selectMe"){me=t.value||null;lsSet("ronda.me",me);ui.sel=me;render(true);return}
   if(t.dataset.gidx){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;const g=GROUPS[parseInt(t.dataset.gidx,10)];if(g)setGroupPrice(g.items,v);render(true);return}
-  if(t.dataset.price){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;editConfig(c=>{c.menus.forEach(m=>m.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===t.dataset.price)it.price=r2(v)})))});return}
+  if(t.dataset.price){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;editConfig(c=>{c.menus.forEach(m=>{const f=findNode(m.catalog,t.dataset.price);if(f)f.node.price=r2(v)})});return}
   if(t.dataset.pname){const v=t.value.trim();if(!v)return;editConfig(c=>{c.people.forEach(p=>{if(p.id===t.dataset.pname)p.name=v.slice(0,24)})});return}
-  if(t.dataset.cname){const v=t.value.trim();if(!v)return;editMenu(m=>{m.catalog.forEach(cat=>{if(cat.id===t.dataset.cname)cat.name=v.slice(0,30)})});return}
-  if(t.dataset.iemoji){const v=t.value.trim().slice(0,4);editMenu(m=>{m.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===t.dataset.iemoji)it.emoji=v}))});return}
-  if(t.dataset.iname){const v=t.value.trim();if(!v)return;editMenu(m=>{m.catalog.forEach(cat=>cat.items.forEach(it=>{if(it.id===t.dataset.iname)it.name=v.slice(0,30)}))});return}
+  if(t.dataset.cname){const v=t.value.trim();if(!v)return;editMenu(m=>{const f=findNode(m.catalog,t.dataset.cname);if(f)f.node.name=v.slice(0,30)});return}
+  if(t.dataset.iemoji){const v=t.value.trim().slice(0,4);editMenu(m=>{const f=findNode(m.catalog,t.dataset.iemoji);if(f)f.node.emoji=v});return}
+  if(t.dataset.iname){const v=t.value.trim();if(!v)return;editMenu(m=>{const f=findNode(m.catalog,t.dataset.iname);if(f)f.node.name=v.slice(0,30)});return}
 });
 
 /* ===== Arranque ===== */
