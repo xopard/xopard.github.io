@@ -88,6 +88,7 @@ nav.tabs button[aria-current="page"]{color:var(--ink);border-top-color:var(--acc
 input,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}
 input.price{width:5em;text-align:right}
 input:disabled{opacity:.55}
+textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;resize:vertical}
 
 .group{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .group h3{margin:0 0 8px;font:700 1.4rem/1.1 var(--cond);display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -276,7 +277,92 @@ function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>
 function personUsed(pid){if(drinks(pid).length)return true;return S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid)}
 
 function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,items:c.items.map(it=>({id:uid("x"),name:it.name,price:it.price,emoji:it.emoji}))}))}
-const hasDefaultMenu=()=>menus().some(m=>m.fromDefault);
+function defaultNames(){const s=new Set();DEFAULT_CATALOG.forEach(c=>c.items.forEach(it=>s.add(canon(it.name))));return s}
+function hasDefaultMenu(){
+  const def=defaultNames();if(!def.size)return true;
+  return menus().some(m=>{
+    if(m.fromDefault)return true;
+    const names=new Set();m.catalog.forEach(c=>c.items.forEach(it=>names.add(canon(it.name))));
+    let hit=0;def.forEach(n=>{if(names.has(n))hit++});
+    return hit/def.size>=0.8;
+  });
+}
+/* --- lector de tablas pegadas (Excel, Word, Sheets, texto suelto o JSON) --- */
+function parsePrice(x){
+  const m=String(x==null?"":x).replace(/[^0-9,.\-]/g," ").trim().replace(",",".").match(/-?\d+(\.\d+)?/);
+  return m?r2(parseFloat(m[0])):null;
+}
+function splitCells(line){
+  if(line.indexOf("\t")>=0)return line.split("\t");
+  if(line.indexOf(";")>=0)return line.split(";");
+  if(line.indexOf("|")>=0)return line.split("|").filter(x=>x.trim()!=="");
+  if(/,\s*\D/.test(line)&&line.split(",").length>2)return line.split(",");
+  return [line];
+}
+function parseTable(txt){
+  txt=String(txt||"").trim();
+  if(!txt)return{cats:[],count:0,skipped:[]};
+  if(txt[0]==="{"||txt[0]==="["){                       // sigue aceptando el formato JSON
+    const r=parseMenu(txt);
+    if(r.error)return{cats:[],count:0,skipped:[r.error]};
+    return{cats:r.menu.catalog.map(c=>({name:c.name,items:c.items.map(it=>({name:it.name,price:it.price,emoji:it.emoji}))})),count:r.count,skipped:[],name:r.menu.name};
+  }
+  const cats=[],skipped=[];let cur=null,count=0;
+  const push=(catName,name,price,emoji)=>{
+    const cn=catName||"Importado";
+    let c=cats.find(x=>canon(x.name)===canon(cn));
+    if(!c){c={name:cn.slice(0,30),items:[]};cats.push(c)}
+    if(c.items.some(it=>canon(it.name)===canon(name)))return;
+    c.items.push({name:name.slice(0,30),price:price,emoji:emoji||""});count++;
+  };
+  txt.split(/\r?\n/).forEach(raw=>{
+    const line=raw.trim();
+    if(!line)return;
+    if(/^(categor|producto|bebida|nombre|precio|concepto)/i.test(canon(line))&&parsePrice(line)===null)return; // cabecera de tabla
+    let cells=splitCells(line).map(x=>x.trim()).filter((x,i,a)=>!(x===""&&a.length>1));
+    if(cells.length>=3){
+      const price=parsePrice(cells[cells.length-1]);
+      if(price===null){skipped.push(line);return}
+      push(cells[0],cells[cells.length-2],price);return;
+    }
+    if(cells.length===2){
+      const price=parsePrice(cells[1]);
+      if(price===null){cur=cells[0];return}
+      push(cur,cells[0],price);return;
+    }
+    const m=line.match(/^(.*?)[\s.·:\-–]*(\d+(?:[.,]\d{1,2})?)\s*(?:€|eur|euros)?$/i);
+    if(m&&m[1].trim()&&parsePrice(m[2])!==null){push(cur,m[1].trim(),parsePrice(m[2]));return}
+    if(parsePrice(line)===null&&line.length<40){cur=line;return}   // línea sin precio = categoría
+    skipped.push(line);
+  });
+  return{cats:cats.filter(c=>c.items.length),count,skipped};
+}
+function catsToMenu(cats,name){
+  return{id:uid("m"),name:String(name||"Carta importada").slice(0,30),
+    catalog:cats.map((c,i)=>({id:uid("c"),name:c.name,color:PALETTE[i%PALETTE.length],
+      items:c.items.map(it=>({id:uid("x"),name:it.name,price:r2(it.price)||0,emoji:it.emoji||""}))}))};
+}
+function mergeCats(cats){
+  let added=0,dup=0;
+  editMenu(m=>{
+    cats.forEach(c=>{
+      let t=m.catalog.find(x=>canon(x.name)===canon(c.name));
+      if(!t){t={id:uid("c"),name:c.name,color:PALETTE[m.catalog.length%PALETTE.length],items:[]};m.catalog.push(t)}
+      c.items.forEach(it=>{
+        const exists=m.catalog.some(x=>x.items.some(y=>canon(y.name)===canon(it.name)));
+        if(exists){dup++;return}
+        t.items.push({id:uid("x"),name:it.name,price:r2(it.price)||0,emoji:it.emoji||""});added++;
+      });
+    });
+  });
+  return{added,dup};
+}
+function exportTable(){
+  const m=curMenu(),out=["Categoría\tProducto\tPrecio"];
+  m.catalog.forEach(c=>c.items.forEach(it=>out.push(`${c.name}\t${it.name}\t${String(it.price).replace(".",",")}`)));
+  return out.join("\n");
+}
+const OCR_PROMPT='Transcribe esta carta de bar a una tabla de tres columnas separadas por tabulador, sin cabecera y sin ningún texto adicional: Categoría, Producto, Precio. Usa un producto por línea y el precio en euros con coma decimal. Si un producto no tiene precio visible, omítelo.';
 function commitOrder(kind,ids){
   const by=(a,b)=>ids.indexOf(a.id)-ids.indexOf(b.id);
   if(kind==="people")editConfig(c=>{c.people.sort(by)});
@@ -663,7 +749,9 @@ function vAjustes(){
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
   if(!hasDefaultMenu())h+=`<button class="btn small" data-act="menuFromDefault">+ Añadir la carta completa de la app (${DEFAULT_CATALOG.reduce((a,c)=>a+c.items.length,0)} productos)</button>`;
-  h+=`<div class="row2"><button class="btn small" data-act="menuExport">⬆️ Exportar esta carta</button><button class="btn small" data-act="menuImport">⬇️ Importar carta</button></div><p class="note">Las cartas se guardan en la base de datos compartida, así que las ve toda la cuadrilla. Exportar te da un texto que puedes enviar por WhatsApp o guardar; importar lo pega de vuelta como carta nueva.</p>`;
+  h+=`<button class="btn small primary" data-act="tab" data-id="importar">⬇️ Importar productos (Excel, Word, foto…)</button>`;
+  h+=`<div class="row2"><button class="btn small" data-act="expTable">⬆️ Copiar como tabla</button><button class="btn small" data-act="expJson">⬆️ Copia de seguridad</button></div>`;
+  h+=`<p class="note">Las cartas se guardan en la base de datos compartida (bar/config → menus), así que las ve toda la cuadrilla y se editan desde cualquier móvil. "Copiar como tabla" da un texto que se pega tal cual en Excel.</p>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuRename">✏️ Renombrar</button><button class="btn small warn" data-act="menuDel"${menus().length>1?"":" disabled"}>🗑 Borrar carta</button></div>`;
   h+=`<button class="btn small warn" data-act="menuDefaults">↻ Restaurar esta carta a la de por defecto</button><p class="note">Al restaurar se guarda antes una copia de seguridad de la carta actual, así que no se pierde nada.</p></section>`;
 
@@ -684,12 +772,33 @@ function vAjustes(){
   return h;
 }
 
-const VIEWS={pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes};
+function vImport(){
+  const r=parseTable(ui.impText||"");
+  let h=`<div class="pad-head"><h2>Importar productos</h2><button class="mini" data-act="tab" data-id="ajustes">← Volver</button></div>`;
+  h+=`<p class="note">Pega aquí una tabla copiada de Excel, Word, Google Sheets o un listado suelto. Vale casi cualquier forma: <b>Categoría · Producto · Precio</b>, <b>Producto · Precio</b>, o líneas tipo <b>Caña 2,50 €</b> con el nombre de la categoría en su propia línea.</p>`;
+  h+=`<textarea id="impText" rows="8" placeholder="Cervezas&#10;Caña&#9;2,50&#10;Zurito&#9;1,80&#10;Vinos&#10;Tinto&#9;2,00">${esc(ui.impText||"")}</textarea>`;
+  if(ui.impText&&ui.impText.trim()){
+    h+=`<p class="status">${r.count} producto${r.count===1?"":"s"} en ${r.cats.length} categoría${r.cats.length===1?"":"s"}${r.skipped.length?` · ${r.skipped.length} línea${r.skipped.length===1?"":"s"} sin entender`:""}</p>`;
+    if(r.count){
+      h+='<div class="card"><table><thead><tr><th>Categoría</th><th style="text-align:left">Producto</th><th>Precio</th></tr></thead><tbody>';
+      let n=0;
+      r.cats.forEach(c=>c.items.forEach(it=>{if(n++<15)h+=`<tr><td>${esc(c.name)}</td><td style="text-align:left">${esc(it.name)}</td><td>${eur(it.price)}</td></tr>`}));
+      h+='</tbody></table>'+(n>15?`<p class="note">… y ${n-15} más</p>`:"")+'</div>';
+      h+=`<button class="btn primary" data-act="impNew">Crear carta nueva con estos ${r.count}</button>`;
+      h+=`<button class="btn" data-act="impMerge">Añadirlos a "${esc(curMenu().name)}"</button>`;
+    }
+    if(r.skipped.length)h+=`<p class="note">Sin entender: ${esc(r.skipped.slice(0,5).join(" · "))}</p>`;
+    h+=`<button class="btn small" data-act="impClear">Vaciar</button>`;
+  }
+  h+=`<section class="card" style="margin-top:14px"><h2>📷 Desde una foto de la carta</h2><p class="note">La app no lee fotos por sí sola. Lo práctico: haz la foto, mándasela a Claude (u otro asistente) pidiéndole que la transcriba a tabla, y pega aquí el resultado. El botón copia la petición ya redactada.</p><button class="btn small" data-act="copyPrompt">📋 Copiar la petición para el asistente</button></section>`;
+  return h;
+}
+const VIEWS={pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 function render(force){
   if(dragging){pending=true;return}
   const ae=document.activeElement;
-  if(!force&&ae&&ae.tagName==="INPUT"&&ae.closest("#view")){pending=true;return}
+  if(!force&&ae&&(ae.tagName==="INPUT"||ae.tagName==="TEXTAREA")&&ae.closest("#view")){pending=true;return}
   pending=false;
   reindex();
   if(me&&!findP(me)){me=null;lsSet("ronda.me",null)}
@@ -845,20 +954,25 @@ document.addEventListener("click",e=>{
       editConfig(c=>{c.menus.push(m);c.menu=m.id});flash("Carta creada");return;
     }
     case"menuRename":{const n=prompt("Nombre de la carta:",curMenu().name);if(!n||!n.trim())return;editConfig(c=>{const m=c.menus.find(x=>x.id===c.menu);if(m)m.name=n.trim().slice(0,30)});return}
-    case"menuExport":{
-      const txt=exportMenu();
-      (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject())
-        .then(()=>flash("Carta copiada al portapapeles"))
-        .catch(()=>prompt("Copia este texto para guardar o enviar la carta:",txt));
-      return;
+    case"expTable":copyOut(exportTable(),"Tabla copiada: pégala en Excel");return;
+    case"expJson":copyOut(exportMenu(),"Copia de seguridad copiada");return;
+    case"copyPrompt":copyOut(OCR_PROMPT,"Petición copiada: envíala junto a la foto");return;
+    case"impClear":ui.impText="";break;
+    case"impNew":{
+      const r=parseTable(ui.impText||"");if(!r.count)return;
+      const n=prompt("Nombre de la carta nueva:",r.name||("Carta "+(menus().length+1)));
+      if(!n||!n.trim())return;
+      const m=catsToMenu(r.cats,n.trim());
+      ui.impText="";ui.cat=null;ui.tab="ajustes";
+      editConfig(c=>{c.menus.push(m);c.menu=m.id});
+      flash(`Carta "${m.name}" creada con ${r.count} productos`);return;
     }
-    case"menuImport":{
-      const txt=prompt("Pega aquí el texto de la carta:");
-      if(!txt||!txt.trim())return;
-      const res=parseMenu(txt.trim());
-      if(res.error){alert(res.error);return}
-      if(!confirm(`Se añadirá "${res.menu.name}" con ${res.count} productos. ¿Seguir?`))return;
-      editConfig(c=>{c.menus.push(res.menu);c.menu=res.menu.id});ui.cat=null;flash("Carta importada");return;
+    case"impMerge":{
+      const r=parseTable(ui.impText||"");if(!r.count)return;
+      if(!confirm(`Se añadirán hasta ${r.count} productos a "${curMenu().name}". ¿Seguir?`))return;
+      ui.impText="";ui.tab="ajustes";
+      const res=mergeCats(r.cats);
+      flash(`${res.added} añadidos${res.dup?` · ${res.dup} ya estaban`:""}`);return;
     }
     case"menuFromDefault":{
       const m={id:uid("m"),name:"Carta completa",fromDefault:true,catalog:freshCatalog(DEFAULT_CATALOG)};
@@ -962,7 +1076,14 @@ function endDrag(){
 document.addEventListener("pointerup",endDrag);
 document.addEventListener("pointercancel",endDrag);
 
+function copyOut(txt,okMsg){
+  (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject())
+    .then(()=>flash(okMsg))
+    .catch(()=>prompt("Copia este texto:",txt));
+}
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="impText")ui.impText=e.target.value});
 document.addEventListener("change",e=>{
+  if(e.target&&e.target.id==="impText"){ui.impText=e.target.value;render(true);return}
   const t=e.target;
   if(t.id==="selectMe"){me=t.value||null;lsSet("ronda.me",me);ui.sel=me;render(true);return}
   if(t.dataset.gidx){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;const g=GROUPS[parseInt(t.dataset.gidx,10)];if(g)setGroupPrice(g.items,v);render(true);return}
