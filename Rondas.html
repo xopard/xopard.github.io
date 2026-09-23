@@ -346,6 +346,7 @@ function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>
 function personUsed(pid){if(drinks(pid).length)return true;return S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid)}
 
 function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,items:(c.items||[]).map(cloneNode)}))}
+function countProducts(cat){let n=0;eachCatalog(cat,x=>{if(!x.group)n++});return n}
 function defaultNames(){const s=new Set();eachCatalog(DEFAULT_CATALOG,n=>{if(!n.group)s.add(canon(n.name))});return s}
 function hasDefaultMenu(){
   const def=defaultNames();if(!def.size)return true;
@@ -927,7 +928,7 @@ function vAjustes(){
 
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
-  h+=`<button class="btn small" data-act="menuFromDefault">+ Carta de ejemplo de la app (${DEFAULT_CATALOG.reduce((a,c)=>a+c.items.length,0)} productos)${hasDefaultMenu()?" · ya la tienes":""}</button>`;
+  h+=`<button class="btn small${hasDefaultMenu()?"":" primary"}" data-act="menuFromDefault">+ Carta de ejemplo de la app (${countProducts(DEFAULT_CATALOG)} productos, con marcas de copas)</button>`;
   h+=`<button class="btn small primary" data-act="tab" data-id="importar">⬇️ Importar productos (Excel, Word, foto…)</button>`;
   h+=`<div class="row2"><button class="btn small" data-act="expTable">⬆️ Copiar como tabla</button><button class="btn small" data-act="expJson">⬆️ Copia de seguridad</button></div>`;
   h+=`<p class="note">Las cartas se guardan en la base de datos compartida (bar/config → menus), así que las ve toda la cuadrilla y se editan desde cualquier móvil. "Copiar como tabla" da un texto que se pega tal cual en Excel.</p>`;
@@ -1188,7 +1189,8 @@ document.addEventListener("click",e=>{
       flash(`${res.added} añadidos${res.dup?` · ${res.dup} ya estaban`:""}`);return;
     }
     case"menuFromDefault":{
-      const m={id:uid("m"),name:"Carta completa",fromDefault:true,catalog:freshCatalog(DEFAULT_CATALOG)};
+      const nm="Carta de la app"+(menus().some(x=>canon(x.name)===canon("Carta de la app"))?" "+hhmm(Date.now()):"");
+      const m={id:uid("m"),name:nm,fromDefault:true,catalog:freshCatalog(DEFAULT_CATALOG)};
       editConfig(c=>{c.menus.push(m);c.menu=m.id});ui.path=[];flash("Carta completa añadida y activada");return;
     }
     case"menuDel":{
