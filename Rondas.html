@@ -163,64 +163,81 @@ const MIX_RON={def:"con cola",options:[{name:"con cola"},{name:"con cola zero"},
 const MIX_GIN={def:"con tónica",options:[{name:"con tónica"},{name:"con tónica premium",extra:1},{name:"con limón"},{name:"con naranja"},{name:"solo"}]};
 const MIX_WHISKY={def:"con cola",options:[{name:"con cola"},{name:"con hielo"},{name:"solo"},{name:"con soda"},{name:"con agua"}]};
 const MIX_VODKA={def:"con limón",options:[{name:"con limón"},{name:"con naranja"},{name:"con tónica"},{name:"con cola"},{name:"solo"}]};
-const MIX_CERVEZA={def:"",options:[{name:"tostada"},{name:"negra"},{name:"clara"},{name:"radler"},{name:"rubia 0,0"},{name:"tostada 0,0"},{name:"artesana / IPA",extra:1}]};
-const MIX_CAFE={def:"",options:[{name:"descafeinado"},{name:"con hielo"},{name:"descafeinado con hielo"},{name:"con leche fría"},{name:"con sacarina"},{name:"en vaso"},{name:"corto de café"}]};
-const MIX_LICOR={def:"solo",options:[{name:"solo"},{name:"con hielo"},{name:"con cola"},{name:"con piña"},{name:"con naranja"}]};
+const DEFAULT_NAME="Calavera 💀";
 const DEFAULT_CATALOG=[
-  {id:"cerveza",name:"Cervezas",color:"#B97C0C",mix:MIX_CERVEZA,items:[
-    prod("zurito","Zurito",1.6,"🍺"),prod("cana","Caña",2.2,"🍺"),prod("canon","Cañón",3.2,"🍺"),
-    prod("katxi","Katxi",5,"🍺"),prod("tercio","Botellín 1/3",2.8,"🍺"),prod("quinto","Botellín 1/5",2.2,"🍺"),
+  {id:"cervezas",name:"Cervezas",color:"#B97C0C",mix:{def:"rubia",options:[{name:"rubia"},{name:"tostada"},{name:"rubia 0,0"},{name:"tostada 0,0"},{name:"negra"},{name:"clara"},{name:"radler"}]},items:[
+    prod("zurito","Zurito",1.6,"🍺"),
+    prod("cana","Caña",2.2,"🍺"),
+    prod("canon","Cañón",3.2,"🍺"),
+    prod("katxi","Katxi",5,"🍺"),
+    prod("botellin_1_3","Botellín 1/3",2.8,"🍺"),
+    prod("botellin_1_5","Botellín 1/5",2.2,"🍺"),
     prod("pinta","Pinta",4.2,"🍺")]},
-  {id:"vino",name:"Vinos y txakoli",color:"#86243A",items:[
-    prod("tintocasa","Tinto de la casa",1.8,"🍷"),prod("rioja","Rioja",2.4,"🍷"),prod("crianza","Crianza",2.6,"🍷"),
-    prod("reserva","Reserva",3.6,"🍷"),prod("ribera","Ribera",2.8,"🍷"),prod("blanco","Blanco",2,"🥂"),
-    prod("verdejo","Verdejo",2.4,"🥂"),prod("txakoli","Txakoli",2.4,"🥂"),prod("albarino","Albariño",3,"🥂"),
-    prod("rosado","Rosado",2,"🍷"),prod("cava","Cava",3,"🥂"),prod("vinodulce","Vino dulce",2.8,"🍷")]},
-  {id:"kalimotxo",name:"Kalimotxo y marianitos",color:"#5A2E63",items:[
-    prod("kalimotxo","Kalimotxo",2.4,"🍷"),prod("katximotxo","Katxi de kalimotxo",5,"🍷"),
-    prod("marianito","Marianito",2.6,"🍸"),prod("vermurojo","Vermú rojo",2.6,"🍸"),prod("vermublanco","Vermú blanco",2.6,"🍸"),
-    prod("vermusifon","Vermú con sifón",2.8,"🍸"),prod("sidra","Sidra",2.4,"🍏"),prod("sidranatural","Sidra natural (txotx)",2.6,"🍏"),
-    prod("tintoverano","Tinto de verano",2.6,"🍹"),prod("mistela","Mistela",2.4,"🍷")]},
-  {id:"refresco",name:"Refrescos y aguas",color:"#1F68A0",items:[
-    prod("cocacola","Coca-Cola",2.2,"🥤"),prod("cocacolazero","Coca-Cola zero",2.2,"🥤"),prod("fantanaranja","Fanta de naranja",2.2,"🍊"),
-    prod("fantalimon","Fanta de limón",2.2,"🍋"),prod("kaslimon","Kas de limón",2.2,"🍋"),prod("bitterkas","Bitter Kas",2.2,"🍅"),
-    prod("tonica","Tónica",2.2,"🫧"),prod("aquarius","Aquarius",2.4,"💪"),prod("nestea","Nestea",2.4,"🧊"),
-    prod("gaseosa","Gaseosa",1.6,"🫧"),prod("mosto","Mosto",2,"🍇"),prod("zumo","Zumo",2.4,"🧃"),
-    prod("zumonatural","Zumo natural",3,"🍊"),prod("agua","Agua",1.6,"💧"),prod("aguagas","Agua con gas",1.9,"🫧"),
-    prod("aguagrande","Agua grande",2.5,"💧")]},
-  {id:"cafe",name:"Cafés e infusiones",color:"#6A4630",items:[
-    grp("g_cafe","Cafés","☕",MIX_CAFE,[
-      prod("solo","Café solo",1.4,"☕"),prod("cortado","Cortado",1.5,"☕"),prod("conleche","Café con leche",1.7,"☕"),
-      prod("manchado","Manchado",1.6,"☕"),prod("bombon","Bombón",2,"☕"),prod("capuchino","Capuchino",2.2,"☕"),
-      prod("americano","Americano",1.7,"☕"),prod("carajillo","Carajillo",2.4,"🥃")]),
-    prod("leche","Leche",1.5,"🥛"),prod("colacao","Cola Cao",2,"🥛"),prod("te","Té",1.7,"🍵"),
-    prod("manzanilla","Manzanilla",1.7,"🍵"),prod("poleo","Poleo menta",1.7,"🍵"),prod("infusion","Otra infusión",1.7,"🍵")]},
-  {id:"copas",name:"Copas",color:"#2B7458",items:[
-    grp("g_ron","Ron","🥃",MIX_RON,[
-      prod("ron_barcelo","Barceló",7,"🥃"),prod("ron_brugal","Brugal",7,"🥃"),prod("ron_cacique","Cacique",7,"🥃"),
-      prod("ron_havana","Havana 7",8,"🥃"),prod("ron_legendario","Legendario",8,"🥃"),prod("ron_matusalem","Matusalem",8.5,"🥃")]),
-    grp("g_gin","Ginebra","🍸",MIX_GIN,[
-      prod("gin_larios","Larios",7,"🍸"),prod("gin_beefeater","Beefeater",7.5,"🍸"),prod("gin_seagrams","Seagram's",8,"🍸"),
-      prod("gin_bombay","Bombay Sapphire",8.5,"🍸"),prod("gin_tanqueray","Tanqueray",8.5,"🍸"),
-      prod("gin_puertoindias","Puerto de Indias",8.5,"🍸"),prod("gin_nordes","Nordés",9,"🍸"),prod("gin_hendricks","Hendrick's",9.5,"🍸")]),
-    grp("g_whisky","Whisky","🥃",MIX_WHISKY,[
-      prod("wh_jb","J&B",7,"🥃"),prod("wh_ballantines","Ballantine's",7,"🥃"),prod("wh_johnnie","Johnnie Walker",7.5,"🥃"),
-      prod("wh_jack","Jack Daniel's",8,"🥃"),prod("wh_cardhu","Cardhu",9,"🥃"),prod("wh_macallan","Macallan",12,"🥃")]),
-    grp("g_vodka","Vodka","🍸",MIX_VODKA,[
-      prod("vk_smirnoff","Smirnoff",7,"🍸"),prod("vk_eristoff","Eristoff",7,"🍸"),
-      prod("vk_absolut","Absolut",7.5,"🍸"),prod("vk_greygoose","Grey Goose",9,"🍸")]),
-    grp("g_licor","Otros licores","🍹",MIX_LICOR,[
-      prod("lc_malibu","Malibú",7,"🥥"),prod("lc_baileys","Baileys",4,"🥛"),prod("lc_jager","Jägermeister",4,"🦌"),
-      prod("lc_tequila","Tequila",5,"🌵"),prod("lc_brandy","Brandy",5,"🥃"),prod("lc_amaretto","Amaretto",4.5,"🥃")]),
-    grp("g_chupito","Chupitos","🥃",null,[
-      prod("ch_patxaran","Patxaran",2.5,"🥃"),prod("ch_orujo","Orujo",2.5,"🥃"),prod("ch_hierbas","Hierbas",2.5,"🌿"),
-      prod("ch_licorcafe","Licor de café",2.5,"☕"),prod("ch_jager","Chupito de Jäger",2.5,"🦌"),prod("ch_varios","Chupito",2,"🥃")]),
-    prod("cubata","Cubata de la casa",6,"🥃"),prod("gintonic","Gin-tonic de la casa",7,"🍸")]},
-  {id:"pintxos",name:"Pintxos y picar",color:"#A04A1F",items:[
-    prod("tortilla","Pintxo de tortilla",2.2,"🍳"),prod("gilda","Gilda",1.8,"🫒"),prod("croquetas","Croquetas",2.4,"🍢"),
-    prod("txistorra","Txistorra",3,"🌭"),prod("bacalao","Bacalao rebozado",3,"🐟"),prod("rabas","Rabas",4.5,"🦑"),
-    prod("jamon","Jamón",4,"🥓"),prod("idiazabal","Queso Idiazabal",4,"🧀"),prod("bravas","Patatas bravas",4,"🥔"),
-    prod("pulguita","Pulguita",3,"🥪"),prod("aceitunas","Aceitunas",1.8,"🫒"),prod("cacahuetes","Cacahuetes",1.5,"🥜")]}
+  {id:"vinos_y_txakoli",name:"Vinos y txakoli",color:"#86243A",mix:null,items:[
+    prod("txakoli","Txakoli",2.4,"🥂"),
+    prod("crianza","Crianza",2.6,"🍷"),
+    prod("ribera","Ribera",2.8,"🍷"),
+    prod("rueda","Rueda",2,"🥂"),
+    prod("verdejo","Verdejo",2.4,"🥂"),
+    prod("albarino","Albariño",3,"🥂"),
+    prod("rosado","Rosado",2,"🍷"),
+    prod("cava","Cava",3,"🥂"),
+    prod("vino_dulce","Vino dulce",2.8,"🍷")]},
+  {id:"kalimotxo_y_marianit",name:"Kalimotxo y marianitos",color:"#5A2E63",mix:null,items:[
+    prod("marianito_blanco","Marianito blanco",2.6,"🍸"),
+    prod("marianito_rojo","Marianito rojo",2.6,"🍸"),
+    prod("kalimotxo","Kalimotxo",2.4,"🍷"),
+    prod("kalitxiki","Kalitxiki",2.4,"🍷"),
+    prod("vermu_rojo","Vermú rojo",2.6,"🍸"),
+    prod("vermu_blanco","Vermú blanco",2.6,"🍸"),
+    prod("sidra","Sidra",2.4,"🍏"),
+    prod("katxi_de_kalimotxo","Katxi de kalimotxo",5,"🍷")]},
+  {id:"refrescos_y_aguas",name:"Refrescos y aguas",color:"#1F68A0",mix:{def:"",options:[{name:"Naranja"},{name:"Limón"}]},items:[
+    prod("coca_cola","Coca-Cola",2.2,"🥤"),
+    prod("coca_cola_zero","Coca-Cola zero",2.2,"🥤"),
+    prod("coca_cola_zero_zero","Coca-Cola zero-zero",2.2,"🥤"),
+    prod("kas_de_limon","Kas de limón",2.2,"🍋"),
+    prod("kas_de_naranja","Kas de naranja",2.2,"🍊"),
+    prod("tonica","Tónica",2.2,"🫧"),
+    prod("bitter_kas","Bitter Kas",2.2,"🍅"),
+    prod("aquarius_naranja","Aquarius Naranja",2.4,"💪"),
+    prod("aquarius_limon","Aquarius Limón",2.4,"💪"),
+    prod("nestea","Nestea",2.4,"🧊"),
+    prod("mosto","Mosto",2,"🍇"),
+    prod("zumo","Zumo",2.4,"🧃"),
+    prod("agua","Agua",1.6,"💧"),
+    prod("agua_con_gas","Agua con gas",1.9,"🫧"),
+    prod("agua_grande","Agua grande",2.5,"💧")]},
+  {id:"cafes_e_infusiones",name:"Cafés e infusiones",color:"#6A4630",mix:null,items:[
+    grp("g_cafes","Cafés","☕",{def:"",options:[{name:"descafeinado"},{name:"con hielo"},{name:"descafeinado con hielo"},{name:"con leche fría"},{name:"con sacarina"},{name:"en vaso"},{name:"corto de café"}]},[prod("ca_cafe_solo","Café solo",1.4,"☕"),prod("ca_cortado","Cortado",1.5,"☕"),prod("ca_cafe_con_leche","Café con leche",1.7,"☕"),prod("ca_manchado","Manchado",1.6,"☕"),prod("ca_bombon","Bombón",2,"☕"),prod("ca_capuchino","Capuchino",2.2,"☕"),prod("ca_americano","Americano",1.7,"☕"),prod("ca_carajillo","Carajillo",2.4,"🥃")]),
+    prod("leche","Leche",1.5,"🥛"),
+    prod("cola_cao","Cola Cao",2,"🥛"),
+    prod("te","Té",1.7,"🍵"),
+    prod("manzanilla","Manzanilla",1.7,"🍵"),
+    prod("poleo_menta","Poleo menta",1.7,"🍵"),
+    prod("otra_infusion","Otra infusión",1.7,"🍵")]},
+  {id:"copas",name:"Copas",color:"#2B7458",mix:null,items:[
+    grp("g_ron","Ron","🥃",{def:"con cola",options:[{name:"con cola"},{name:"con cola zero"},{name:"con limón"},{name:"con naranja"},{name:"solo"},{name:"con hielo"}]},[prod("ro_barcelo","Barceló",7,"🥃"),prod("ro_brugal","Brugal",7,"🥃"),prod("ro_cacique","Cacique",7,"🥃"),prod("ro_havana_7","Havana 7",8,"🥃"),prod("ro_legendario","Legendario",8,"🥃"),prod("ro_matusalem","Matusalem",8.5,"🥃")]),
+    grp("g_ginebra","Ginebra","🍸",{def:"con tónica",options:[{name:"con tónica"},{name:"con tónica premium",extra:1},{name:"con limón"},{name:"con naranja"},{name:"solo"}]},[prod("gi_larios","Larios",7,"🍸"),prod("gi_beefeater","Beefeater",7.5,"🍸"),prod("gi_seagram_s","Seagram's",8,"🍸"),prod("gi_bombay_sapphire","Bombay Sapphire",8.5,"🍸"),prod("gi_tanqueray","Tanqueray",8.5,"🍸"),prod("gi_puerto_de_indias","Puerto de Indias",8.5,"🍸"),prod("gi_nordes","Nordés",9,"🍸"),prod("gi_hendrick_s","Hendrick's",9.5,"🍸")]),
+    grp("g_whisky","Whisky","🥃",{def:"con cola",options:[{name:"con cola"},{name:"con hielo"},{name:"solo"},{name:"con soda"},{name:"con agua"}]},[prod("wh_j_b","J&B",7,"🥃"),prod("wh_ballantine_s","Ballantine's",7,"🥃"),prod("wh_johnnie_walker","Johnnie Walker",7.5,"🥃"),prod("wh_jack_daniel_s","Jack Daniel's",8,"🥃"),prod("wh_cardhu","Cardhu",9,"🥃"),prod("wh_macallan","Macallan",12,"🥃")]),
+    grp("g_vodka","Vodka","🍸",{def:"con limón",options:[{name:"con limón"},{name:"con naranja"},{name:"con tónica"},{name:"con cola"},{name:"solo"}]},[prod("vo_smirnoff","Smirnoff",7,"🍸"),prod("vo_eristoff","Eristoff",7,"🍸"),prod("vo_absolut","Absolut",7.5,"🍸"),prod("vo_grey_goose","Grey Goose",9,"🍸")]),
+    grp("g_otros_licores","Otros licores","🍹",{def:"solo",options:[{name:"solo"},{name:"con hielo"},{name:"con cola"},{name:"con piña"},{name:"con naranja"}]},[prod("ot_malibu","Malibú",7,"🥥"),prod("ot_baileys","Baileys",4,"🥛"),prod("ot_jagermeister","Jägermeister",4,"🦌"),prod("ot_tequila","Tequila",5,"🌵"),prod("ot_brandy","Brandy",5,"🥃"),prod("ot_amaretto","Amaretto",4.5,"🥃")]),
+    grp("g_chupitos","Chupitos","🥃",null,[prod("ch_patxaran","Patxaran",2.5,"🥃"),prod("ch_orujo","Orujo",2.5,"🥃"),prod("ch_hierbas","Hierbas",2.5,"🌿"),prod("ch_licor_de_cafe","Licor de café",2.5,"☕"),prod("ch_chupito_de_jager","Chupito de Jäger",2.5,"🦌"),prod("ch_chupito","Chupito",2,"🥃")]),
+    prod("cubata_de_la_casa","Cubata de la casa",6,"🥃"),
+    prod("gin_tonic_de_la_casa","Gin-tonic de la casa",7,"🍸")]},
+  {id:"pintxos_y_picar",name:"Pintxos y picar",color:"#A04A1F",mix:null,items:[
+    prod("pintxo_de_tortilla","Pintxo de tortilla",2.2,"🍳"),
+    prod("gilda","Gilda",1.8,"🫒"),
+    prod("croquetas","Croquetas",2.4,"🍢"),
+    prod("txistorra","Txistorra",3,"🌭"),
+    prod("bacalao_rebozado","Bacalao rebozado",3,"🐟"),
+    prod("rabas","Rabas",4.5,"🦑"),
+    prod("jamon","Jamón",4,"🥓"),
+    prod("queso_idiazabal","Queso Idiazabal",4,"🧀"),
+    prod("patatas_bravas","Patatas bravas",4,"🥔"),
+    prod("pulguita","Pulguita",3,"🥪"),
+    prod("aceitunas","Aceitunas",1.8,"🫒"),
+    prod("cacahuetes","Cacahuetes",1.5,"🥜")]}
 ];
 const PALETTE=["#B97C0C","#86243A","#5A2E63","#1F68A0","#6A4630","#2B7458","#A04A1F","#3D5A80","#7A6A12","#8E3B6E"];
 
@@ -239,7 +256,7 @@ function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(
 /* ===== Normalización (acepta datos de versiones anteriores) ===== */
 function defaults(){return{
   config:{people:DEFAULT_PEOPLE.map((n,i)=>({id:"p"+(i+1),name:n,paused:false})),
-          menus:[{id:"m1",name:"Carta principal",fromDefault:true,catalog:normCatalog(clone(DEFAULT_CATALOG))}],menu:"m1",assignerMode:"",pin:""},
+          menus:[{id:"m1",name:DEFAULT_NAME,fromDefault:true,catalog:normCatalog(clone(DEFAULT_CATALOG))}],menu:"m1",assignerMode:"",pin:""},
   current:{n:1,name:"",night:"",orders:{},delivered:{}},rounds:[]};}
 function normMix(m){
   if(!m)return null;
@@ -1012,7 +1029,7 @@ function vAjustes(){
   h+=`<section class="card"><h2>Sala de la cuadrilla</h2><p class="note">Cada sala tiene sus pedidos, su cuadrilla, sus cartas y sus cuentas, sin mezclarse con las demás. Comparte el enlace solo con los tuyos.</p><p><b>Sala actual:</b> ${esc(SALA)}</p><button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de esta sala</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otra sala</button><button class="btn small" data-act="salaChange">↪ Entrar en otra sala</button></div><button class="btn small" data-act="salaClone">⧉ Copiar esta sala a un código nuevo</button><p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
-  h+=`<button class="btn small${hasDefaultMenu()?"":" primary"}" data-act="menuFromDefault">+ Carta de ejemplo de la app (${countProducts(DEFAULT_CATALOG)} productos, con marcas de copas)</button>`;
+  h+=`<button class="btn small${hasDefaultMenu()?"":" primary"}" data-act="menuFromDefault">+ Añadir la carta ${esc(DEFAULT_NAME)} (${countProducts(DEFAULT_CATALOG)} productos)</button>`;
   h+=`<button class="btn small primary" data-act="tab" data-id="importar">⬇️ Importar productos (Excel, Word, foto…)</button>`;
   h+=`<div class="row2"><button class="btn small" data-act="expTable">⬆️ Copiar como tabla</button><button class="btn small" data-act="expJson">⬆️ Copia de seguridad</button></div>`;
   h+=`<p class="note">Las cartas se guardan en la base de datos compartida (bar/config → menus), así que las ve toda la cuadrilla y se editan desde cualquier móvil. "Copiar como tabla" da un texto que se pega tal cual en Excel.</p>`;
@@ -1378,7 +1395,7 @@ document.addEventListener("click",e=>{
       flash(`${res.added} añadidos${res.dup?` · ${res.dup} ya estaban`:""}`);return;
     }
     case"menuFromDefault":{
-      const nm="Carta de la app"+(menus().some(x=>canon(x.name)===canon("Carta de la app"))?" "+hhmm(Date.now()):"");
+      const nm=DEFAULT_NAME+(menus().some(x=>canon(x.name)===canon(DEFAULT_NAME))?" "+hhmm(Date.now()):"");
       const m={id:uid("m"),name:nm,fromDefault:true,catalog:freshCatalog(DEFAULT_CATALOG)};
       editConfig(c=>{c.menus.push(m);c.menu=m.id});ui.path=[];flash("Carta completa añadida y activada");return;
     }
