@@ -369,6 +369,12 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
       Conectar con Dropbox
     </button>
     <p class="connect-note">Solo se pide una vez.<br>Tus datos nunca salen de tu Dropbox.</p>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.25)">
+      <button onclick="openLocalCsv()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:5px;padding:9px 16px;font-size:13px;cursor:pointer">
+        📂 Abrir un CSV del disco
+      </button>
+      <p class="connect-note" id="local-note" style="margin-top:8px">Modo local: sin Dropbox, guardas descargando el fichero.</p>
+    </div>
   </div>
 </div>
 
@@ -394,6 +400,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="mi" onclick="loadFromDropbox()">↓ Recargar desde Dropbox</div>
     <div class="mi" onclick="saveToDropbox()">↑ Guardar en Dropbox (Ctrl+S)</div>
     <div class="msep"></div>
+    <div class="mi" onclick="openLocalCsv()">📂 Abrir CSV del disco (modo local)</div>
+    <div class="mi" onclick="saveLocalCsv()">⬇️ Guardar CSV en el disco</div>
     <div class="mi" onclick="downloadBackup()">💾 Descargar copia de seguridad</div>
     <div class="mi" onclick="restoreBackup()">📂 Restaurar copia de seguridad…</div>
     <div class="msep"></div>
@@ -855,12 +863,12 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   </div>
 
 </div>
-<div id="btn-mobile-save" onclick="mobileSaveNow()"
+<div id="btn-mobile-save" onclick="pendingSaveNow()"
   style="display:none;position:fixed;bottom:20px;right:16px;z-index:200;
          background:var(--wine);color:#fff;border:none;border-radius:28px;
          padding:12px 20px;font-size:15px;font-weight:700;cursor:pointer;
          box-shadow:0 3px 12px rgba(0,0,0,.35);align-items:center;gap:8px">
-  💾 Guardar
+  💾 <span id="btn-save-lbl">Guardar</span>
 </div>
 <div id="dbx-status"></div>
 <datalist id="concepts-list"></datalist>
@@ -2395,6 +2403,12 @@ function restoreBackup() {
     try {
       const text = await file.text();
       parseCSV(text);
+      if(LOCAL.active){
+        LOCAL.name=file.name;
+        setStatus('Modo local · '+file.name);
+        toast('Copia cargada (modo local) ✓');
+        return;
+      }
       await callDropbox(() => dbxUpload(genCSV()));
       const h = new Date().toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
       setStatus('Dropbox ✓ · Restaurado: ' + h);
@@ -3962,24 +3976,92 @@ window.addEventListener('popstate',()=>{
   if(isMobile()&&$('rpanel')?.classList.contains('mobile-show')) mobileBack();
 });
 
+// ── MODO LOCAL (sin Dropbox: fichero del disco) ──────────────
+const LOCAL = { active:false, name:'Xopard.csv' };
+const IS_FILE_URL = location.protocol === 'file:';
+
+function openLocalCsv(){
+  closeMenu();
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.csv,text/csv'; inp.style.display='none';
+  document.body.appendChild(inp);
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0];
+    document.body.removeChild(inp);
+    if(!file) return;
+    showLoading('Leyendo '+file.name+'…');
+    try{
+      const text=await file.text();
+      parseCSV(text);
+      LOCAL.active=true; LOCAL.name=file.name;
+      S.token=null;
+      $('connect-screen')?.classList.remove('show');
+      setStatus('Modo local · '+file.name);
+      markPending(false);
+      toast('Cargado en modo local: '+file.name);
+    }catch(e){
+      alert('No se pudo leer el fichero: '+(e.message||e));
+    }finally{ hideLoading(); }
+  };
+  inp.click();
+}
+
+function saveLocalCsv(){
+  closeMenu();
+  if(!S.accs.length){ toast('Sin datos que guardar'); return; }
+  const blob=new Blob([genCSV()],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=LOCAL.name||'Xopard.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  markPending(false);
+  const h=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  setStatus('Modo local · guardado '+h);
+  toast('CSV descargado: '+a.download);
+}
+
+// Botón flotante de guardado pendiente (móvil y modo local)
+function markPending(on){
+  const b=$('btn-mobile-save'), lbl=$('btn-save-lbl');
+  if(lbl) lbl.textContent = LOCAL.active ? 'Guardar CSV' : 'Guardar';
+  if(!b) return;
+  if(on){ b.style.display='flex'; b.style.animation='pulse .6s ease 2'; }
+  else if(!isMobile()) b.style.display='none';
+}
+function pendingSaveNow(){
+  if(LOCAL.active) return saveLocalCsv();
+  mobileSaveNow();
+}
+
 // ── GUARDADO MÓVIL (solo cuando el usuario lo pide explícitamente) ──
 let _mobilePending = false;
 
 function mobilePending(){
+  if(LOCAL.active){ markPending(true); setStatus('Modo local · cambios sin guardar'); return true; }
   if(!isMobile()) return false;
   _mobilePending = true;
-  const b=$('btn-mobile-save');
-  if(b){ b.style.display='flex'; b.style.animation='pulse .6s ease 2'; }
+  markPending(true);
   return true; // indica que el save fue interceptado
 }
 
 function mobileSaveNow(){
   _mobilePending = false;
-  const b=$('btn-mobile-save'); if(b) b.style.display='none';
+  markPending(false);
   saveToDropbox();
 }
 
 (async()=>{
+  // Abierto por doble clic desde el disco: Dropbox no es posible (OAuth exige https)
+  if(IS_FILE_URL){
+    const btn=document.querySelector('.btn-dropbox');
+    if(btn) btn.style.display='none';
+    const note=$('local-note');
+    if(note) note.innerHTML='Has abierto el fichero desde el disco, así que Dropbox no está disponible.<br>Abre tu CSV y guarda descargándolo.';
+    $('connect-screen').classList.add('show');
+    return;
+  }
   // ¿Viene de Dropbox con código OAuth?
   if(window.location.search.includes('code=')){
     const ok=await handleCallback();
