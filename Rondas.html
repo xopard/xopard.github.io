@@ -252,7 +252,7 @@ function normNode(n,depth){
   if(n.group||Array.isArray(n.items))
     return{id:n.id,name:n.name||"?",emoji:n.emoji||"",group:true,mix:normMix(n.mix),
       items:depth>=1?[]:(n.items||[]).map(x=>normNode(x,depth+1)).filter(Boolean)};
-  return{id:n.id,name:n.name||"?",price:Number(n.price)||0,emoji:n.emoji||""};
+  return{id:n.id,name:n.name||"?",price:Number(n.price)||0,emoji:n.emoji||"",mix:normMix(n.mix)};
 }
 function normCatalog(cat){
   if(!Array.isArray(cat)||!cat.length)return clone(DEFAULT_CATALOG);
@@ -335,7 +335,18 @@ function containerItems(catalog,id){
   if(!f)return null;
   return f.node.items?f.node.items:null;
 }
-function mixOf(itemId){const it=IDX[itemId];if(!it)return null;if(it.parent&&it.parent.mix)return it.parent.mix;return it.cat&&it.cat.mix?it.cat.mix:null}
+function mixOf(itemId){
+  const it=IDX[itemId];if(!it)return null;
+  if(it.mix)return it.mix;                       // las del producto mandan
+  if(it.parent&&it.parent.mix)return it.parent.mix;
+  return it.cat&&it.cat.mix?it.cat.mix:null;
+}
+function mixFrom(nodeId){                        // de dónde hereda un producto sus opciones
+  const it=IDX[nodeId];if(!it||it.mix)return null;
+  if(it.parent&&it.parent.mix)return it.parent.name;
+  if(it.cat&&it.cat.mix)return it.cat.name;
+  return null;
+}
 function defMix(itemId){const m=mixOf(itemId);return m?m.def||"":""}
 function extraOf(itemId,clar){
   const m=mixOf(itemId);if(!m||!clar)return 0;
@@ -347,8 +358,8 @@ function groupUsed(node,used){let hit=false;walkNodes([node],n=>{if(!n.group&&us
 function cloneMix(m){return m?normMix({def:m.def,options:(m.options||[]).map(o=>({name:o.name,extra:o.extra}))}):null}
 function cloneNode(n){
   return n.group
-    ?{id:uid("g"),name:n.name,emoji:n.emoji,group:true,mix:cloneMix(n.mix),items:(n.items||[]).map(x=>({id:uid("x"),name:x.name,price:x.price,emoji:x.emoji}))}
-    :{id:uid("x"),name:n.name,price:n.price,emoji:n.emoji};
+    ?{id:uid("g"),name:n.name,emoji:n.emoji,group:true,mix:cloneMix(n.mix),items:(n.items||[]).map(x=>({id:uid("x"),name:x.name,price:x.price,emoji:x.emoji,mix:cloneMix(x.mix)}))}
+    :{id:uid("x"),name:n.name,price:n.price,emoji:n.emoji,mix:cloneMix(n.mix)};
 }
 const drinks=pid=>(S.current.orders&&S.current.orders[pid])||[];
 const isNada=o=>!!o&&o.drink==="nada";
@@ -392,10 +403,10 @@ function splitCells(line){
 function parseTable(txt){
   txt=String(txt||"").trim();
   if(!txt)return{cats:[],count:0,skipped:[]};
-  if(txt[0]==="{"||txt[0]==="["){                       // sigue aceptando el formato JSON
+  if(txt[0]==="{"||txt[0]==="["){                       // JSON: se conserva tal cual, con grupos y opciones
     const r=parseMenu(txt);
     if(r.error)return{cats:[],count:0,skipped:[r.error]};
-    return{cats:r.menu.catalog.map(c=>({name:c.name,items:c.items.map(it=>({name:it.name,price:it.price,emoji:it.emoji}))})),count:r.count,skipped:[],name:r.menu.name};
+    return{menu:r.menu,cats:[],count:r.count,skipped:[],name:r.menu.name};
   }
   const cats=[],skipped=[];let cur=null,count=0;
   const push=(catName,name,price,emoji)=>{
@@ -436,6 +447,33 @@ function destFor(catalog,pathName){
   let g=t.items.find(x=>x.group&&canon(x.name)===canon(sub));
   if(!g){g={id:uid("g"),name:sub.slice(0,30),emoji:"",group:true,mix:null,items:[]};t.items.push(g)}
   return g;
+}
+function previewRows(r){
+  const out=[];
+  if(r.menu)r.menu.catalog.forEach(c=>walkNodes(c.items,(n,cc,p)=>{if(!n.group)out.push({cat:c.name+(p?" › "+p.name:""),name:n.name,price:n.price})},c,null));
+  else (r.cats||[]).forEach(c=>(c.items||[]).forEach(it=>out.push({cat:c.name,name:it.name,price:it.price})));
+  return out;
+}
+function nameExists(catalog,name){let hit=false;eachCatalog(catalog,n=>{if(!n.group&&canon(n.name)===canon(name))hit=true});return hit}
+function mergeCatalog(src){
+  let added=0,dup=0;
+  editMenu(m=>{
+    src.forEach(c=>{
+      const dest=destFor(m.catalog,c.name);
+      if(c.mix&&!dest.mix)dest.mix=cloneMix(c.mix);
+      (c.items||[]).forEach(n=>{
+        if(n.group){
+          let g=dest.items.find(x=>x.group&&canon(x.name)===canon(n.name));
+          if(!g){g={id:uid("g"),name:n.name,emoji:n.emoji||"",group:true,mix:cloneMix(n.mix),items:[]};dest.items.push(g)}
+          (n.items||[]).forEach(p=>{if(nameExists(m.catalog,p.name)){dup++;return}g.items.push(cloneNode(p));added++});
+        }else{
+          if(nameExists(m.catalog,n.name)){dup++;return}
+          dest.items.push(cloneNode(n));added++;
+        }
+      });
+    });
+  });
+  return{added,dup};
 }
 function catsToMenu(cats,name){
   const catalog=[];
@@ -482,9 +520,22 @@ function parseMix(txt){
   }).filter(o=>o.name);
   return options.length?{def:options[0].name,options}:null;
 }
+function mixOut(m){return m?{def:m.def||"",options:m.options.map(o=>({name:o.name,extra:o.extra||0}))}:null}
+function nodeOut(n){
+  return n.group
+    ?{name:n.name,emoji:n.emoji||"",group:true,mix:mixOut(n.mix),items:(n.items||[]).map(nodeOut)}
+    :{name:n.name,price:n.price,emoji:n.emoji||"",mix:mixOut(n.mix)};
+}
 function exportMenu(){
   const m=curMenu();
-  return JSON.stringify({ronda:1,name:m.name,catalog:m.catalog.map(c=>({name:c.name,color:c.color,items:c.items.map(it=>({name:it.name,price:it.price,emoji:it.emoji}))}))},null,1);
+  return JSON.stringify({ronda:2,name:m.name,catalog:m.catalog.map(c=>({name:c.name,color:c.color,mix:mixOut(c.mix),items:(c.items||[]).map(nodeOut)}))},null,1);
+}
+function nodeIn(o){
+  if(!o||!o.name)return null;
+  if(o.group||Array.isArray(o.items))
+    return{id:uid("g"),name:String(o.name).slice(0,30),emoji:String(o.emoji||"").slice(0,4),group:true,mix:normMix(o.mix),
+      items:(o.items||[]).map(nodeIn).filter(Boolean)};
+  return{id:uid("x"),name:String(o.name).slice(0,30),price:r2(Number(String(o.price).replace(",","."))||0),emoji:String(o.emoji||"").slice(0,4),mix:normMix(o.mix)};
 }
 function parseMenu(txt){
   let o;try{o=JSON.parse(txt)}catch(e){return{error:"No es un texto de carta válido (JSON)."}}
@@ -494,11 +545,10 @@ function parseMenu(txt){
   cats.forEach((c,i)=>{
     if(!c||!Array.isArray(c.items))return;
     catalog.push({id:uid("c"),name:String(c.name||"Categoría "+(i+1)).slice(0,30),color:c.color||PALETTE[catalog.length%PALETTE.length],
-      items:c.items.filter(it=>it&&it.name).map(it=>({id:uid("x"),name:String(it.name).slice(0,30),price:r2(Number(String(it.price).replace(",","."))||0),emoji:String(it.emoji||"").slice(0,4)}))});
+      mix:normMix(c.mix),items:c.items.map(nodeIn).filter(Boolean)});
   });
-  if(!catalog.length)return{error:"Las categorías no tienen bebidas."};
-  const n=catalog.reduce((a,c)=>a+c.items.length,0);
-  return{menu:{id:uid("m"),name:String((o&&o.name)||"Carta importada").slice(0,30),catalog},count:n};
+  if(!catalog.length)return{error:"Las categorías no tienen productos."};
+  return{menu:{id:uid("m"),name:String((o&&o.name)||"Carta importada").slice(0,30),catalog},count:countProducts(catalog)};
 }
 function flash(t){const el=$("#toast");el.textContent=t;el.classList.add("show");clearTimeout(flash.t);flash.t=setTimeout(()=>el.classList.remove("show"),2200)}
 function docRef(path){const a=path.split("/");return colRef(a[0]).doc(a[1])}
@@ -938,7 +988,7 @@ function vStats(){
 
 function vItemRow(it,used){
   const u=used.has(it.id);
-  return `<div class="set-row" data-key="${it.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}"${u?" disabled":""}><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div>`;
+  return `<div class="set-row" data-key="${it.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}"${u?" disabled":""}><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="editMix" data-id="${it.id}" title="Opciones propias">${it.mix?"🍹":"🍸"}</button><button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div>`;
 }
 function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
@@ -998,12 +1048,12 @@ function vImport(){
   h+=`<p class="note">Pega aquí una tabla copiada de Excel, Word, Google Sheets o un listado suelto. Vale casi cualquier forma: <b>Categoría · Producto · Precio</b>, <b>Producto · Precio</b>, o líneas tipo <b>Caña 2,50 €</b> con el nombre de la categoría en su propia línea.</p>`;
   h+=`<textarea id="impText" rows="8" placeholder="Cervezas&#10;Caña&#9;2,50&#10;Zurito&#9;1,80&#10;Vinos&#10;Tinto&#9;2,00">${esc(ui.impText||"")}</textarea>`;
   if(ui.impText&&ui.impText.trim()){
-    h+=`<p class="status">${r.count} producto${r.count===1?"":"s"} en ${r.cats.length} categoría${r.cats.length===1?"":"s"}${r.skipped.length?` · ${r.skipped.length} línea${r.skipped.length===1?"":"s"} sin entender`:""}</p>`;
+    const rows=previewRows(r),cats=new Set(rows.map(x=>x.cat.split(" › ")[0]));
+    h+=`<p class="status">${r.count} producto${r.count===1?"":"s"} en ${cats.size} categoría${cats.size===1?"":"s"}${r.menu?" · con grupos y opciones":""}${r.skipped.length?` · ${r.skipped.length} línea${r.skipped.length===1?"":"s"} sin entender`:""}</p>`;
     if(r.count){
       h+='<div class="card"><table><thead><tr><th>Categoría</th><th style="text-align:left">Producto</th><th>Precio</th></tr></thead><tbody>';
-      let n=0;
-      r.cats.forEach(c=>c.items.forEach(it=>{if(n++<15)h+=`<tr><td>${esc(c.name)}</td><td style="text-align:left">${esc(it.name)}</td><td>${eur(it.price)}</td></tr>`}));
-      h+='</tbody></table>'+(n>15?`<p class="note">… y ${n-15} más</p>`:"")+'</div>';
+      rows.slice(0,15).forEach(x=>{h+=`<tr><td>${esc(x.cat)}</td><td style="text-align:left">${esc(x.name)}</td><td>${eur(x.price)}</td></tr>`});
+      h+='</tbody></table>'+(rows.length>15?`<p class="note">… y ${rows.length-15} más</p>`:"")+'</div>';
       h+=`<button class="btn primary" data-act="impNew">Crear carta nueva con estos ${r.count}</button>`;
       h+=`<button class="btn" data-act="impMerge">Añadirlos a "${esc(curMenu().name)}"</button>`;
     }
@@ -1028,6 +1078,12 @@ function vMezclas(){
   const n=f.node,m=n.mix;
   let h=`<div class="pad-head"><h2>Opciones de ${esc(n.name)}</h2><button class="mini" data-act="tab" data-id="ajustes">← Volver</button></div>`;
   h+=`<p class="note">Arrastra por ⠿ para ordenarlas: el orden es el que verás al pedir. La marcada con ⭐ se aplica sola al apuntar; si no marcas ninguna, la bebida se apunta sin nada. El suplemento se suma al precio de esa consumición.</p>`;
+  if(!n.group&&!n.items){
+    const hereda=mixFrom(n.id);
+    if(m)h+=`<p class="status">Este producto tiene opciones propias, que anulan las de ${esc((IDX[n.id]&&IDX[n.id].parent&&IDX[n.id].parent.name)||(IDX[n.id]&&IDX[n.id].cat&&IDX[n.id].cat.name)||"su categoría")}.</p><button class="btn small" data-act="mixClear">↩ Quitar las propias y volver a heredar</button>`;
+    else if(hereda)h+=`<p class="status">Ahora hereda las opciones de <b>${esc(hereda)}</b>. Si añades alguna aquí, las heredadas dejarán de aplicarse a este producto.</p>`;
+    else h+=`<p class="status">Ni este producto ni su categoría tienen opciones.</p>`;
+  }
   if(m&&m.options.length){
     h+='<div class="card" data-droplist="mixopts:'+n.id+'">';
     m.options.forEach(o=>{
@@ -1309,7 +1365,7 @@ document.addEventListener("click",e=>{
       const r=parseTable(ui.impText||"");if(!r.count)return;
       const n=prompt("Nombre de la carta nueva:",r.name||("Carta "+(menus().length+1)));
       if(!n||!n.trim())return;
-      const m=catsToMenu(r.cats,n.trim());
+      const m=r.menu?Object.assign({},r.menu,{id:uid("m"),name:n.trim().slice(0,30)}):catsToMenu(r.cats,n.trim());
       ui.impText="";ui.path=[];ui.tab="ajustes";
       editConfig(c=>{c.menus.push(m);c.menu=m.id});
       flash(`Carta "${m.name}" creada con ${r.count} productos`);return;
@@ -1318,7 +1374,7 @@ document.addEventListener("click",e=>{
       const r=parseTable(ui.impText||"");if(!r.count)return;
       if(!confirm(`Se añadirán hasta ${r.count} productos a "${curMenu().name}". ¿Seguir?`))return;
       ui.impText="";ui.tab="ajustes";
-      const res=mergeCats(r.cats);
+      const res=r.menu?mergeCatalog(r.menu.catalog):mergeCats(r.cats);
       flash(`${res.added} añadidos${res.dup?` · ${res.dup} ya estaban`:""}`);return;
     }
     case"menuFromDefault":{
@@ -1371,6 +1427,11 @@ document.addEventListener("click",e=>{
         if(o&&canon(o.name)===canon(f.node.mix.def))f.node.mix.def="";
         if(!f.node.mix.options.length)f.node.mix=null;
       });return;
+    }
+    case"mixClear":{
+      if(!confirm("¿Quitar las opciones propias de este producto y volver a las de su categoría o grupo?"))return;
+      editMenu(m=>{const f=findNode(m.catalog,ui.mixFor);if(f)f.node.mix=null});
+      flash("Vuelve a heredar");return;
     }
     case"mixDef":{
       editMenu(m=>{
