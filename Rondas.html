@@ -239,11 +239,11 @@ function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(
 /* ===== Normalización (acepta datos de versiones anteriores) ===== */
 function defaults(){return{
   config:{people:DEFAULT_PEOPLE.map((n,i)=>({id:"p"+(i+1),name:n,paused:false})),
-          menus:[{id:"m1",name:"Carta principal",fromDefault:true,catalog:clone(DEFAULT_CATALOG)}],menu:"m1",assignerMode:"",pin:""},
+          menus:[{id:"m1",name:"Carta principal",fromDefault:true,catalog:normCatalog(clone(DEFAULT_CATALOG))}],menu:"m1",assignerMode:"",pin:""},
   current:{n:1,name:"",night:"",orders:{},delivered:{}},rounds:[]};}
 function normMix(m){
   if(!m)return null;
-  const opts=(Array.isArray(m.options)?m.options:[]).map(o=>typeof o==="string"?{name:o,extra:0}:{name:String(o&&o.name||""),extra:Number(o&&o.extra)||0}).filter(o=>o.name);
+  const opts=(Array.isArray(m.options)?m.options:[]).map(o=>typeof o==="string"?{id:uid("o"),name:o,extra:0}:{id:(o&&o.id)||uid("o"),name:String(o&&o.name||""),extra:Number(o&&o.extra)||0}).filter(o=>o.name);
   if(!opts.length)return null;
   return{def:typeof m.def==="string"?m.def:opts[0].name,options:opts};
 }
@@ -309,7 +309,7 @@ let netCache=false,netPending=false;
 let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -344,9 +344,10 @@ function extraOf(itemId,clar){
 }
 function priceWith(itemId,clar){const it=IDX[itemId];return r2((it?Number(it.price)||0:0)+extraOf(itemId,clar))}
 function groupUsed(node,used){let hit=false;walkNodes([node],n=>{if(!n.group&&used.has(n.id))hit=true});return hit}
+function cloneMix(m){return m?normMix({def:m.def,options:(m.options||[]).map(o=>({name:o.name,extra:o.extra}))}):null}
 function cloneNode(n){
   return n.group
-    ?{id:uid("g"),name:n.name,emoji:n.emoji,group:true,mix:n.mix?clone(n.mix):null,items:(n.items||[]).map(x=>({id:uid("x"),name:x.name,price:x.price,emoji:x.emoji}))}
+    ?{id:uid("g"),name:n.name,emoji:n.emoji,group:true,mix:cloneMix(n.mix),items:(n.items||[]).map(x=>({id:uid("x"),name:x.name,price:x.price,emoji:x.emoji}))}
     :{id:uid("x"),name:n.name,price:n.price,emoji:n.emoji};
 }
 const drinks=pid=>(S.current.orders&&S.current.orders[pid])||[];
@@ -364,7 +365,7 @@ const roundLabel=r=>"Ronda "+r.n+(r.name?" · "+r.name:"");
 function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>(o[k]||[]).forEach(x=>{if(x&&x.drink&&x.drink!=="nada")s.add(x.drink)}));add(S.current.orders);S.rounds.forEach(r=>add(r.orders));return s}
 function personUsed(pid){if(drinks(pid).length)return true;return S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid)}
 
-function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,mix:c.mix?clone(c.mix):null,items:(c.items||[]).map(cloneNode)}))}
+function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,mix:cloneMix(c.mix),items:(c.items||[]).map(cloneNode)}))}
 function countProducts(cat){let n=0;eachCatalog(cat,x=>{if(!x.group)n++});return n}
 function defaultNames(){const s=new Set();eachCatalog(DEFAULT_CATALOG,n=>{if(!n.group)s.add(canon(n.name))});return s}
 function hasDefaultMenu(){
@@ -469,6 +470,7 @@ function commitOrder(kind,ids){
   const by=(a,b)=>ids.indexOf(a.id)-ids.indexOf(b.id);
   if(kind==="people")editConfig(c=>{c.people.sort(by)});
   else if(kind==="cats")editMenu(m=>{m.catalog.sort(by)});
+  else if(kind.indexOf("mixopts:")===0){const nid=kind.slice(8);editMenu(m=>{const f=findNode(m.catalog,nid);if(f&&f.node.mix)f.node.mix.options.sort(by)})}
   else if(kind.indexOf("nodes:")===0){const cid=kind.slice(6);editMenu(m=>{const f=findNode(m.catalog,cid);if(f&&f.node.items)f.node.items.sort(by)})}
 }
 function parseMix(txt){
@@ -476,7 +478,7 @@ function parseMix(txt){
   if(!parts.length)return null;
   const options=parts.map(p=>{
     const m=p.match(/^(.*?)\s*\+\s*([\d.,]+)\s*\u20ac?$/);
-    return m?{name:m[1].trim().slice(0,30),extra:r2(parseFloat(m[2].replace(",","."))||0)}:{name:p.slice(0,30),extra:0};
+    return m?{id:uid("o"),name:m[1].trim().slice(0,30),extra:r2(parseFloat(m[2].replace(",","."))||0)}:{id:uid("o"),name:p.slice(0,30),extra:0};
   }).filter(o=>o.name);
   return options.length?{def:options[0].name,options}:null;
 }
@@ -1020,7 +1022,25 @@ function vSala(){
     <section class="card"><h2>¿Administras la app?</h2><p class="note">Crear salas nuevas requiere la contraseña de administrador.</p>
     <button class="btn small" data-act="salaNew">+ Crear una sala</button></section>`;
 }
-const VIEWS={sala:vSala,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
+function vMezclas(){
+  const f=findNode(catalog(),ui.mixFor);
+  if(!f)return`<p class="hint">No encuentro ese grupo.</p><button class="btn" data-act="tab" data-id="ajustes">← Volver a Ajustes</button>`;
+  const n=f.node,m=n.mix;
+  let h=`<div class="pad-head"><h2>Opciones de ${esc(n.name)}</h2><button class="mini" data-act="tab" data-id="ajustes">← Volver</button></div>`;
+  h+=`<p class="note">Arrastra por ⠿ para ordenarlas: el orden es el que verás al pedir. La marcada con ⭐ se aplica sola al apuntar; si no marcas ninguna, la bebida se apunta sin nada. El suplemento se suma al precio de esa consumición.</p>`;
+  if(m&&m.options.length){
+    h+='<div class="card" data-droplist="mixopts:'+n.id+'">';
+    m.options.forEach(o=>{
+      const def=canon(o.name)===canon(m.def||"");
+      h+=`<div class="set-row" data-key="${o.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><button class="x" data-act="mixDef" data-id="${o.id}" title="Por defecto">${def?"⭐":"☆"}</button><input type="text" value="${esc(o.name)}" data-mixname="${n.id}|${o.id}"><input class="price" type="number" step="0.05" inputmode="decimal" value="${o.extra||0}" data-mixextra="${n.id}|${o.id}"> €<button class="x" data-act="mixDel" data-id="${o.id}" aria-label="Borrar">×</button></div>`;
+    });
+    h+='</div>';
+  }else h+=`<p class="hint">Sin opciones todavía.</p>`;
+  h+=`<button class="btn" data-act="mixAdd">+ Añadir opción</button>`;
+  h+=`<p class="note">Por defecto ahora: <b>${m&&m.def?esc(m.def):"ninguna"}</b></p>`;
+  return h;
+}
+const VIEWS={sala:vSala,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 const sheet=inner=>`<div class="modal" data-act="modalClose"><div class="sheet" data-act="noop">${inner}</div></div>`;
 function vModal(){
@@ -1239,7 +1259,7 @@ document.addEventListener("click",e=>{
     case"menuPick":if(id!==S.config.menu)editConfig(c=>{c.menu=id});ui.path=[];return;
     case"menuDup":{
       const n=prompt("Nombre de la copia:",curMenu().name+" (copia)");if(!n||!n.trim())return;
-      const copy={id:uid("m"),name:n.trim().slice(0,30),catalog:catalog().map(c=>({id:uid("c"),name:c.name,color:c.color,items:c.items.map(it=>({id:uid("x"),name:it.name,price:it.price,emoji:it.emoji}))}))};
+      const copy={id:uid("m"),name:n.trim().slice(0,30),catalog:freshCatalog(catalog())};
       editConfig(c=>{c.menus.push(copy);c.menu=copy.id});flash("Carta duplicada");return;
     }
     case"menuNew":{
@@ -1333,19 +1353,37 @@ document.addEventListener("click",e=>{
       editMenu(m=>{const f=findNode(m.catalog,id);if(f)f.node.items.push({id:uid("g"),name:n.trim().slice(0,30),emoji:"",group:true,mix:parseMix(mix),items:[]})});
       flash("Subgrupo creado");return;
     }
-    case"editMix":{
-      const f=findNode(catalog(),id);if(!f||!f.node.items)return;
-      const cur=f.node.mix?f.node.mix.options.map(o=>o.name+(o.extra?" +"+String(o.extra).replace(".",","):"")).join(", "):"";
-      const v=prompt('Mezclas de "'+f.node.name+'", separadas por coma. La primera es la de por defecto. Añade "+1" para suplemento. Vacío = sin mezcla:',cur);
-      if(v===null)return;
-      editMenu(m=>{const g=findNode(m.catalog,id);if(g)g.node.mix=parseMix(v)});
-      flash(v.trim()?"Mezclas guardadas":"Mezclas quitadas");return;
+    case"editMix":ui.mixFor=id;ui.tab="mezclas";window.scrollTo(0,0);break;
+    case"mixAdd":{
+      const n=prompt("Nombre de la opción (p. ej. con naranja):");if(!n||!n.trim())return;
+      const ex=parseFloat(String(prompt("Suplemento en € (0 si no encarece):","0")||"0").replace(",","."))||0;
+      editMenu(m=>{
+        const f=findNode(m.catalog,ui.mixFor);if(!f)return;
+        if(!f.node.mix)f.node.mix={def:"",options:[]};
+        f.node.mix.options.push({id:uid("o"),name:n.trim().slice(0,30),extra:r2(ex)});
+      });return;
+    }
+    case"mixDel":{
+      editMenu(m=>{
+        const f=findNode(m.catalog,ui.mixFor);if(!f||!f.node.mix)return;
+        const o=f.node.mix.options.find(x=>x.id===id);
+        f.node.mix.options=f.node.mix.options.filter(x=>x.id!==id);
+        if(o&&canon(o.name)===canon(f.node.mix.def))f.node.mix.def="";
+        if(!f.node.mix.options.length)f.node.mix=null;
+      });return;
+    }
+    case"mixDef":{
+      editMenu(m=>{
+        const f=findNode(m.catalog,ui.mixFor);if(!f||!f.node.mix)return;
+        const o=f.node.mix.options.find(x=>x.id===id);
+        f.node.mix.def=(o&&canon(o.name)!==canon(f.node.mix.def))?o.name:"";
+      });return;
     }
     case"dupCat":{
       const cat=catalog().find(c=>c.id===id);if(!cat)return;
       const n=prompt("Nombre de la copia:",cat.name+" (copia)");if(!n||!n.trim())return;
       const usedCol=catalog().map(c=>c.color),col=PALETTE.find(x=>!usedCol.includes(x))||cat.color;
-      editMenu(m=>{m.catalog.push({id:uid("c"),name:n.trim().slice(0,30),color:col,items:(cat.items||[]).map(cloneNode)})});
+      editMenu(m=>{m.catalog.push({id:uid("c"),name:n.trim().slice(0,30),color:col,mix:cloneMix(cat.mix),items:(cat.items||[]).map(cloneNode)})});
       flash("Categoría duplicada");return;
     }
     case"rmCat":{
@@ -1437,6 +1475,20 @@ document.addEventListener("change",e=>{
   if(t.dataset.gidx){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;const g=GROUPS[parseInt(t.dataset.gidx,10)];if(g)setGroupPrice(g.items,v);render(true);return}
   if(t.dataset.price){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;editConfig(c=>{c.menus.forEach(m=>{const f=findNode(m.catalog,t.dataset.price);if(f)f.node.price=r2(v)})});return}
   if(t.dataset.pname){const v=t.value.trim();if(!v)return;editConfig(c=>{c.people.forEach(p=>{if(p.id===t.dataset.pname)p.name=v.slice(0,24)})});return}
+  if(t.dataset.mixname){
+    const [nid,oid]=t.dataset.mixname.split("|");const v=t.value.trim();if(!v)return;
+    editMenu(m=>{const f=findNode(m.catalog,nid);if(!f||!f.node.mix)return;
+      const o=f.node.mix.options.find(x=>x.id===oid);if(!o)return;
+      if(canon(o.name)===canon(f.node.mix.def))f.node.mix.def=v.slice(0,30);
+      o.name=v.slice(0,30);});
+    return;
+  }
+  if(t.dataset.mixextra){
+    const [nid,oid]=t.dataset.mixextra.split("|");const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;
+    editMenu(m=>{const f=findNode(m.catalog,nid);if(!f||!f.node.mix)return;
+      const o=f.node.mix.options.find(x=>x.id===oid);if(o)o.extra=r2(v);});
+    return;
+  }
   if(t.dataset.cname){const v=t.value.trim();if(!v)return;editMenu(m=>{const f=findNode(m.catalog,t.dataset.cname);if(f)f.node.name=v.slice(0,30)});return}
   if(t.dataset.iemoji){const v=t.value.trim().slice(0,4);editMenu(m=>{const f=findNode(m.catalog,t.dataset.iemoji);if(f)f.node.emoji=v});return}
   if(t.dataset.iname){const v=t.value.trim();if(!v)return;editMenu(m=>{const f=findNode(m.catalog,t.dataset.iname);if(f)f.node.name=v.slice(0,30)});return}
