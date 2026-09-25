@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MiContabilidad</title>
+<title>Zenba</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -55,6 +55,17 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;col
 #hdr{background:var(--wine);height:38px;display:flex;align-items:center;padding:0 8px;gap:3px;position:relative;user-select:none;flex-shrink:0}
 #logo{color:#fff;font-size:17px;font-weight:700;margin-right:6px;letter-spacing:-.5px}
 #logo .o{color:#FF7BAC}
+#conta-hdr{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;font-size:12px;font-weight:600;padding:3px 9px;border-radius:12px;cursor:pointer;margin-right:6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#conta-hdr:hover{background:rgba(255,255,255,.28)}
+body.local .mi.dbx{display:none}
+body:not(.local) .mi.loc{display:none}
+.ct-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #EEE;cursor:pointer;font-size:13px}
+.ct-item:hover{background:#F5F5F5}
+.ct-item.act{background:#FBEFF3;font-weight:700;cursor:default}
+.ct-item .ct-f{margin-left:auto;font-size:10.5px;color:#999;font-weight:400;white-space:nowrap}
+.ct-sec{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 4px}
+.ct-box{max-height:220px;overflow-y:auto;border:1px solid #DDD;border-radius:3px}
+.ct-vacio{padding:10px;font-size:12px;color:#888}
 .tab{background:rgba(0,0,0,.25);color:#fff;border:none;padding:0 9px;cursor:pointer;border-radius:3px;font-size:11.5px;height:27px;display:flex;align-items:center;gap:5px;white-space:nowrap}
 .tab:hover{background:var(--wine-light)}
 .tab.active{background:var(--wine-light);box-shadow:inset 0 -2px 0 rgba(255,255,255,.3)}
@@ -285,6 +296,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   .logo{font-size:16px;padding:6px 4px}
   .tab{padding:6px 8px;font-size:11px}
   .tab svg{display:none}             /* ocultar iconos SVG de tabs */
+  .tab.dim{display:none}             /* pestañas sin función: sin ellas cabe el menú ≡ */
+  #conta-hdr{flex-shrink:0;max-width:120px}
   #hmenu-btn{display:none}           /* menú hamburguesa no necesario */
 
   /* Layout: apilar paneles verticalmente pero mostrar solo uno */
@@ -362,15 +375,15 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
 <!-- CONNECT SCREEN -->
 <div id="connect-screen">
   <div class="connect-box">
-    <div class="logo">X<span>o</span>pard</div>
+    <div class="logo">Zenb<span>a</span></div>
     <p>Tu contabilidad personal.<br>Conéctate con Dropbox para cargar tus datos.</p>
     <button class="btn-dropbox" onclick="startOAuth()">
       <svg viewBox="0 0 24 24"><path d="M6 2L0 6l6 4-6 4 6 4 6-4-6-4 6-4zm12 0l-6 4 6 4-6 4 6 4 6-4-6-4 6-4zM6 18.5L12 15l6 3.5L12 22z"/></svg>
       Conectar con Dropbox
     </button>
     <p class="connect-note">Solo se pide una vez.<br>Tus datos nunca salen de tu Dropbox.</p>
-    <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.25)">
-      <button onclick="openLocalCsv()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:5px;padding:9px 16px;font-size:13px;cursor:pointer">
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid #EEE">
+      <button onclick="openLocalCsv()" style="background:#fff;color:var(--wine);border:1px solid var(--wine);border-radius:5px;padding:9px 16px;font-size:13px;cursor:pointer">
         📂 Abrir un CSV del disco
       </button>
       <p class="connect-note" id="local-note" style="margin-top:8px">Modo local: sin Dropbox, guardas descargando el fichero.</p>
@@ -386,7 +399,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
 
 <!-- HEADER -->
 <div id="hdr">
-  <div id="logo">X<span class="o">o</span>pard</div>
+  <div id="logo">Zenb<span class="o">a</span></div>
+  <button id="conta-hdr" onclick="mostrarContas()" title="Contabilidad abierta · clic para cambiar, renombrar o importar">—</button>
   <button class="tab active" onclick="switchTab('cuentas',this)">🏠 CUENTAS</button>
   <button class="tab" onclick="switchTab('cuadro',this)">⊞ CUADRO</button>
   <button class="tab dim">📅 AGENDA</button>
@@ -397,17 +411,19 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     <div class="mi off" id="menu-undo">↩ Deshacer</div>
     <div class="mi off" id="menu-redo">↪ Rehacer</div>
     <div class="msep"></div>
-    <div class="mi" onclick="loadFromDropbox()">↓ Recargar desde Dropbox</div>
-    <div class="mi" onclick="saveToDropbox()">↑ Guardar en Dropbox (Ctrl+S)</div>
+    <div class="mi" onclick="mostrarContas()">📒 Contabilidades: cambiar, renombrar, importar…</div>
     <div class="msep"></div>
-    <div class="mi" onclick="openLocalCsv()">📂 Abrir CSV del disco (modo local)</div>
-    <div class="mi" onclick="saveLocalCsv()">⬇️ Guardar CSV en el disco</div>
+    <div class="mi dbx" onclick="saveToDropbox()">↑ Guardar en Dropbox (Ctrl+S)</div>
+    <div class="mi dbx" onclick="loadFromDropbox()">↓ Recargar desde Dropbox</div>
+    <div class="mi loc" onclick="saveLocalCsv()">⬇️ Guardar CSV en el disco (Ctrl+S)</div>
+    <div class="mi loc" onclick="openLocalCsv()">📂 Abrir otro CSV del disco</div>
     <div class="mi" onclick="downloadBackup()">💾 Descargar copia de seguridad</div>
-    <div class="mi" onclick="restoreBackup()">📂 Restaurar copia de seguridad…</div>
     <div class="msep"></div>
-    <div class="mi" onclick="disconnect()">🔌 Desconectar Dropbox</div>
+    <div class="mi dbx" onclick="openLocalCsv()">💻 Trabajar sin Dropbox (CSV del disco)</div>
+    <div class="mi dbx" onclick="disconnect()">🔌 Desconectar Dropbox</div>
+    <div class="mi loc" onclick="volverDropbox()">☁️ Volver a Dropbox</div>
     <div class="msep"></div>
-    <div class="mi" onclick="about()">Acerca de MiContabilidad</div>
+    <div class="mi" onclick="about()">Acerca de Zenba</div>
   </div>
 </div>
 
@@ -856,6 +872,23 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
   </div>
 
+  <!-- MODAL: Contabilidades -->
+  <div id="mdl-contas" class="modal" style="display:none;max-width:480px">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <h3>Contabilidades</h3>
+    <div id="ct-aviso" style="display:none;white-space:pre-line;font-size:12.5px;color:#555;background:#FFF8E1;border:1px solid #F0DC9A;border-radius:3px;padding:8px 10px;margin-bottom:8px"></div>
+    <div class="ct-sec" style="margin-top:0">Abrir <span style="text-transform:none;letter-spacing:0">— ficheros Zenba_*.csv</span></div>
+    <div id="ct-lista" class="ct-box"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="ct-btn-ren" onclick="renombrarConta()" style="font-size:12px;padding:4px 10px;border:1px solid #BBB;border-radius:3px;background:#fff;cursor:pointer">✏️ Renombrar la abierta…</button>
+    </div>
+    <div class="ct-sec">Importar <span style="text-transform:none;letter-spacing:0">— se guarda una copia como Zenba_&lt;nombre&gt;.csv; el original no se toca</span></div>
+    <div id="ct-otros" class="ct-box"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button onclick="importarDelDisco()" style="font-size:12px;padding:4px 10px;border:1px solid #BBB;border-radius:3px;background:#fff;cursor:pointer">📂 Importar un CSV del disco…</button>
+    </div>
+  </div>
+
   <!-- MODAL: Confirmación simple -->
   <div id="mdl-info" class="modal" style="display:none;max-width:360px;text-align:center">
     <p id="mdl-info-msg" style="font-size:15px;margin:10px 0 20px"></p>
@@ -879,7 +912,9 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
 // ── CONSTANTES ─────────────────────────────────────────────
 const APP_KEY     = '8kfvw1y7s2mhgd2';
 const REDIRECT    = 'https://xopard.github.io/MiContabilidad.html';
-const DBX_PATH    = '/Aplicaciones/Contabilidad Claude/Xopard.csv';
+const DBX_DIR     = '/Aplicaciones/Contabilidad Claude';
+// Todo lo que guarda la app lleva este prefijo: así se sabe que el fichero lo escribió Zenba y no Xopard
+const PREFIJO     = 'Zenba_';
 
 const $ = id => document.getElementById(id);
 
@@ -990,7 +1025,7 @@ function disconnect(){
 }
 
 // ── DROPBOX API ─────────────────────────────────────────────
-async function dbxDownload(path=DBX_PATH){
+async function dbxDownload(path){
   const res=await fetch('https://content.dropboxapi.com/2/files/download',{
     method:'POST',
     headers:{'Authorization':'Bearer '+S.token,'Dropbox-API-Arg':JSON.stringify({path})}
@@ -1001,7 +1036,7 @@ async function dbxDownload(path=DBX_PATH){
   return await res.text();
 }
 
-async function dbxUpload(content,path=DBX_PATH){
+async function dbxUpload(content,path){
   const res=await fetch('https://content.dropboxapi.com/2/files/upload',{
     method:'POST',
     headers:{
@@ -1013,6 +1048,23 @@ async function dbxUpload(content,path=DBX_PATH){
   });
   if(res.status===401)throw new Error('TOKEN_EXPIRED');
   if(!res.ok)throw new Error('upload_'+res.status);
+  return await res.json();
+}
+
+// Llamadas de la API que no son descarga ni subida (listar carpeta, renombrar)
+async function dbxApi(endpoint,args){
+  const res=await fetch('https://api.dropboxapi.com/2/'+endpoint,{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+S.token,'Content-Type':'application/json'},
+    body:JSON.stringify(args)
+  });
+  if(!res.ok){
+    let t=''; try{ t=await res.text(); }catch(e){}
+    if(t.includes('missing_scope')) throw new Error('FALTA_PERMISO');
+    if(res.status===401) throw new Error('TOKEN_EXPIRED');
+    const err=new Error(endpoint+'_'+res.status); err.status=res.status; err.detalle=t;
+    throw err;
+  }
   return await res.json();
 }
 
@@ -1031,37 +1083,35 @@ async function callDropbox(fn){
 }
 
 // ── LOAD / SAVE ─────────────────────────────────────────────
+// Recargar la contabilidad abierta (descarta lo no guardado, como antes)
 async function loadFromDropbox(){
   closeMenu();
-  showLoading('Cargando datos desde Dropbox…');
-  try{
-    const csv=await callDropbox(()=>dbxDownload());
-    parseCSV(csv);
-    const h=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-    setStatus('Dropbox ✓ · '+h);
-    toast('Datos cargados ✓');
-    hideLoading();
-    await grpAfterLoad();
-  }catch(e){
-    toast('Error: '+e.message,5000);
-  }finally{hideLoading();}
+  if(!CONTA.nombre){ return entrarDropbox(); }
+  await abrirConta(CONTA.nombre,{sinPreguntar:true});
 }
 
-async function saveToDropbox(){
-  if(mobilePending()) return; // en móvil: marcar pendiente, no guardar aún
+// forzar: guardar ya aunque sea móvil (lo usa el botón de guardar y el cambio de contabilidad)
+async function saveToDropbox(forzar){
+  if(!forzar&&mobilePending()) return false; // en móvil: marcar pendiente, no guardar aún
   closeMenu();
-  if(!S.accs.length){toast('Sin datos');return;}
-  showLoading('Guardando en Dropbox…');
+  if(LOCAL.active){ saveLocalCsv(); return true; }
+  if(!S.accs.length){toast('Sin datos');return false;}
+  // Salvaguarda: solo se escribe en ficheros Zenba_ de la carpeta, nunca en uno de Xopard
+  if(!CONTA.path||!CONTA.path.startsWith(DBX_DIR+'/'+PREFIJO)){toast('No hay ninguna contabilidad abierta');return false;}
+  showLoading('Guardando '+CONTA.nombre+' en Dropbox…');
   try{
-    await callDropbox(()=>dbxUpload(genCSV()));
-    const h=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-    setStatus('Dropbox ✓ · Guardado: '+h);
+    await callDropbox(()=>dbxUpload(genCSV(),CONTA.path));
+    setStatus('Dropbox ✓ · '+CONTA.nombre+' · guardado '+hora());
+    _mobilePending=false; markPending(false);
     toast('Guardado ✓');
     await grpCopySave(true);
+    return true;
   }catch(e){
     toast('Error al guardar: '+e.message,5000);
+    return false;
   }finally{hideLoading();}
 }
+function hora(){return new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}
 
 // ── CSV ─────────────────────────────────────────────────────
 function parseCSV(txt){
@@ -1333,6 +1383,11 @@ function _undoRestore(snap) {
   S.movs = snap.movs;
   S.accs = snap.accs;
   if (snap.order) S.displayOrder = snap.order;
+  // El plegado del cuadro (campo 4) no se deshace: se conserva el actual
+  if (snap.cats) {
+    const exp = new Map(S.cats.map(c => [c.id + '|' + c.name, c.expanded]));
+    for (const c of snap.cats) { const k = c.id + '|' + c.name; if (exp.has(k)) c.expanded = exp.get(k); }
+  }
   if (snap.cats && JSON.stringify(snap.cats) !== JSON.stringify(S.cats)) {
     S.cats = snap.cats;
     updatePendingCi();
@@ -2011,7 +2066,7 @@ function _renderChartFromDaily(daily){
 // ── MODALS ───────────────────────────────────────────────────
 function showModal(id){
   $('overlay').classList.add('show');
-  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search','mdl-export','mdl-grupos'].forEach(m=>$(m).style.display='none');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search','mdl-export','mdl-grupos','mdl-contas'].forEach(m=>$(m).style.display='none');
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
@@ -2249,6 +2304,12 @@ function saveAcc(){
     c10: tipo==='4' ? ($('fa-cargo').value||'1')    : (orig?orig.c10:'1'),
     grupo: $('fa-grupo').value.trim()
   };
+  if(S.editAcc<0){
+    // La cuenta nueva ocupa la posición siguiente: si hay movimientos sin cuenta que apuntan ahí, pasarían a ella
+    const heredados=S.movs.filter(m=>m.ai===S.accs.length);
+    if(heredados.length&&!confirm(heredados.length+(heredados.length>1?' movimientos sin cuenta (restos de una cuenta que borró Xopard) pasarán':' movimiento sin cuenta (resto de una cuenta que borró Xopard) pasará')+' a la cuenta nueva «'+acc.name+'»:\n\n'+
+      heredados.slice(0,5).map(m=>'  '+m.date+'  '+m.concept+'  '+fmtAmt(m.amount)).join('\n')+(heredados.length>5?'\n  …':'')+'\n\n¿Crear la cuenta igualmente?')) return;
+  }
   saveUndo(S.editAcc>=0 ? 'Cuenta editada: '+acc.name : 'Cuenta añadida: '+acc.name);
   if(S.editAcc>=0)S.accs[S.editAcc]=acc;
   else{S.accs.push(acc);S.displayOrder.push(S.accs.length-1);}
@@ -2409,7 +2470,7 @@ function downloadBackup() {
   const dd = String(d.getDate()).padStart(2,'0');
   const mm = String(d.getMonth()+1).padStart(2,'0');
   const yyyy = d.getFullYear();
-  const name = `MiContabilidad_Backup_(${dd}_${mm}_${yyyy}).csv`;
+  const name = `${PREFIJO}${CONTA.nombre||'sin_nombre'}_Backup_(${dd}_${mm}_${yyyy}).csv`;
   const blob = new Blob([genCSV()], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2420,39 +2481,7 @@ function downloadBackup() {
   toast('Copia descargada: ' + name);
 }
 
-function restoreBackup() {
-  closeMenu();
-  if (!confirm('¿Restaurar una copia de seguridad?\n\nEsto sobreescribirá los datos actuales en Dropbox con el fichero que selecciones.')) return;
-  const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = '.csv'; inp.style.display = 'none';
-  document.body.appendChild(inp);
-  inp.onchange = async () => {
-    if (!inp.files[0]) { document.body.removeChild(inp); return; }
-    const file = inp.files[0];
-    document.body.removeChild(inp);
-    showLoading('Restaurando copia de seguridad…');
-    try {
-      const text = await file.text();
-      parseCSV(text);
-      await grpAfterLoad(false);
-      if(LOCAL.active){
-        LOCAL.name=file.name;
-        setStatus('Modo local · '+file.name);
-        toast('Copia cargada (modo local) ✓');
-        return;
-      }
-      await callDropbox(() => dbxUpload(genCSV()));
-      const h = new Date().toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
-      setStatus('Dropbox ✓ · Restaurado: ' + h);
-      toast('Copia restaurada en Dropbox ✓');
-    } catch(e) {
-      alert('Error al restaurar: ' + (e.message || e));
-    } finally {
-      hideLoading();
-    }
-  };
-  inp.click();
-}
+// Restaurar una copia = importarla con el nombre de la contabilidad (ver importarDelDisco)
 
 // ── AUTO-CATEGORIZACIÓN ─────────────────────────────────────
 
@@ -2958,7 +2987,7 @@ function dateToPeriod(date) {
   const p = date.split('-');
   return p[1]+'-'+p[2]; // "MM-YY"
 }
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();saveToDropbox();}if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undo();}if((e.ctrlKey||e.metaKey)&&e.key==='y'){e.preventDefault();redo();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();if(LOCAL.active)saveLocalCsv();else saveToDropbox();}if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undo();}if((e.ctrlKey||e.metaKey)&&e.key==='y'){e.preventDefault();redo();}});
 document.addEventListener('click',e=>{if(!$('dropmenu').contains(e.target)&&e.target!==$('hambtn'))closeMenu();});
 window.addEventListener('resize',()=>{if(S.selAcc>=0)renderChart(S.selAcc);});
 
@@ -2970,7 +2999,7 @@ function deferredSave() {
   if(mobilePending()) return; // en móvil: marcar pendiente
   setStatus('Pendiente de guardar…');
   clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(() => saveToDropbox(), 2500);
+  _saveTimer = setTimeout(() => { _saveTimer = null; saveToDropbox(); }, 2500);
 }
 
 
@@ -3078,7 +3107,7 @@ const CU={tree:null,sums:null,selCat:-1,selPeriod:null,selIsYear:false,expYears:
 
 function cuInit(){
   if(!S.cats.length)return;
-  if(!CU.tree)CU.tree=cuBuildTree();
+  if(!CU.tree){CU.tree=cuBuildTree();cuSyncCollapsed();}
   if(!CU.sums)CU.sums=cuBuildSums();
   if(!CU.expYears)CU.expYears=new Set([new Date().getFullYear()]);
   cuRender();
@@ -3608,11 +3637,19 @@ function cuSelCat(ci){
   cuRender(); cuRenderMovs(); cuRenderBar();
 }
 
+// El plegado del cuadro es el campo 4 de la categoría (t = desplegada), el mismo que
+// usa Xopard en su pestaña Cuadro (verificado): se lee al abrir y se guarda al cambiarlo
+function cuSyncCollapsed(){
+  CU.collapsedCats=new Set(S.cats.map((c,i)=>c.expanded?-1:i).filter(i=>i>=0));
+}
 function cuToggleCat(ci){
   if(!CU.tree||!CU.tree.children[ci]||!CU.tree.children[ci].length)return;
-  if(CU.collapsedCats.has(ci))CU.collapsedCats.delete(ci);
-  else CU.collapsedCats.add(ci);
+  const plegar=!CU.collapsedCats.has(ci);
+  if(plegar)CU.collapsedCats.add(ci);
+  else CU.collapsedCats.delete(ci);
+  S.cats[ci].expanded=!plegar;
   cuRender();
+  deferredSave();
 }
 
 // ── EXPORTACIÓN CSV ──────────────────────────────────────────
@@ -4009,22 +4046,365 @@ window.addEventListener('popstate',()=>{
 });
 
 // ── VERSIÓN ──────────────────────────────────────────────────
-const APP_VERSION='028';
+const APP_VERSION='030';
 
 function about(){
   closeMenu();
   const n=S.accs.length, m=S.movs.length, k=S.cats.length;
   $('mdl-info-msg').innerHTML=
-    '<b style="font-size:17px">MiContabilidad</b><br>'+
-    '<span style="color:#777">versión '+APP_VERSION+'</span><br><br>'+
+    '<b style="font-size:17px">Zenba</b><br>'+
+    '<span style="color:#777">versión '+APP_VERSION+'</span><br>'+
+    '<span style="font-size:11px;color:#999">antes MiContabilidad</span><br><br>'+
     'Compatible con el CSV de Xopard.<br>'+
+    (CONTA.nombre?('<br><b>'+escHtml(CONTA.nombre)+'</b>'):'')+
     (S.accs.length?('<br>'+k+' categorías · '+n+' cuentas · '+m.toLocaleString('es-ES')+' movimientos<br>'):'')+
-    '<span style="font-size:11px;color:#999">'+(LOCAL.active?('Modo local · '+LOCAL.name):'Dropbox')+'</span>';
+    '<span style="font-size:11px;color:#999">'+(LOCAL.active?('Modo local · '+escHtml(LOCAL.name)):escHtml(CONTA.path||'Dropbox'))+'</span>';
   showModal('mdl-info');
+}
+function escHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+// ── CONTABILIDADES ───────────────────────────────────────────
+// Cada fichero Zenba_<nombre>.csv de la carpeta de Dropbox es una contabilidad, y su
+// nombre es lo que va detrás del prefijo. Los demás CSV (Xopard.csv, copias...) no se
+// listan como contabilidades: se pueden importar, que guarda una copia Zenba_ y deja el
+// original como estaba. La app nunca escribe un fichero que no empiece por Zenba_.
+const CONTA = { nombre:'', path:'' };
+const LS_CONTA = 'conta_actual';
+
+function contaPath(n){ return DBX_DIR+'/'+PREFIJO+n+'.csv'; }
+function esConta(fname){ return fname.toLowerCase().startsWith(PREFIJO.toLowerCase())&&/\.csv$/i.test(fname); }
+// Nombre a partir de un fichero: sin .csv, sin el " (1)" de las descargas repetidas y sin el prefijo
+function nombreDeFichero(fname){
+  let n=(fname||'').replace(/\.csv$/i,'').replace(/ \(\d+\)$/,'');
+  if(n.toLowerCase().startsWith(PREFIJO.toLowerCase())) n=n.slice(PREFIJO.length);
+  return n.trim();
+}
+function errorNombre(n){
+  if(!n) return 'Escribe un nombre.';
+  if(/[\\/:*?"<>|]/.test(n)) return 'El nombre no puede llevar ninguno de estos caracteres: \\ / : * ? " < > |';
+  if(n.length>60) return 'El nombre es demasiado largo (máximo 60 caracteres).';
+  if(/[. ]$/.test(n)) return 'El nombre no puede terminar en punto ni en espacio.';
+  return '';
+}
+// Pide un nombre válido; null si se cancela
+function pedirNombre(msg,sugerido){
+  let n=sugerido||'';
+  for(;;){
+    const r=prompt(msg,n);
+    if(r===null) return null;
+    n=r.trim();
+    const err=errorNombre(n);
+    if(!err) return n;
+    alert(err);
+  }
+}
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+
+function fijarConta(nombre,path){
+  CONTA.nombre=nombre; CONTA.path=path;
+  _grpUploaded=null;
+  if(path) lsSet(LS_CONTA,nombre);
+  if(LOCAL.active) LOCAL.name=PREFIJO+nombre+'.csv';
+  const b=$('conta-hdr'); if(b){ b.textContent=nombre||'—'; }
+  document.title=nombre?('Zenba · '+nombre):'Zenba';
+}
+
+// Comprueba la estructura de un CSV de Xopard sin tocar los datos abiertos.
+// Devuelve {cats,accs,movs} o {error}
+function revisarCSV(txt){
+  const L=String(txt||'').replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  let p=1;
+  const num=()=>{ const v=(L[p++]||'').trim(); return /^\d+$/.test(v)?parseInt(v):NaN; };
+  const bloque=(n,campos,que)=>{
+    for(let i=0;i<n;i++){ const l=L[p++]; if(l===undefined) return 'el fichero está cortado'; if(l.split(';').length<campos) return que+' '+(i+1)+' incompleta'; }
+    return '';
+  };
+  const nc=num(); if(isNaN(nc)||nc<1) return {error:'no empieza como un fichero de Xopard (falta el número de categorías)'};
+  let e=bloque(nc,5,'categoría'); if(e) return {error:e};
+  const na=num(); if(isNaN(na)) return {error:'falta el número de cuentas'};
+  e=bloque(na,10,'cuenta'); if(e) return {error:e};
+  const ne=num(); if(isNaN(ne)) return {error:'falta el número de avisos'};
+  p+=ne; p++; // avisos y la línea que los sigue: se copian tal cual
+  const nm=num(); if(isNaN(nm)) return {error:'falta el número de movimientos'};
+  e=bloque(nm,10,'línea de movimiento'); if(e) return {error:e};
+  if(p>=L.length) return {error:'el fichero está cortado (faltan las líneas finales)'};
+  return {cats:nc,accs:na,movs:nm};
+}
+
+// Carga un texto ya revisado como contabilidad abierta: empieza de cero
+// (sin deshacer, sin guardados pendientes, sin selecciones de la anterior)
+function cargarTexto(txt){
+  clearTimeout(_saveTimer); _saveTimer=null;
+  _mobilePending=false; markPending(false);
+  UNDO.stack=[]; UNDO.redo=[]; updateUndoMenu();
+  S.chartGroup=null; S.selGroup=null; S.selMovs.clear(); S.lastMovClick=-1;
+  CU.tree=null; CU.sums=null; CU.selCat=-1; CU.selPeriod=null; CU.selMovOi=-1; CU.collapsedCats=new Set();
+  parseCSV(txt);
+  setTimeout(avisarHuerfanos,300);
+}
+
+// Movimientos que apuntan a una cuenta o categoría que no existe. Xopard los deja al
+// borrar una cuenta (verificado). Se conservan tal cual; solo se avisa.
+function movsHuerfanos(){
+  const na=S.accs.length, nc=S.cats.length;
+  return {
+    cuenta: S.movs.filter(m=>m.ai<0||m.ai>=na),
+    categoria: S.movs.filter(m=>m.ai>=0&&m.ai<na&&(m.ci<0||m.ci>=nc)),
+  };
+}
+function avisarHuerfanos(){
+  const h=movsHuerfanos();
+  if(!h.cuenta.length&&!h.categoria.length) return;
+  const det=l=>l.slice(0,5).map(m=>'  '+m.date+'  '+m.concept+'  '+fmtAmt(m.amount)).join('\n')+(l.length>5?'\n  …':'');
+  let msg='Aviso sobre «'+(CONTA.nombre||'este fichero')+'»:\n\n';
+  if(h.cuenta.length) msg+=h.cuenta.length+' movimiento'+(h.cuenta.length>1?'s apuntan':' apunta')+' a una cuenta que ya no existe (Xopard los deja al borrar una cuenta):\n'+det(h.cuenta)+'\n\n'+
+    'No se ven en ninguna cuenta. Si se crea una cuenta nueva, pueden aparecer en ella.\n\n';
+  if(h.categoria.length) msg+=h.categoria.length+' movimiento'+(h.categoria.length>1?'s apuntan':' apunta')+' a una categoría que no existe:\n'+det(h.categoria)+'\n\n';
+  msg+='Zenba los conserva tal cual y no cambia nada.';
+  alert(msg);
+}
+
+// Si hay cambios sin guardar, guardarlos antes de cambiar de contabilidad.
+// Devuelve false si el usuario prefiere quedarse.
+async function antesDeCambiar(){
+  if(_saveTimer){ clearTimeout(_saveTimer); _saveTimer=null; if(!(await saveToDropbox(true))) return confirm('No se ha podido guardar «'+CONTA.nombre+'». ¿Cambiar igualmente y perder los últimos cambios?'); return true; }
+  if(_hayPendiente){
+    if(!confirm('Hay cambios sin guardar en «'+CONTA.nombre+'».\n\nAceptar: guardarlos y seguir.\nCancelar: quedarse aquí.')) return false;
+    if(LOCAL.active){ saveLocalCsv(); return true; }
+    if(!(await saveToDropbox(true))) return confirm('No se ha podido guardar «'+CONTA.nombre+'». ¿Cambiar igualmente y perder los cambios?');
+  }
+  return true;
+}
+
+// Lista los .csv de la carpeta de Dropbox
+async function dbxListCsv(){
+  let r=await callDropbox(()=>dbxApi('files/list_folder',{path:DBX_DIR}));
+  const out=[...r.entries];
+  while(r.has_more){ const c=r.cursor; r=await callDropbox(()=>dbxApi('files/list_folder/continue',{cursor:c})); out.push(...r.entries); }
+  return out.filter(e=>e['.tag']==='file'&&/\.csv$/i.test(e.name))
+    .map(e=>({name:e.name,path:e.path_display,fecha:e.server_modified||'',size:e.size||0}))
+    .sort((a,b)=>a.name.localeCompare(b.name,'es'));
+}
+function textoErrorLista(e){
+  if(e&&e.message==='FALTA_PERMISO')
+    return 'La app de Dropbox no tiene permiso para ver la lista de ficheros de la carpeta (permiso files.metadata.read). '+
+      'Hay que activarlo en la consola de desarrollador de Dropbox y luego desconectar y volver a conectar Dropbox en Zenba.';
+  return 'No se ha podido leer la lista de ficheros de Dropbox ('+((e&&e.message)||e)+').';
+}
+
+// Al entrar con Dropbox: abrir la última contabilidad usada en este navegador,
+// o la única que haya, o dejar elegir
+async function entrarDropbox(){
+  showLoading('Buscando contabilidades en Dropbox…');
+  let lista=null, errLista=null;
+  try{ lista=await dbxListCsv(); }catch(e){ errLista=e; console.warn('Lista de Dropbox:',e); }
+  hideLoading();
+  const ultimo=lsGet(LS_CONTA);
+  if(lista){
+    const contas=lista.filter(f=>esConta(f.name));
+    const c=contas.find(f=>ultimo&&nombreDeFichero(f.name).toLowerCase()===ultimo.toLowerCase())||(contas.length===1?contas[0]:null);
+    if(c) return abrirConta(nombreDeFichero(c.name),{sinPreguntar:true});
+    return mostrarContas(contas.length?'Elige la contabilidad que quieres abrir.':
+      'Todavía no hay ninguna contabilidad de Zenba (ficheros Zenba_*.csv) en la carpeta de Dropbox. '+
+      'Importa tu fichero para empezar: se guardará una copia con el nombre que elijas y el original no se tocará.',lista);
+  }
+  // Sin lista: se puede seguir con la última usada, que se abre por su ruta
+  if(ultimo) return abrirConta(ultimo,{sinPreguntar:true});
+  return mostrarContas(textoErrorLista(errLista)+'\n\nMientras tanto puedes importar un CSV del disco, o el Xopard.csv de la carpeta.',null);
+}
+
+// Abre la contabilidad <nombre> de Dropbox
+async function abrirConta(nombre,{sinPreguntar=false}={}){
+  closeMenu();
+  if(!sinPreguntar&&!(await antesDeCambiar())) return;
+  closeModal();
+  const path=contaPath(nombre);
+  showLoading('Cargando '+nombre+' desde Dropbox…');
+  try{
+    const csv=await callDropbox(()=>dbxDownload(path));
+    const chk=revisarCSV(csv);
+    if(chk.error) throw new Error('Zenba_'+nombre+'.csv no tiene el formato de Xopard: '+chk.error);
+    fijarConta(nombre,path);
+    cargarTexto(csv);
+    setStatus('Dropbox ✓ · '+nombre+' · '+hora());
+    toast('«'+nombre+'» cargada ✓');
+    hideLoading();
+    await grpAfterLoad();
+  }catch(e){
+    hideLoading();
+    if(e.message==='NOT_FOUND'){
+      if(lsGet(LS_CONTA)===nombre) lsDel(LS_CONTA);
+      return mostrarContas('No se encuentra Zenba_'+nombre+'.csv en la carpeta de Dropbox (¿se ha renombrado o movido?). Elige otra.');
+    }
+    alert('Error al abrir «'+nombre+'»: '+e.message);
+  }finally{hideLoading();}
+}
+
+// Ventana de contabilidades: abrir, renombrar la abierta, importar
+async function mostrarContas(aviso,lista){
+  closeMenu();
+  const av=$('ct-aviso');
+  av.style.display=aviso?'block':'none'; av.textContent=aviso||'';
+  $('ct-btn-ren').disabled=!CONTA.nombre;
+  const box=$('ct-lista'), otros=$('ct-otros');
+  showModal('mdl-contas');
+  if(LOCAL.active){
+    box.innerHTML='<div class="ct-item act">📒 '+escHtml(CONTA.nombre||'—')+'<span class="ct-f">modo local · '+escHtml(LOCAL.name)+'</span></div>'+
+      '<div class="ct-vacio">En modo local se trabaja con un fichero del disco. Para abrir otro: «Importar un CSV del disco».</div>';
+    otros.innerHTML='<div class="ct-vacio">La carpeta de Dropbox no está disponible en modo local.</div>';
+    return;
+  }
+  if(lista===undefined){
+    box.innerHTML=otros.innerHTML='<div class="ct-vacio">Leyendo la carpeta de Dropbox…</div>';
+    try{ lista=await dbxListCsv(); }
+    catch(e){ lista=null; av.style.display='block'; av.textContent=textoErrorLista(e); }
+  }
+  const fmtF=f=>{ if(!f.fecha) return ''; const d=new Date(f.fecha); return isNaN(d)?'':d.toLocaleDateString('es-ES'); };
+  if(!lista){
+    box.innerHTML=CONTA.nombre?('<div class="ct-item act">📒 '+escHtml(CONTA.nombre)+'<span class="ct-f">abierta</span></div>'):'<div class="ct-vacio">No se ha podido leer la carpeta.</div>';
+    // Sin lista, al menos se ofrece el fichero de siempre
+    otros.innerHTML='<div class="ct-item" data-imp="'+escHtml(DBX_DIR+'/Xopard.csv')+'">📄 Xopard.csv<span class="ct-f">si existe en la carpeta</span></div>';
+  }else{
+    const contas=lista.filter(f=>esConta(f.name));
+    const resto=lista.filter(f=>!esConta(f.name)&&f.name.toLowerCase()!=='micontabilidad_grupos.csv');
+    box.innerHTML=contas.length?contas.map(f=>{
+      const n=nombreDeFichero(f.name), act=CONTA.nombre&&n.toLowerCase()===CONTA.nombre.toLowerCase();
+      return '<div class="ct-item'+(act?' act':'')+'" data-abrir="'+escHtml(n)+'">📒 '+escHtml(n)+
+        '<span class="ct-f">'+(act?'abierta · ':'')+escHtml(f.name)+' · '+fmtF(f)+'</span></div>';
+    }).join(''):'<div class="ct-vacio">Ninguna todavía. Importa un CSV para crear la primera.</div>';
+    otros.innerHTML=resto.length?resto.map(f=>
+      '<div class="ct-item" data-imp="'+escHtml(f.path)+'">📄 '+escHtml(f.name)+'<span class="ct-f">'+fmtF(f)+'</span></div>'
+    ).join(''):'<div class="ct-vacio">No hay otros CSV en la carpeta de Dropbox.</div>';
+  }
+  box.querySelectorAll('[data-abrir]').forEach(el=>{
+    if(!el.classList.contains('act')) el.onclick=()=>abrirConta(el.dataset.abrir);
+  });
+  otros.querySelectorAll('[data-imp]').forEach(el=>{ el.onclick=()=>importarDeDropbox(el.dataset.imp); });
+}
+
+async function importarDeDropbox(path){
+  const fname=path.split('/').pop();
+  showLoading('Leyendo '+fname+'…');
+  let txt;
+  try{ txt=await callDropbox(()=>dbxDownload(path)); }
+  catch(e){ hideLoading(); alert(e.message==='NOT_FOUND'?('No existe '+fname+' en la carpeta de Dropbox.'):('No se ha podido leer '+fname+': '+e.message)); return; }
+  hideLoading();
+  await importarTexto(txt,fname);
+}
+
+function importarDelDisco(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.csv,text/csv'; inp.style.display='none';
+  document.body.appendChild(inp);
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0];
+    document.body.removeChild(inp);
+    if(!file) return;
+    let txt;
+    try{ txt=await file.text(); }catch(e){ alert('No se pudo leer el fichero: '+(e.message||e)); return; }
+    await importarTexto(txt,file.name);
+  };
+  inp.click();
+}
+
+// Importa un CSV como Zenba_<nombre>.csv. El texto se guarda tal cual, sin reescribirlo.
+async function importarTexto(txt,fname){
+  const chk=revisarCSV(txt);
+  if(chk.error){ alert('«'+fname+'» no tiene el formato de Xopard ('+chk.error+').\n\nNo se ha importado nada.'); return; }
+  const sug=/^xopard/i.test(nombreDeFichero(fname))?'':nombreDeFichero(fname);
+  const n=pedirNombre('Importar «'+fname+'»\n'+chk.cats+' categorías · '+chk.accs+' cuentas · '+chk.movs.toLocaleString('es-ES')+' movimientos\n\n'+
+    'Nombre de la contabilidad (se guardará como '+PREFIJO+'<nombre>.csv; el fichero original no se toca):',sug);
+  if(n===null) return;
+  if(!(await antesDeCambiar())) return;
+  if(LOCAL.active){
+    fijarConta(n,'');
+    cargarTexto(txt);
+    closeModal();
+    setStatus('Modo local · '+LOCAL.name+' · sin guardar');
+    markPending(true);
+    toast('Importada como «'+n+'». Al guardar se descargará '+LOCAL.name);
+    await grpAfterLoad(false);
+    return;
+  }
+  const destino=contaPath(n);
+  showLoading('Importando…');
+  try{
+    let existe=false;
+    try{ existe=(await dbxListCsv()).some(f=>f.name.toLowerCase()===(PREFIJO+n+'.csv').toLowerCase()); }
+    catch(e){ // sin lista: se mira si se puede descargar
+      try{ await callDropbox(()=>dbxDownload(destino)); existe=true; }catch(e2){ if(e2.message!=='NOT_FOUND') throw e2; }
+    }
+    if(existe){
+      hideLoading();
+      if(!confirm('Ya existe la contabilidad «'+n+'».\n\n¿Sustituirla por el contenido de «'+fname+'»?\n\n'+
+        'Antes se guardará una copia de la actual en la subcarpeta «anteriores» de Dropbox.')) return;
+      showLoading('Guardando copia de la anterior…');
+      const viejo=await callDropbox(()=>dbxDownload(destino));
+      await callDropbox(()=>dbxUpload(viejo,DBX_DIR+'/anteriores/'+PREFIJO+n+'_('+sello()+').csv'));
+    }
+    showLoading('Importando…');
+    await callDropbox(()=>dbxUpload(txt,destino));
+    fijarConta(n,destino);
+    cargarTexto(txt);
+    closeModal();
+    setStatus('Dropbox ✓ · '+n+' · importada '+hora());
+    toast('Importada como '+PREFIJO+n+'.csv ✓');
+    hideLoading();
+    // Si trae grupos, se crea ya su copia; si no, se ofrece recuperarlos
+    if(S.accs.some(a=>a.grupo&&a.grupo.trim())) await grpCopySave(true);
+    else await grpAfterLoad();
+  }catch(e){
+    alert('Error al importar: '+e.message);
+  }finally{hideLoading();}
+}
+function sello(){
+  const d=new Date(), p=x=>String(x).padStart(2,'0');
+  return `${p(d.getDate())}_${p(d.getMonth()+1)}_${d.getFullYear()}_${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+async function renombrarConta(){
+  if(!CONTA.nombre) return;
+  const viejo=CONTA.nombre;
+  const n=pedirNombre('Nuevo nombre para «'+viejo+'»\n\nEl fichero pasará a llamarse '+PREFIJO+'<nombre>.csv',viejo);
+  if(n===null||n===viejo) return;
+  if(LOCAL.active){
+    fijarConta(n,'');
+    grpRenombrarLocal(viejo,n);
+    closeModal(); markPending(true);
+    toast('Al guardar se descargará como '+LOCAL.name);
+    return;
+  }
+  if(!(await antesDeCambiar())) return;
+  showLoading('Renombrando…');
+  try{
+    if(n.toLowerCase()!==viejo.toLowerCase()){
+      let existe=false;
+      try{ existe=(await dbxListCsv()).some(f=>f.name.toLowerCase()===(PREFIJO+n+'.csv').toLowerCase()); }catch(e){}
+      if(existe){ hideLoading(); alert('Ya existe una contabilidad llamada «'+n+'». Elige otro nombre.'); return; }
+    }
+    await callDropbox(()=>dbxApi('files/move_v2',{from_path:CONTA.path,to_path:contaPath(n),autorename:false}));
+    // Su copia de grupos va con ella (si no la tiene todavía, no pasa nada)
+    try{ await callDropbox(()=>dbxApi('files/move_v2',{from_path:grpPathDe(viejo),to_path:grpPathDe(n),autorename:false})); }catch(e){}
+    grpRenombrarLocal(viejo,n);
+    fijarConta(n,contaPath(n));
+    closeModal();
+    setStatus('Dropbox ✓ · '+n+' · '+hora());
+    toast('Renombrada: '+PREFIJO+n+'.csv ✓');
+  }catch(e){
+    alert('No se ha podido renombrar: '+e.message);
+  }finally{hideLoading();}
+}
+
+async function volverDropbox(){
+  closeMenu();
+  if(!(await antesDeCambiar())) return;
+  location.reload();
 }
 
 // ── MODO LOCAL (sin Dropbox: fichero del disco) ──────────────
-const LOCAL = { active:false, name:'Xopard.csv' };
+const LOCAL = { active:false, name:'' };
 const IS_FILE_URL = location.protocol === 'file:';
 
 function openLocalCsv(){
@@ -4039,17 +4419,31 @@ function openLocalCsv(){
     showLoading('Leyendo '+file.name+'…');
     try{
       const text=await file.text();
-      parseCSV(text);
-      LOCAL.active=true; LOCAL.name=file.name;
-      S.token=null;
-      $('connect-screen')?.classList.remove('show');
-      setStatus('Modo local · '+file.name);
-      markPending(false);
-      toast('Cargado en modo local: '+file.name);
+      const chk=revisarCSV(text);
+      if(chk.error) throw new Error('no tiene el formato de Xopard ('+chk.error+')');
       hideLoading();
-      await grpAfterLoad();
+      // Un Zenba_ trae su nombre; cualquier otro se importa con el nombre que se elija
+      let n=nombreDeFichero(file.name);
+      const esZ=esConta(file.name)&&!errorNombre(n);
+      if(!esZ){
+        n=pedirNombre('Abrir «'+file.name+'» en modo local\n\nNombre de la contabilidad (al guardar se descargará como '+PREFIJO+'<nombre>.csv; el fichero original no se toca):',
+          /^xopard/i.test(n)||errorNombre(n)?'':n);
+        if(n===null) return;
+      }
+      if(!(await antesDeCambiar())) return;
+      closeModal();
+      LOCAL.active=true;
+      document.body.classList.add('local');
+      S.token=null;
+      fijarConta(n,'');
+      cargarTexto(text);
+      $('connect-screen')?.classList.remove('show');
+      setStatus('Modo local · '+LOCAL.name+(esZ?'':' · sin guardar'));
+      markPending(!esZ);
+      toast('Cargado en modo local: '+file.name);
+      await grpAfterLoad(false);
     }catch(e){
-      alert('No se pudo leer el fichero: '+(e.message||e));
+      alert('No se pudo abrir el fichero: '+(e.message||e));
     }finally{ hideLoading(); }
   };
   inp.click();
@@ -4061,7 +4455,7 @@ function saveLocalCsv(){
   const blob=new Blob([genCSV()],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download=LOCAL.name||'Xopard.csv';
+  a.download=PREFIJO+(CONTA.nombre||'sin_nombre')+'.csv';
   document.body.appendChild(a); a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
@@ -4074,10 +4468,17 @@ function saveLocalCsv(){
 
 // ── COPIA DE LOS GRUPOS DE CUENTAS FUERA DEL CSV ─────────────
 // Xopard borra las columnas 11 y 12 (grupo y plegado) cuando guarda él (verificado).
-// Por eso se guarda una copia aparte: en este navegador y, con Dropbox, en un
-// fichero de texto junto al CSV. Una línea por cuenta con grupo: nombre;grupo;plegado
-const GRP_PATH = DBX_PATH.replace(/[^/]*$/,'') + 'MiContabilidad_grupos.csv';
-const GRP_LS = 'grupos_copia';
+// Por eso se guarda una copia aparte, una por contabilidad: en este navegador y, con
+// Dropbox, en la subcarpeta grupos/. Una línea por cuenta con grupo: nombre;grupo;plegado
+// La copia única de antes de la 029 (MiContabilidad_grupos.csv) solo se lee, como último recurso.
+const GRP_PATH_ANTIGUO = DBX_DIR + '/MiContabilidad_grupos.csv';
+const GRP_LS_ANTIGUO = 'grupos_copia';
+function grpPathDe(n){ return DBX_DIR+'/grupos/'+PREFIJO+n+'_grupos.csv'; }
+function grpLsDe(n){ return 'grupos_copia:'+n; }
+function grpRenombrarLocal(viejo,nuevo){
+  const t=lsGet(grpLsDe(viejo)); if(t===null) return;
+  lsSet(grpLsDe(nuevo),t); lsDel(grpLsDe(viejo));
+}
 let _grpUploaded = null; // último contenido subido a Dropbox (sin la cabecera)
 
 function _grpBody(){
@@ -4087,7 +4488,7 @@ function _grpBody(){
 function _grpText(body){
   const d=new Date(), p=n=>String(n).padStart(2,'0');
   const f=`${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-  return 'MiContabilidad · copia de los grupos de cuentas;'+f+'\n'+body;
+  return 'Zenba · copia de los grupos de cuentas de '+CONTA.nombre+';'+f+'\n'+body;
 }
 function grpParse(txt){
   const lines=(txt||'').replace(/\r/g,'').split('\n');
@@ -4103,22 +4504,27 @@ function grpParse(txt){
 // Guarda la copia (nunca hace fallar el guardado del CSV)
 async function grpCopySave(upload){
   const body=_grpBody();
-  if(!body) return; // sin grupos: no se pisa una copia buena
+  if(!body||!CONTA.nombre) return; // sin grupos: no se pisa una copia buena
   const txt=_grpText(body);
-  try{ localStorage.setItem(GRP_LS,txt); }catch(e){}
+  lsSet(grpLsDe(CONTA.nombre),txt);
   if(!upload||LOCAL.active||!S.token||body===_grpUploaded) return;
-  try{ await dbxUpload(txt,GRP_PATH); _grpUploaded=body; }
+  try{ await callDropbox(()=>dbxUpload(txt,grpPathDe(CONTA.nombre))); _grpUploaded=body; }
   catch(e){ console.warn('No se pudo subir la copia de grupos:',e.message); }
 }
 
 // Tras cargar un CSV: si no trae grupos y hay copia, ofrecer recuperarlos
 async function grpAfterLoad(saveAfter=true){
   if(S.accs.some(a=>a.grupo&&a.grupo.trim())){ grpCopySave(false); return; }
+  // Primero la copia de esta contabilidad; si no hay, la copia única de antes de la 029
   let txt=null, origen='';
-  if(S.token&&!LOCAL.active){
-    try{ txt=await dbxDownload(GRP_PATH); origen='Dropbox'; }catch(e){ txt=null; }
-  }
-  if(!txt){ try{ txt=localStorage.getItem(GRP_LS); origen='este navegador'; }catch(e){ txt=null; } }
+  const dbx=S.token&&!LOCAL.active;
+  if(dbx){ try{ txt=await callDropbox(()=>dbxDownload(grpPathDe(CONTA.nombre))); origen='Dropbox'; }catch(e){ txt=null; } }
+  if(!txt){ txt=lsGet(grpLsDe(CONTA.nombre)); origen='este navegador'; }
+  // La antigua se ofrece una sola vez por contabilidad, para no preguntar siempre en las que no usan grupos
+  const vista='grupos_antigua_ofrecida:'+CONTA.nombre;
+  const antigua=!txt&&!lsGet(vista);
+  if(antigua&&dbx){ try{ txt=await callDropbox(()=>dbxDownload(GRP_PATH_ANTIGUO)); origen='Dropbox, copia antigua MiContabilidad_grupos.csv'; }catch(e){ txt=null; } }
+  if(antigua&&!txt){ txt=lsGet(GRP_LS_ANTIGUO); origen='este navegador, copia antigua de MiContabilidad'; }
   if(!txt) return;
   const copia=grpParse(txt);
   // Nombres repetidos: no se puede saber a cuál corresponde, se dejan sin grupo
@@ -4127,6 +4533,7 @@ async function grpAfterLoad(saveAfter=true){
   const encajan=S.accs.filter(a=>copia.map.has(a.name)&&cuenta.get(a.name)===1);
   if(!encajan.length) return;
   const sinCuenta=[...copia.map.keys()].filter(n=>!cuenta.has(n));
+  if(antigua) lsSet(vista,'1');
   if(!confirm(`Este fichero no trae los grupos de cuentas. Seguramente lo ha guardado Xopard, que los borra.\n\n`+
     `Hay una copia de los grupos del ${copia.fecha} (guardada en ${origen}) que encaja con ${encajan.length} cuentas.\n\n¿Recuperar los grupos?`)) return;
   saveUndo('Grupos de cuentas recuperados');
@@ -4141,7 +4548,9 @@ async function grpAfterLoad(saveAfter=true){
 }
 
 // Botón flotante de guardado pendiente (móvil y modo local)
+let _hayPendiente = false; // cambios sin guardar (móvil y modo local)
 function markPending(on){
+  _hayPendiente = !!on;
   const b=$('btn-mobile-save'), lbl=$('btn-save-lbl');
   if(lbl) lbl.textContent = LOCAL.active ? 'Guardar CSV' : 'Guardar';
   if(!b) return;
@@ -4164,10 +4573,11 @@ function mobilePending(){
   return true; // indica que el save fue interceptado
 }
 
-function mobileSaveNow(){
+async function mobileSaveNow(){
   _mobilePending = false;
   markPending(false);
-  saveToDropbox();
+  // forzar: sin él, saveToDropbox volvía a marcarlo como pendiente en el móvil y no subía nada
+  if(!(await saveToDropbox(true))) markPending(true);
 }
 
 (async()=>{
@@ -4183,11 +4593,11 @@ function mobileSaveNow(){
   // ¿Viene de Dropbox con código OAuth?
   if(window.location.search.includes('code=')){
     const ok=await handleCallback();
-    if(ok){await loadFromDropbox();return;}
+    if(ok){await entrarDropbox();return;}
   }
   // ¿Hay token guardado?
   const token=localStorage.getItem('dbx_token');
-  if(token){S.token=token;await loadFromDropbox();return;}
+  if(token){S.token=token;await entrarDropbox();return;}
   // Primera vez: mostrar pantalla de conexión
   $('connect-screen').classList.add('show');
 })();
