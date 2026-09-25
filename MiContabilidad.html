@@ -990,22 +990,23 @@ function disconnect(){
 }
 
 // ── DROPBOX API ─────────────────────────────────────────────
-async function dbxDownload(){
+async function dbxDownload(path=DBX_PATH){
   const res=await fetch('https://content.dropboxapi.com/2/files/download',{
     method:'POST',
-    headers:{'Authorization':'Bearer '+S.token,'Dropbox-API-Arg':JSON.stringify({path:DBX_PATH})}
+    headers:{'Authorization':'Bearer '+S.token,'Dropbox-API-Arg':JSON.stringify({path})}
   });
   if(res.status===401)throw new Error('TOKEN_EXPIRED');
+  if(res.status===409)throw new Error('NOT_FOUND');
   if(!res.ok)throw new Error('download_'+res.status);
   return await res.text();
 }
 
-async function dbxUpload(content){
+async function dbxUpload(content,path=DBX_PATH){
   const res=await fetch('https://content.dropboxapi.com/2/files/upload',{
     method:'POST',
     headers:{
       'Authorization':'Bearer '+S.token,
-      'Dropbox-API-Arg':JSON.stringify({path:DBX_PATH,mode:'overwrite',autorename:false}),
+      'Dropbox-API-Arg':JSON.stringify({path,mode:'overwrite',autorename:false}),
       'Content-Type':'application/octet-stream'
     },
     body:content
@@ -1039,6 +1040,8 @@ async function loadFromDropbox(){
     const h=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     setStatus('Dropbox ✓ · '+h);
     toast('Datos cargados ✓');
+    hideLoading();
+    await grpAfterLoad();
   }catch(e){
     toast('Error: '+e.message,5000);
   }finally{hideLoading();}
@@ -1054,6 +1057,7 @@ async function saveToDropbox(){
     const h=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     setStatus('Dropbox ✓ · Guardado: '+h);
     toast('Guardado ✓');
+    await grpCopySave(true);
   }catch(e){
     toast('Error al guardar: '+e.message,5000);
   }finally{hideLoading();}
@@ -1314,13 +1318,34 @@ function updateBulkBar() {
 
 const UNDO = { stack: [], redo: [], max: 5 };
 
-function saveUndo(desc) {
-  UNDO.stack.push({
+// Foto del estado: movimientos, cuentas, orden de cuentas y categorías.
+// Las categorías deben ir en la foto: los movimientos apuntan a ellas por posición.
+function _undoSnap(desc) {
+  return {
     desc,
     movs: JSON.parse(JSON.stringify(S.movs)),
     accs: JSON.parse(JSON.stringify(S.accs)),
+    cats: JSON.parse(JSON.stringify(S.cats)),
     order: [...S.displayOrder],
-  });
+  };
+}
+function _undoRestore(snap) {
+  S.movs = snap.movs;
+  S.accs = snap.accs;
+  if (snap.order) S.displayOrder = snap.order;
+  if (snap.cats && JSON.stringify(snap.cats) !== JSON.stringify(S.cats)) {
+    S.cats = snap.cats;
+    updatePendingCi();
+    CU.collapsedCats = new Set(); CU.selCat = -1; CU.selPeriod = null; CU.selMovOi = -1;
+  }
+  CU.tree = null; CU.sums = null;
+  loadCollapsedFlags();
+  S.selMov = -1; S.selMovs.clear(); S.lastMovClick = -1; S.selGroup = null;
+  if (S.selAcc >= S.accs.length) S.selAcc = -1;
+}
+
+function saveUndo(desc) {
+  UNDO.stack.push(_undoSnap(desc));
   if (UNDO.stack.length > UNDO.max) UNDO.stack.shift();
   UNDO.redo = []; // nueva acción vacía la pila de rehacer
   updateUndoMenu();
@@ -1330,18 +1355,10 @@ function undo() {
   closeMenu();
   if (!UNDO.stack.length) { toast('Nada que deshacer'); return; }
   // Guardar estado actual en pila de rehacer
-  UNDO.redo.push({
-    desc: UNDO.stack[UNDO.stack.length - 1].desc,
-    movs: JSON.parse(JSON.stringify(S.movs)),
-    accs: JSON.parse(JSON.stringify(S.accs)),
-    order: [...S.displayOrder],
-  });
+  UNDO.redo.push(_undoSnap(UNDO.stack[UNDO.stack.length - 1].desc));
   if (UNDO.redo.length > UNDO.max) UNDO.redo.shift();
   const prev = UNDO.stack.pop();
-  S.movs = prev.movs;
-  S.accs = prev.accs;
-  if (prev.order) S.displayOrder = prev.order;
-  S.selMov = -1;
+  _undoRestore(prev);
   updateUndoMenu();
   renderAll();
   saveToDropbox();
@@ -1353,16 +1370,8 @@ function redo() {
   if (!UNDO.redo.length) { toast('Nada que rehacer'); return; }
   // Guardar estado actual en pila de deshacer
   const next = UNDO.redo.pop();
-  UNDO.stack.push({
-    desc: next.desc,
-    movs: JSON.parse(JSON.stringify(S.movs)),
-    accs: JSON.parse(JSON.stringify(S.accs)),
-    order: [...S.displayOrder],
-  });
-  S.movs = next.movs;
-  S.accs = next.accs;
-  if (next.order) S.displayOrder = next.order;
-  S.selMov = -1;
+  UNDO.stack.push(_undoSnap(next.desc));
+  _undoRestore(next);
   updateUndoMenu();
   renderAll();
   saveToDropbox();
@@ -2111,8 +2120,10 @@ function showAddMov(){
 }
 function showEditMov(oi){buildConceptsList();S.editMov=oi;const m=S.movs[oi];$('mdl-mov-ttl').textContent='Editar Movimiento';fillAccSel('fm-cuenta',m.ai);$('fm-fecha').value=m.date;$('fm-texto').value=m.concept;$('fm-mes').value=m.period;const fq=$('fm-cat-q');if(fq)fq.value='';fillCatSel('fm-cat',m.ci>=0?m.ci:0);$('fm-imp').value=fmtAmt(m.amount);showModal('mdl-mov');}
 function saveMov(){
-  const mov={c1:'',ai:parseInt($('fm-cuenta').value),shaded:'',div:'',period:$('fm-mes').value.trim(),date:$('fm-fecha').value.trim(),concept:$('fm-texto').value.trim(),c8:'',ci:parseInt($('fm-cat').value),amount:parseAmt($('fm-imp').value)};
   const esEdicion = S.editMov >= 0;
+  // Al editar se conservan los campos que el formulario no muestra (tic azul, dividido, campos 1 y 8)
+  const orig = esEdicion ? S.movs[S.editMov] : null;
+  const mov={c1:orig?orig.c1:'',ai:parseInt($('fm-cuenta').value),shaded:orig?orig.shaded:'',div:orig?orig.div:'',period:$('fm-mes').value.trim(),date:$('fm-fecha').value.trim(),concept:$('fm-texto').value.trim(),c8:orig?orig.c8:'',ci:parseInt($('fm-cat').value),amount:parseAmt($('fm-imp').value)};
   saveUndo(esEdicion ? 'Movimiento editado' : 'Movimiento añadido');
   if(esEdicion)S.movs[S.editMov]=mov;else S.movs.push(mov);
   closeModal();renderAll();saveToDropbox();
@@ -2252,9 +2263,29 @@ function delAcc(){
     alert(`No es posible eliminar "${nombre}" porque tiene ${nMovs} movimiento${nMovs!==1?'s':''}.\nElimínalos primero usando la selección múltiple.`);
     return;
   }
+  const idx=S.selAcc;
+  // Tarjetas que se cargan en esta cuenta (campo 10 = posición de la cuenta de cargo, empezando en 1)
+  const tarjetas=S.accs.filter((a,i)=>i!==idx&&a.type==='4'&&parseInt(a.c10)===idx+1).map(a=>a.name);
+  if(tarjetas.length){
+    alert(`No es posible eliminar "${nombre}" porque es la cuenta de cargo de:\n\n${tarjetas.join('\n')}\n\nCambia primero la cuenta de cargo de esas tarjetas.`);
+    return;
+  }
   if(!confirm(`¿Eliminar la cuenta "${nombre}"?`))return;
   saveUndo('Cuenta eliminada: '+nombre);
-  const idx=S.selAcc;S.movs=S.movs.filter(m=>m.ai!==idx).map(m=>({...m,ai:m.ai>idx?m.ai-1:m.ai}));S.accs.splice(idx,1);S.selAcc=-1;S.selMov=-1;$('acc-title').textContent='—';$('movarea').innerHTML='<div class="empty-msg">Selecciona una cuenta</div>';$('chartsvg').innerHTML='';renderAccs();
+  S.movs=S.movs.filter(m=>m.ai!==idx).map(m=>({...m,ai:m.ai>idx?m.ai-1:m.ai}));
+  // Las tarjetas que apuntan a una cuenta posterior bajan un puesto
+  S.accs.forEach(a=>{
+    const c=parseInt(a.c10);
+    if(a.type==='4'&&c>idx+1)a.c10=String(c-1);
+  });
+  S.accs.splice(idx,1);
+  // Orden de visualización (última línea del CSV): quitar la cuenta y renumerar las posteriores
+  S.displayOrder=S.displayOrder.filter(i=>i!==idx).map(i=>i>idx?i-1:i);
+  S.selAcc=-1;S.selMov=-1;S.selGroup=null;S.selMovs.clear();S.lastMovClick=-1;
+  $('acc-title').textContent='—';$('movarea').innerHTML='<div class="empty-msg">Selecciona una cuenta</div>';$('chartsvg').innerHTML='';
+  saveCollapsedFlags();
+  renderAll();updateMoveButtons();saveToDropbox();
+  toast('Cuenta "'+nombre+'" eliminada ✓');
 }
 
 // ── TABS & MENU ──────────────────────────────────────────────
@@ -2403,6 +2434,7 @@ function restoreBackup() {
     try {
       const text = await file.text();
       parseCSV(text);
+      await grpAfterLoad(false);
       if(LOCAL.active){
         LOCAL.name=file.name;
         setStatus('Modo local · '+file.name);
@@ -3434,39 +3466,39 @@ function cuEditDrop(e,i){
 // ── GUARDAR CAMBIOS ─────────────────────────────────────────
 function cuSaveEditCats(){
   saveUndo('Categorías editadas');
-  // Construir nuevo S.cats desde CUE.cats (mantiene contenido, actualiza orden/nombre/nivel)
+  // Igual que Xopard (verificado): las líneas del bloque no cambian de sitio,
+  // las categorías nuevas se añaden al final y el orden de pantalla va en el campo 1.
+  // Así los movimientos solo se renumeran si se borra alguna categoría.
+  const dispPos=new Map();   // origIdx -> posición en pantalla (0, 1, 2…)
+  CUE.cats.forEach((c,di)=>{ if(c.origIdx>=0) dispPos.set(c.origIdx,di); });
   const newCats=[];
-  const oldToNew=new Map(); // origIdx -> nuevo índice en newCats
-  const pendingOrigIdx=S.cats.findIndex(c=>c.name.toLowerCase().includes('pendiente'));
-
+  const oldToNew=new Map(); // origIdx -> nuevo índice en el bloque
+  S.cats.forEach((cat,oi)=>{
+    if(!dispPos.has(oi)) return; // borrada
+    const c=CUE.cats[dispPos.get(oi)];
+    oldToNew.set(oi,newCats.length);
+    newCats.push({...cat,name:c.name,level:c.level,id:String(dispPos.get(oi)+1)});
+  });
   CUE.cats.forEach((c,di)=>{
-    const newId=String(di+1);
-    if(c.origIdx>=0){
-      newCats.push({...S.cats[c.origIdx],name:c.name,level:c.level,id:newId});
-      oldToNew.set(c.origIdx,di);
-    } else {
-      newCats.push({id:newId,name:c.name,level:c.level,expanded:true,c5:''});
-    }
+    // Nueva: campo 4 desplegada y campo 5 vacío, como las crea Xopard
+    if(c.origIdx<0) newCats.push({id:String(di+1),name:c.name,level:c.level,expanded:true,c5:''});
   });
 
-  // Índice nuevo de "Pendiente" para movimientos huérfanos
-  const pendingNewIdx=oldToNew.has(pendingOrigIdx)?oldToNew.get(pendingOrigIdx):1;
-
-  // Actualizar S.movs.ci: presentes → nuevo índice, eliminados → categoría padre
-  for(const m of S.movs){
-    if(m.ci>=0){
-      if(oldToNew.has(m.ci)){
-        m.ci=oldToNew.get(m.ci);
-      } else {
-        // Buscar el padre registrado al borrar
-        const del=CUE.deletions.find(d=>d.origIdx===m.ci);
-        const parentNewIdx=(del&&del.parentOrigIdx>=0&&oldToNew.has(del.parentOrigIdx))
-          ?oldToNew.get(del.parentOrigIdx)
-          :pendingNewIdx;
-        m.ci=parentNewIdx;
-      }
+  // Movimientos de categorías borradas: a la categoría que las contenía, o a Pendiente
+  const pendingNewIdx=oldToNew.has(PENDING_CI)?oldToNew.get(PENDING_CI):1;
+  if(CUE.deletions.length){
+    for(const m of S.movs){
+      if(m.ci<0) continue;
+      if(oldToNew.has(m.ci)){ m.ci=oldToNew.get(m.ci); continue; }
+      const del=CUE.deletions.find(d=>d.origIdx===m.ci);
+      m.ci=(del&&del.parentOrigIdx>=0&&oldToNew.has(del.parentOrigIdx))
+        ?oldToNew.get(del.parentOrigIdx)
+        :pendingNewIdx;
     }
   }
+  // Plegado y selección del Cuadro apuntan por índice: trasladarlos
+  CU.collapsedCats=new Set([...CU.collapsedCats].filter(i=>oldToNew.has(i)).map(i=>oldToNew.get(i)));
+  if(CU.selCat>=0) CU.selCat=oldToNew.has(CU.selCat)?oldToNew.get(CU.selCat):-1;
 
   S.cats=newCats;
   updatePendingCi(); // recalcular PENDING_CI tras reconstruir categorías
@@ -3976,6 +4008,21 @@ window.addEventListener('popstate',()=>{
   if(isMobile()&&$('rpanel')?.classList.contains('mobile-show')) mobileBack();
 });
 
+// ── VERSIÓN ──────────────────────────────────────────────────
+const APP_VERSION='028';
+
+function about(){
+  closeMenu();
+  const n=S.accs.length, m=S.movs.length, k=S.cats.length;
+  $('mdl-info-msg').innerHTML=
+    '<b style="font-size:17px">MiContabilidad</b><br>'+
+    '<span style="color:#777">versión '+APP_VERSION+'</span><br><br>'+
+    'Compatible con el CSV de Xopard.<br>'+
+    (S.accs.length?('<br>'+k+' categorías · '+n+' cuentas · '+m.toLocaleString('es-ES')+' movimientos<br>'):'')+
+    '<span style="font-size:11px;color:#999">'+(LOCAL.active?('Modo local · '+LOCAL.name):'Dropbox')+'</span>';
+  showModal('mdl-info');
+}
+
 // ── MODO LOCAL (sin Dropbox: fichero del disco) ──────────────
 const LOCAL = { active:false, name:'Xopard.csv' };
 const IS_FILE_URL = location.protocol === 'file:';
@@ -3999,6 +4046,8 @@ function openLocalCsv(){
       setStatus('Modo local · '+file.name);
       markPending(false);
       toast('Cargado en modo local: '+file.name);
+      hideLoading();
+      await grpAfterLoad();
     }catch(e){
       alert('No se pudo leer el fichero: '+(e.message||e));
     }finally{ hideLoading(); }
@@ -4017,9 +4066,78 @@ function saveLocalCsv(){
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
   markPending(false);
+  grpCopySave(false);
   const h=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   setStatus('Modo local · guardado '+h);
   toast('CSV descargado: '+a.download);
+}
+
+// ── COPIA DE LOS GRUPOS DE CUENTAS FUERA DEL CSV ─────────────
+// Xopard borra las columnas 11 y 12 (grupo y plegado) cuando guarda él (verificado).
+// Por eso se guarda una copia aparte: en este navegador y, con Dropbox, en un
+// fichero de texto junto al CSV. Una línea por cuenta con grupo: nombre;grupo;plegado
+const GRP_PATH = DBX_PATH.replace(/[^/]*$/,'') + 'MiContabilidad_grupos.csv';
+const GRP_LS = 'grupos_copia';
+let _grpUploaded = null; // último contenido subido a Dropbox (sin la cabecera)
+
+function _grpBody(){
+  return S.accs.filter(a=>a.grupo&&a.grupo.trim())
+    .map(a=>[a.name,a.grupo.trim(),a.plegado||''].join(';')).join('\n');
+}
+function _grpText(body){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  const f=`${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return 'MiContabilidad · copia de los grupos de cuentas;'+f+'\n'+body;
+}
+function grpParse(txt){
+  const lines=(txt||'').replace(/\r/g,'').split('\n');
+  const fecha=(lines[0]||'').split(';')[1]||'fecha desconocida';
+  const map=new Map();
+  for(const l of lines.slice(1)){
+    const f=l.split(';');
+    if(f.length>=2&&f[0]&&f[1]) map.set(f[0],{grupo:f[1],plegado:f[2]||''});
+  }
+  return {fecha,map};
+}
+
+// Guarda la copia (nunca hace fallar el guardado del CSV)
+async function grpCopySave(upload){
+  const body=_grpBody();
+  if(!body) return; // sin grupos: no se pisa una copia buena
+  const txt=_grpText(body);
+  try{ localStorage.setItem(GRP_LS,txt); }catch(e){}
+  if(!upload||LOCAL.active||!S.token||body===_grpUploaded) return;
+  try{ await dbxUpload(txt,GRP_PATH); _grpUploaded=body; }
+  catch(e){ console.warn('No se pudo subir la copia de grupos:',e.message); }
+}
+
+// Tras cargar un CSV: si no trae grupos y hay copia, ofrecer recuperarlos
+async function grpAfterLoad(saveAfter=true){
+  if(S.accs.some(a=>a.grupo&&a.grupo.trim())){ grpCopySave(false); return; }
+  let txt=null, origen='';
+  if(S.token&&!LOCAL.active){
+    try{ txt=await dbxDownload(GRP_PATH); origen='Dropbox'; }catch(e){ txt=null; }
+  }
+  if(!txt){ try{ txt=localStorage.getItem(GRP_LS); origen='este navegador'; }catch(e){ txt=null; } }
+  if(!txt) return;
+  const copia=grpParse(txt);
+  // Nombres repetidos: no se puede saber a cuál corresponde, se dejan sin grupo
+  const cuenta=new Map();
+  S.accs.forEach(a=>cuenta.set(a.name,(cuenta.get(a.name)||0)+1));
+  const encajan=S.accs.filter(a=>copia.map.has(a.name)&&cuenta.get(a.name)===1);
+  if(!encajan.length) return;
+  const sinCuenta=[...copia.map.keys()].filter(n=>!cuenta.has(n));
+  if(!confirm(`Este fichero no trae los grupos de cuentas. Seguramente lo ha guardado Xopard, que los borra.\n\n`+
+    `Hay una copia de los grupos del ${copia.fecha} (guardada en ${origen}) que encaja con ${encajan.length} cuentas.\n\n¿Recuperar los grupos?`)) return;
+  saveUndo('Grupos de cuentas recuperados');
+  for(const a of encajan){ const g=copia.map.get(a.name); a.grupo=g.grupo; a.plegado=g.plegado; }
+  normalizeGroupOrder();
+  loadCollapsedFlags();
+  renderAll();updateMoveButtons();
+  if(sinCuenta.length)
+    alert(`Grupos recuperados en ${encajan.length} cuentas.\n\nEstas cuentas de la copia no existen en el fichero (¿renombradas o borradas en Xopard?) y se han quedado fuera:\n\n${sinCuenta.join('\n')}`);
+  else toast(`Grupos recuperados en ${encajan.length} cuentas ✓`);
+  if(saveAfter) saveToDropbox();
 }
 
 // Botón flotante de guardado pendiente (móvil y modo local)
