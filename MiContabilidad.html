@@ -1697,7 +1697,7 @@ function renderAll(){
     CU.tree=null;CU.sums=null;cuInit();
   }
 }
-function balances(){const b=new Array(S.accs.length).fill(0);for(const m of S.movs)if(m.ai>=0&&m.ai<b.length)b[m.ai]+=m.amount;return b;}
+function balances(){const b=new Array(S.accs.length).fill(0);for(const m of S.movs)if(m.ai>=0&&m.ai<b.length&&!esPrevisto(m))b[m.ai]+=m.amount;return b;}
 
 const TIPO_LABEL = {
   '1':'TOTAL CAJA',
@@ -1803,7 +1803,7 @@ function selAcc(idx){
   mobileShowMovs(); // en móvil mostrar panel de movimientos
 }
 
-function accMovs(ai){return S.movs.map((m,i)=>({...m,oi:i})).filter(m=>m.ai===ai).sort((a,b)=>{const da=dateSort(a.date),db=dateSort(b.date);return da<db?-1:da>db?1:a.oi-b.oi;});}
+function accMovs(ai){return S.movs.map((m,i)=>({...m,oi:i})).filter(m=>m.ai===ai&&!esPrevisto(m)).sort((a,b)=>{const da=dateSort(a.date),db=dateSort(b.date);return da<db?-1:da>db?1:a.oi-b.oi;});}
 
 function renderMovs(ai){
   const el=$('movarea');
@@ -1906,7 +1906,7 @@ function _renderGroupChart(type) {
   }
   // Sumar todos los movimientos del grupo cronológicamente
   const movs = S.movs
-    .filter(m=>indices.includes(m.ai)&&m.date)
+    .filter(m=>indices.includes(m.ai)&&m.date&&!esPrevisto(m))
     .sort((a,b)=>dateSort(a.date)<dateSort(b.date)?-1:1);
   const daily=new Map();let run=0;
   for(const m of movs){run+=m.amount;daily.set(m.date,run);}
@@ -2157,6 +2157,7 @@ function buildConceptsList() {
   if (!dl || !S.movs.length) return;
   const freq = new Map();
   for (const m of S.movs) {
+    if (esPrevisto(m)) continue;
     if (m.concept && m.concept.trim()) {
       const k = m.concept.trim();
       freq.set(k, (freq.get(k) || 0) + 1);
@@ -2567,7 +2568,7 @@ function buildCatMap() {
   // Construye mapa: concepto_normalizado → categoría más frecuente
   const freq = new Map(); // key → Map(ci → count)
   for (const m of S.movs) {
-    if (m.ci <= 1 || m.ci >= S.cats.length) continue; // skip Pendiente y Total
+    if (m.ci <= 1 || m.ci >= S.cats.length || esPrevisto(m)) continue; // skip Pendiente y Total, y previstos del Xopy
     const key = normConc(m.concept);
     if (!key) continue;
     if (!freq.has(key)) freq.set(key, new Map());
@@ -3194,7 +3195,7 @@ function cuBuildSums(){
   const n=S.cats.length;
   const sums=Array.from({length:n},()=>new Map());
   for(const m of S.movs){
-    if(m.ci<0||m.ci>=n||!m.period||!movConCuenta(m))continue; // sin cuenta: Xopard tampoco los suma
+    if(m.ci<0||m.ci>=n||!m.period||!movReal(m))continue; // sin cuenta o previstos: Xopard tampoco los suma
     const p=cuP(m.period);if(!p)continue;
     sums[m.ci].set(p,(sums[m.ci].get(p)||0)+m.amount);
   }
@@ -3221,7 +3222,7 @@ function cuFmt(v){return v===0?'':fmtAmt(v);}
 
 function cuYears(){
   const ys=new Set();const cy=new Date().getFullYear();
-  for(const m of S.movs)if(m.period){const p=cuP(m.period);if(p)ys.add(Math.floor(p/100));}
+  for(const m of S.movs)if(m.period&&!esPrevisto(m)){const p=cuP(m.period);if(p)ys.add(Math.floor(p/100));}
   ys.add(cy);
   return[...ys].sort((a,b)=>a-b);
 }
@@ -3313,13 +3314,13 @@ function cuRenderMovs(){
   let movs;
   if(CU.selPeriod==='ALL'){
     // Todos los movimientos de la categoría sin restricción de fecha
-    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.date&&movConCuenta(m));
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.date&&movReal(m));
     $('cu-movs-title').textContent=`${S.cats[CU.selCat].name} — todos los movimientos`;
   } else if(CU.selIsYear){
     const y=CU.selPeriod;
-    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&Math.floor(cuP(m.period)/100)===y&&movConCuenta(m));
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&Math.floor(cuP(m.period)/100)===y&&movReal(m));
   }else{
-    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&cuP(m.period)===CU.selPeriod&&movConCuenta(m));
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&cuP(m.period)===CU.selPeriod&&movReal(m));
   }
   movs.sort((a,b)=>dateSort(a.date)<dateSort(b.date)?-1:1);
   if(CU.selPeriod!=='ALL'){ // con 'ALL' el título ya está puesto arriba (antes salía «… en undefined-aN»)
@@ -4022,7 +4023,7 @@ function cuSearchLive(){
   const hasta=($('cu-search-hasta')?.value||'').trim();
   if(!q&&!qAmt&&!desde&&!hasta){$('cu-search-prev').textContent='';return;}
 
-  let results=S.movs.filter(m=>movConCuenta(m)&&matchesConcept(m.concept,q)&&matchesAmt(m.amount,qAmt));
+  let results=S.movs.filter(m=>movReal(m)&&matchesConcept(m.concept,q)&&matchesAmt(m.amount,qAmt));
   if(desde){const ds=dateSort(desde);results=results.filter(m=>dateSort(m.date)>=ds);}
   if(hasta){const dh=dateSort(hasta);results=results.filter(m=>dateSort(m.date)<=dh);}
 
@@ -4138,7 +4139,7 @@ window.addEventListener('popstate',()=>{
 });
 
 // ── VERSIÓN ──────────────────────────────────────────────────
-const APP_VERSION='035';
+const APP_VERSION='036';
 
 function about(){
   closeMenu();
@@ -4234,7 +4235,7 @@ function cargarTexto(txt){
   S.chartGroup=null; S.selGroup=null; S.selMovs.clear(); S.lastMovClick=-1;
   CU.tree=null; CU.sums=null; CU.selCat=-1; CU.selPeriod=null; CU.selMovOi=-1; CU.collapsedCats=new Set();
   parseCSV(txt);
-  setTimeout(()=>{ avisarHuerfanos(); avisarSinCobros(); },300);
+  setTimeout(revisarAlAbrir,300);
 }
 
 // Sin «Cobros y pagos extraordinarios», Xopard renombra la categoría de la posición 37 al abrir
@@ -4250,6 +4251,10 @@ function avisarSinCobros(){
 // Movimiento con cuenta válida. Los que no la tienen (cuenta borrada, o «NaN»: los
 // apuntes fantasma que dejaba Xopard al editar) no se ven ni se suman, igual que en Xopard.
 function movConCuenta(m){ return Number.isInteger(m.ai)&&m.ai>=0&&m.ai<S.accs.length; }
+// Movimiento previsto por el Xopy de Xopard (campo 8 = t, «Estimación de…»): no es real.
+// Con el Xopy apagado, Xopard no lo muestra ni lo suma (verificado); Zenba tampoco.
+function esPrevisto(m){ return m.c8==='t'; }
+function movReal(m){ return movConCuenta(m)&&!esPrevisto(m); }
 function movsHuerfanos(){
   const nc=S.cats.length;
   return {
@@ -4257,22 +4262,27 @@ function movsHuerfanos(){
     categoria: S.movs.filter(m=>movConCuenta(m)&&!(Number.isInteger(m.ci)&&m.ci>=0&&m.ci<nc)),
   };
 }
-function avisarHuerfanos(){
+function detMovs(l){ return l.slice(0,5).map(m=>'  '+m.date+'  '+m.concept+'  '+fmtAmt(m.amount)).join('\n')+(l.length>5?'\n  …':''); }
+function plural(n,uno,varios){ return n+' '+(n>1?varios:uno); }
+function txtQuitar(){ return '\n\n¿Quitarlos del fichero?\n\nAceptar: quitarlos'+(LOCAL.active?'':' (antes se guarda una copia del fichero en «anteriores»)')+'. Se puede deshacer.\nCancelar: dejarlos como están.'; }
+
+// Al abrir un fichero: avisar de lo raro y ofrecer quitar lo que no cuenta en ningún total
+async function revisarAlAbrir(){
+  const quien='Aviso sobre «'+(CONTA.nombre||'este fichero')+'»:\n\n';
   const h=movsHuerfanos();
-  if(!h.cuenta.length&&!h.categoria.length) return;
-  const det=l=>l.slice(0,5).map(m=>'  '+m.date+'  '+m.concept+'  '+fmtAmt(m.amount)).join('\n')+(l.length>5?'\n  …':'');
-  let msg='Aviso sobre «'+(CONTA.nombre||'este fichero')+'»:\n\n';
-  if(h.categoria.length) msg+=h.categoria.length+' movimiento'+(h.categoria.length>1?'s apuntan':' apunta')+' a una categoría que no existe:\n'+det(h.categoria)+'\n\n'+
-    'Se conservan tal cual.\n\n';
-  if(!h.cuenta.length){ alert(msg.trim()); return; }
-  const n=h.cuenta.length;
-  msg+=n+' movimiento'+(n>1?'s':'')+' sin cuenta válida (de una cuenta borrada, o apuntes fantasma de Xopard con «NaN»):\n'+det(h.cuenta)+'\n\n'+
-    'No se ven en ninguna cuenta ni se suman en ningún total, ni en Xopard ni en Zenba.\n\n'+
-    '¿Quitarlos del fichero?\n\nAceptar: quitarlos'+(LOCAL.active?'':' (antes se guarda una copia del fichero en «anteriores»)')+'. Se puede deshacer.\nCancelar: dejarlos como están.';
-  if(confirm(msg)) quitarHuerfanos();
+  if(h.categoria.length)
+    alert(quien+plural(h.categoria.length,'movimiento apunta','movimientos apuntan')+' a una categoría que no existe:\n'+detMovs(h.categoria)+'\n\nSe conservan tal cual.');
+  if(h.cuenta.length&&confirm(quien+plural(h.cuenta.length,'movimiento','movimientos')+' sin cuenta válida (de una cuenta borrada, o apuntes fantasma de Xopard con «NaN»):\n'+detMovs(h.cuenta)+
+      '\n\nNo se ven en ninguna cuenta ni se suman en ningún total, ni en Xopard ni en Zenba.'+txtQuitar()))
+    await quitarMovs(m=>!movConCuenta(m),'Movimientos sin cuenta quitados','sin cuenta','sin cuenta');
+  const prev=S.movs.filter(m=>esPrevisto(m)&&movConCuenta(m));
+  if(prev.length&&confirm(quien+plural(prev.length,'movimiento previsto','movimientos previstos')+' por el Xopy de Xopard (estimaciones que Xopard guarda si se exporta con el Xopy activado):\n'+detMovs(prev)+
+      '\n\nNo son movimientos reales. Zenba no los muestra ni los suma, igual que Xopard con el Xopy apagado.'+txtQuitar()))
+    await quitarMovs(esPrevisto,'Movimientos previstos quitados','previsto','previstos');
+  avisarSinCobros();
 }
-async function quitarHuerfanos(){
-  const n=S.movs.filter(m=>!movConCuenta(m)).length;
+async function quitarMovs(quitar,desc,uno,varios){
+  const n=S.movs.filter(quitar).length;
   if(!n) return;
   if(!LOCAL.active&&CONTA.path){
     showLoading('Guardando copia antes de limpiar…');
@@ -4286,13 +4296,13 @@ async function quitarHuerfanos(){
     }
     hideLoading();
   }
-  saveUndo('Movimientos sin cuenta quitados');
-  S.movs=S.movs.filter(movConCuenta);
+  saveUndo(desc);
+  S.movs=S.movs.filter(m=>!quitar(m));
   S.selMov=-1; S.selMovs.clear(); S.lastMovClick=-1;
   CU.sums=null;
   renderAll();
-  toast(n+' movimiento'+(n>1?'s':'')+' sin cuenta quitado'+(n>1?'s':'')+' ✓');
-  saveToDropbox();
+  toast(plural(n,'movimiento '+uno+' quitado','movimientos '+varios+' quitados')+' ✓');
+  await saveToDropbox();
 }
 
 // Si hay cambios sin guardar, guardarlos antes de cambiar de contabilidad.
