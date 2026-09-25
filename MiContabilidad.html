@@ -1042,22 +1042,39 @@ async function dbxDownload(path){
   if(res.status===401)throw new Error('TOKEN_EXPIRED');
   if(res.status===409)throw new Error('NOT_FOUND');
   if(!res.ok)throw new Error('download_'+res.status);
+  // Versión («rev») del fichero descargado: sirve para no pisar cambios hechos desde otro aparato
+  DBX_REV.delete(path.toLowerCase());
+  try{ const r=JSON.parse(res.headers.get('Dropbox-API-Result')||'null'); if(r&&r.rev) DBX_REV.set(path.toLowerCase(),r.rev); }catch(e){}
   return await res.text();
 }
+const DBX_REV=new Map(); // ruta en minúsculas -> última versión leída o escrita
 
-async function dbxUpload(content,path){
+// rev: si se da, solo se guarda si el fichero de Dropbox sigue siendo esa versión;
+// si alguien lo ha cambiado desde entonces, falla con CONFLICTO y no se pisa nada
+async function dbxUpload(content,path,rev){
+  const mode=rev?{'.tag':'update',update:rev}:'overwrite';
   const res=await fetch('https://content.dropboxapi.com/2/files/upload',{
     method:'POST',
     headers:{
       'Authorization':'Bearer '+S.token,
-      'Dropbox-API-Arg':JSON.stringify({path,mode:'overwrite',autorename:false}),
+      'Dropbox-API-Arg':JSON.stringify({path,mode,autorename:false}),
       'Content-Type':'application/octet-stream'
     },
     body:content
   });
   if(res.status===401)throw new Error('TOKEN_EXPIRED');
+  if(res.status===409){ let t=''; try{ t=await res.text(); }catch(e){} if(t.includes('conflict')) throw new Error('CONFLICTO'); throw new Error('upload_409'); }
   if(!res.ok)throw new Error('upload_'+res.status);
-  return await res.json();
+  const r=await res.json();
+  if(r&&r.rev) DBX_REV.set(path.toLowerCase(),r.rev);
+  return r;
+}
+// Versión actual de un fichero, si la descarga no la dio
+async function dbxRev(path){
+  const k=path.toLowerCase();
+  if(DBX_REV.has(k)) return DBX_REV.get(k);
+  try{ const m=await callDropbox(()=>dbxApi('files/get_metadata',{path})); if(m&&m.rev){ DBX_REV.set(k,m.rev); return m.rev; } }catch(e){ console.warn('Sin versión de',path,e.message); }
+  return null;
 }
 
 // Llamadas de la API que no son descarga ni subida (listar carpeta, renombrar)
@@ -1107,18 +1124,36 @@ async function saveToDropbox(forzar){
   if(!S.accs.length){toast('Sin datos');return false;}
   // Salvaguarda: solo se escribe en ficheros Zenba_ de la carpeta, nunca en uno de Xopard
   if(!CONTA.path||!CONTA.path.startsWith(DBX_DIR+'/'+PREFIJO)){toast('No hay ninguna contabilidad abierta');return false;}
+  // Ya se detectó que otro aparato cambió el fichero: no volver a intentarlo hasta recargar
+  if(CONTA.conflicto){ markPending(true); toast('Sin guardar: «'+CONTA.nombre+'» tiene cambios más nuevos en Dropbox. Menú → Recargar desde Dropbox.',6000); return false; }
   showLoading('Guardando '+CONTA.nombre+' en Dropbox…');
   try{
-    await callDropbox(()=>dbxUpload(genCSV(),CONTA.path));
+    // Con la versión leída al abrir: si otro aparato ha guardado después, Dropbox lo rechaza
+    const r=await callDropbox(()=>dbxUpload(genCSV(),CONTA.path,CONTA.rev));
+    if(r&&r.rev) CONTA.rev=r.rev;
     setStatus('Dropbox ✓ · '+CONTA.nombre+' · guardado '+hora());
     _mobilePending=false; markPending(false);
     toast('Guardado ✓');
     await grpCopySave(true);
     return true;
   }catch(e){
+    if(e.message==='CONFLICTO'){
+      hideLoading();
+      CONTA.conflicto=true; markPending(true);
+      setStatus('Sin guardar · «'+CONTA.nombre+'» ha cambiado en Dropbox');
+      avisarConflicto();
+      return false;
+    }
     toast('Error al guardar: '+e.message,5000);
     return false;
   }finally{hideLoading();}
+}
+function avisarConflicto(){
+  if(!confirm('«'+CONTA.nombre+'» se ha modificado en Dropbox desde otro aparato o ventana después de abrirla aquí. Para no borrar esos cambios, Zenba no ha guardado.\n\n'+
+    'Aceptar: descargar al ordenador una copia de lo que tienes aquí (por si acaso) y cargar la versión de Dropbox.\n'+
+    'Cancelar: seguir aquí sin guardar (más tarde: Menú → Recargar desde Dropbox).')) return;
+  downloadBackup();
+  abrirConta(CONTA.nombre,{sinPreguntar:true});
 }
 function hora(){return new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}
 
@@ -3434,19 +3469,34 @@ function cuOpenEditCats() {
   showModal('mdl-edit-cats');
 }
 
-// «Cobros y pagos extraordinarios» no se puede renombrar ni borrar mientras sea la única con
-// ese nombre: si falta, Xopard da ese nombre a la categoría de la posición 37 del bloque (verificado)
-const CAT_COBROS='Cobros y pagos extraordinarios';
-const MSG_COBROS='Xopard necesita una categoría llamada «'+CAT_COBROS+'». Si falta, al abrir el fichero le pone ese nombre a la categoría de la posición 37, sea cual sea. Por eso no se puede renombrar ni borrar (puede quedarse vacía).';
+// Categorías que Xopard protege (no deja renombrarlas ni borrarlas). Zenba tampoco, mientras
+// sea la única con ese nombre: si falta, Xopard le pone ese nombre a la categoría de una
+// posición fija del bloque (verificado: 37 para Cobros, 5 para Traspasos; las demás, sin comprobar).
+// «Resultado ordinario» solo existe en las contabilidades creadas con la plantilla nueva de Xopard.
+const PROTEGIDAS=[
+  {n:'Total'},
+  {n:'Pendiente de asignacion'},
+  {n:'Gastos'},
+  {n:'Traspasos entre cuentas propias',pos:5},
+  {n:'Cobros y pagos extraordinarios',pos:37},
+  {n:'Resultado ordinario',opcional:true},
+];
+const NOMBRES_PROT=new Set(PROTEGIDAS.map(p=>p.n));
+function msgProtegida(nombre){
+  const p=PROTEGIDAS.find(x=>x.n===nombre)||{};
+  return 'Xopard protege «'+nombre+'»: no deja renombrarla ni borrarla, y Zenba tampoco.'+
+    (p.pos?' Si falta, al abrir el fichero Xopard le pone ese nombre a la categoría de la posición '+p.pos+', sea cual sea (comprobado).'
+     :p.opcional?'':' Si falta, puede que Xopard le ponga ese nombre a otra categoría, como hace con Cobros y Traspasos.');
+}
 function cueProtegida(i){
   const c=CUE.cats[i];
-  return !!c&&c.name===CAT_COBROS&&CUE.cats.filter(x=>x.name===CAT_COBROS).length===1;
+  return !!c&&NOMBRES_PROT.has(c.name)&&CUE.cats.filter(x=>x.name===c.name).length===1;
 }
 function cuRenderEditList() {
   const LCLS=['ecat-lv1','ecat-lv2','ecat-lv3','ecat-lv4','ecat-lv5','ecat-lv6'];
   let html='';
   const inp=$('edit-cat-name');
-  if(inp){ const p=cueProtegida(CUE.sel); inp.disabled=p; inp.title=p?MSG_COBROS:''; }
+  if(inp){ const p=cueProtegida(CUE.sel); inp.disabled=p; inp.title=p?msgProtegida(CUE.cats[CUE.sel].name):''; }
   CUE.cats.forEach((c,i)=>{
     const indent=(c.level-1)*12;
     const lc=LCLS[Math.min(c.level-1,5)];
@@ -3458,7 +3508,7 @@ function cuRenderEditList() {
       ondragover="cuEditDragOver(event,${i})"
       ondragleave="cuEditDragLeave(event)"
       ondrop="cuEditDrop(event,${i})">
-      <span class="ecat-name ${lc}" style="padding-left:${indent}px">${c.name}</span>${cueProtegida(i)?`<span title="${MSG_COBROS}" style="margin-left:6px;font-size:11px">🔒</span>`:''}
+      <span class="ecat-name ${lc}" style="padding-left:${indent}px">${c.name}</span>${cueProtegida(i)?`<span title="${msgProtegida(c.name)}" style="margin-left:6px;font-size:11px">🔒</span>`:''}
     </div>`;
   });
   $('edit-cats-list').innerHTML=html||'<div style="padding:16px;color:#999;text-align:center">Sin categorías</div>';
@@ -3476,11 +3526,11 @@ function cuEditSel(i){
 
 function cuEditNameChange(){
   if(CUE.sel<0||!CUE.cats[CUE.sel])return;
-  if(cueProtegida(CUE.sel)){ $('edit-cat-name').value=CAT_COBROS; return; }
+  if(cueProtegida(CUE.sel)){ $('edit-cat-name').value=CUE.cats[CUE.sel].name; return; }
   const antes=CUE.cats[CUE.sel].name;
   CUE.cats[CUE.sel].name=$('edit-cat-name').value;
-  // Si entra o sale el nombre protegido, repintar para actualizar los candados
-  if(antes===CAT_COBROS||CUE.cats[CUE.sel].name===CAT_COBROS){
+  // Si entra o sale un nombre protegido, repintar para actualizar los candados
+  if(NOMBRES_PROT.has(antes)||NOMBRES_PROT.has(CUE.cats[CUE.sel].name)){
     cuRenderEditList();
     const inp=$('edit-cat-name'); if(!inp.disabled){ inp.focus(); const n=inp.value.length; inp.setSelectionRange(n,n); }
     return;
@@ -3517,10 +3567,11 @@ function cuEditDel(){
   const lv=delCat.level;
   let end=CUE.sel+1;
   while(end<CUE.cats.length&&CUE.cats[end].level>lv)end++;
-  // No dejar sin «Cobros y pagos extraordinarios» (ni borrándola ni borrando la categoría que la contiene)
-  const quedan=CUE.cats.filter((c,j)=>c.name===CAT_COBROS&&(j<CUE.sel||j>=end)).length;
-  if(!quedan&&CUE.cats.slice(CUE.sel,end).some(c=>c.name===CAT_COBROS)){
-    alert((delCat.name===CAT_COBROS?'':'«'+delCat.name+'» contiene la categoría «'+CAT_COBROS+'».\n\n')+MSG_COBROS);
+  // No dejar sin ninguna protegida (ni borrándola ni borrando la categoría que la contiene)
+  const fuera=new Set(CUE.cats.filter((c,j)=>j<CUE.sel||j>=end).map(c=>c.name));
+  const perdida=CUE.cats.slice(CUE.sel,end).find(c=>NOMBRES_PROT.has(c.name)&&!fuera.has(c.name));
+  if(perdida){
+    alert((perdida===delCat?'':'«'+delCat.name+'» contiene la categoría «'+perdida.name+'».\n\n')+msgProtegida(perdida.name));
     return;
   }
   if(!confirm(`Se borrará la categoría y todas las subcategorías que contenga.\nLos movimientos asignados a la categoría borrada quedarán automáticamente asignados a la categoría que las contenía.\n¿Deseas borrar "${delCat.name}"?`))return;
@@ -4139,7 +4190,7 @@ window.addEventListener('popstate',()=>{
 });
 
 // ── VERSIÓN ──────────────────────────────────────────────────
-const APP_VERSION='036';
+const APP_VERSION='038';
 
 function about(){
   closeMenu();
@@ -4197,6 +4248,7 @@ function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
 
 function fijarConta(nombre,path){
   CONTA.nombre=nombre; CONTA.path=path;
+  CONTA.rev=null; CONTA.conflicto=false; // versión de Dropbox: la ponen quienes leen o escriben el fichero
   _grpUploaded=null;
   if(path) lsSet(LS_CONTA,nombre);
   if(LOCAL.active) LOCAL.name=PREFIJO+nombre+'.csv';
@@ -4238,12 +4290,16 @@ function cargarTexto(txt){
   setTimeout(revisarAlAbrir,300);
 }
 
-// Sin «Cobros y pagos extraordinarios», Xopard renombra la categoría de la posición 37 al abrir
-function avisarSinCobros(){
-  if(S.cats.length<37||S.cats.some(c=>c.name===CAT_COBROS)) return;
-  alert('Aviso sobre «'+(CONTA.nombre||'este fichero')+'»:\n\nNo hay ninguna categoría llamada «'+CAT_COBROS+'». '+
-    'Si abres este fichero en Xopard, le pondrá ese nombre a «'+S.cats[36].name+'» (la posición 37).\n\n'+
-    'Para evitarlo, crea en el editor de categorías una llamada «'+CAT_COBROS+'». Puede quedarse vacía.');
+// Si falta una protegida, Xopard renombra otra categoría al abrir (Cobros → posición 37, Traspasos → 5)
+function avisarProtegidasQueFaltan(){
+  const nombres=new Set(S.cats.map(c=>c.name));
+  const faltan=PROTEGIDAS.filter(p=>!p.opcional&&!nombres.has(p.n));
+  if(!faltan.length) return;
+  const lineas=faltan.map(p=>'• «'+p.n+'»: '+(p.pos&&S.cats.length>=p.pos
+    ?'Xopard le pondrá ese nombre a «'+S.cats[p.pos-1].name+'» (la posición '+p.pos+').'
+    :'puede que Xopard le ponga ese nombre a otra categoría.'));
+  alert('Aviso sobre «'+(CONTA.nombre||'este fichero')+'»:\n\nFaltan categorías que Xopard necesita. Si abres este fichero en Xopard:\n\n'+lineas.join('\n')+
+    '\n\nPara evitarlo, crea en el editor de categorías las que faltan, con ese nombre exacto. Pueden quedarse vacías.');
 }
 
 // Movimientos que apuntan a una cuenta o categoría que no existe. Xopard los deja al
@@ -4279,7 +4335,7 @@ async function revisarAlAbrir(){
   if(prev.length&&confirm(quien+plural(prev.length,'movimiento previsto','movimientos previstos')+' por el Xopy de Xopard (estimaciones que Xopard guarda si se exporta con el Xopy activado):\n'+detMovs(prev)+
       '\n\nNo son movimientos reales. Zenba no los muestra ni los suma, igual que Xopard con el Xopy apagado.'+txtQuitar()))
     await quitarMovs(esPrevisto,'Movimientos previstos quitados','previsto','previstos');
-  avisarSinCobros();
+  avisarProtegidasQueFaltan();
 }
 async function quitarMovs(quitar,desc,uno,varios){
   const n=S.movs.filter(quitar).length;
@@ -4365,7 +4421,9 @@ async function abrirConta(nombre,{sinPreguntar=false}={}){
     const csv=await callDropbox(()=>dbxDownload(path));
     const chk=revisarCSV(csv);
     if(chk.error) throw new Error('Zenba_'+nombre+'.csv no tiene el formato de Xopard: '+chk.error);
+    const rev=await dbxRev(path);
     fijarConta(nombre,path);
+    CONTA.rev=rev;
     cargarTexto(csv);
     setStatus('Dropbox ✓ · '+nombre+' · '+hora());
     toast('«'+nombre+'» cargada ✓');
@@ -4486,6 +4544,7 @@ async function importarTexto(txt,fname){
     showLoading('Importando…');
     await callDropbox(()=>dbxUpload(txt,destino));
     fijarConta(n,destino);
+    CONTA.rev=DBX_REV.get(destino.toLowerCase())||null;
     cargarTexto(txt);
     closeModal();
     setStatus('Dropbox ✓ · '+n+' · importada '+hora());
@@ -4523,11 +4582,17 @@ async function renombrarConta(){
       try{ existe=(await dbxListCsv()).some(f=>f.name.toLowerCase()===(PREFIJO+n+'.csv').toLowerCase()); }catch(e){}
       if(existe){ hideLoading(); alert('Ya existe una contabilidad llamada «'+n+'». Elige otro nombre.'); return; }
     }
+    const revAntes=CONTA.rev;
     await callDropbox(()=>dbxApi('files/move_v2',{from_path:CONTA.path,to_path:contaPath(n),autorename:false}));
     // Su copia de grupos va con ella (si no la tiene todavía, no pasa nada)
     try{ await callDropbox(()=>dbxApi('files/move_v2',{from_path:grpPathDe(viejo),to_path:grpPathDe(n),autorename:false})); }catch(e){}
     grpRenombrarLocal(viejo,n);
+    // Versión tras renombrar: si el fichero movido es igual a lo que hay aquí, vale la nueva;
+    // si no (otro aparato lo cambió antes), se queda la antigua para que el próximo guardado avise
+    let revNueva=revAntes;
+    try{ const t=await callDropbox(()=>dbxDownload(contaPath(n))); const g=genCSV(); if(t===g||t===g+'\n') revNueva=await dbxRev(contaPath(n)); }catch(e){}
     fijarConta(n,contaPath(n));
+    CONTA.rev=revNueva;
     closeModal();
     setStatus('Dropbox ✓ · '+n+' · '+hora());
     toast('Renombrada: '+PREFIJO+n+'.csv ✓');
