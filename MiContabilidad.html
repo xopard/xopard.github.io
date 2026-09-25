@@ -643,6 +643,14 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
         <div class="fr"><label>Amortización mensual</label><input id="fa-amort" placeholder="0,00" style="text-align:right"></div>
       </div>
     </div>
+    <!-- Ahorro y préstamo: con o sin vencimiento (campo 5 = 1 o 2; con vencimiento: campo 7 interés y 8 fecha) -->
+    <div id="venc-fields" style="display:none;border-top:1px solid #EEE;padding-top:10px;margin-top:4px">
+      <div class="fr"><select id="fa-venc" onchange="toggleVencFields()"></select></div>
+      <div id="venc-datos" class="fi">
+        <div class="fr"><label>Fecha de vencimiento</label><input id="fa-vfecha" placeholder="dd-mm-aa" style="width:110px"></div>
+        <div class="fr"><label>Tipo de interés (TAE %)</label><input id="fa-vinteres" placeholder="0" style="width:80px;text-align:right"></div>
+      </div>
+    </div>
     <div class="mbtns">
       <button class="bok" onclick="saveAcc()">Ok</button>
       <button class="bcan" onclick="closeModal()">Cancelar</button>
@@ -1121,7 +1129,9 @@ function parseCSV(txt){
   const nc=parseInt(lines[p++]);S.cats=[];
   for(let i=0;i<nc;i++){const f=lines[p++].split(';');S.cats.push({id:f[0]||'',name:f[1]||'',level:parseInt(f[2])||1,expanded:f[3]==='t',c5:f[4]||''});}
   const na=parseInt(lines[p++]);S.accs=[];
-  for(let i=0;i<na;i++){const f=lines[p++].split(';');S.accs.push({type:f[0]||'1',bank:f[1]||'',name:f[2]||'',desc:f[3]||'',level:parseInt(f[4])||1,active:f[5]==='t',c7:f[6]||'0',c8:f[7]||'1',c9:f[8]||'20',c10:f[9]||'1',grupo:(f[10]||'').trim(),plegado:(f[11]||'').trim()});}
+  // Campos 5 y 7-10: se guardan tal cual vienen (en ficheros antiguos el 5 vale 0 o NaN; antes se cambiaba a 1)
+  const tal=(v,d)=>v!==undefined?v:d;
+  for(let i=0;i<na;i++){const f=lines[p++].split(';');S.accs.push({type:f[0]||'1',bank:f[1]||'',name:f[2]||'',desc:f[3]||'',level:tal(f[4],'1'),active:f[5]==='t',c7:tal(f[6],'0'),c8:tal(f[7],'1'),c9:tal(f[8],'20'),c10:tal(f[9],'1'),grupo:(f[10]||'').trim(),plegado:(f[11]||'').trim()});}
   const ne=parseInt(lines[p++]);S.extra=[];
   for(let i=0;i<ne;i++)S.extra.push(lines[p++]);
   S.extra2=parseInt(lines[p++])||0;
@@ -1724,7 +1734,7 @@ function renderAccs(){
       row.className='acc-row'+(level?' in-grp':'')+(i===S.selAcc?' sel':'')+(!a.active?' inactive':'');
       if(level) row.style.paddingLeft=(6+level*14)+'px';
       row.dataset.idx=i;row.onclick=()=>selAcc(i);row.ondblclick=()=>showEditAcc(i);
-      row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
+      row.innerHTML=`${logoHtml(a.bank)}<div class="acc-info"><div class="acc-name">${a.name}</div>${a.desc?`<div class="acc-desc">${a.desc}</div>`:''}${(a.type==='2'||a.type==='3')&&a.level==='2'?`<div class="acc-desc">Vence ${a.c8} · ${a.c7} %</div>`:''}</div><div class="acc-bal${b<0?' neg':''}">${fmtAmt(b)}</div>`;
       frag.appendChild(row);
     };
     const grpHeader=(gKey,label,total,level)=>{
@@ -2193,19 +2203,48 @@ function delMov(){
   renderAll();saveToDropbox();
 }
 function toggleTarjetaFields(){
-  const isTarjeta=$('fa-tipo').value==='4';
+  const tipo=$('fa-tipo').value, isTarjeta=tipo==='4';
   $('tarjeta-fields').style.display=isTarjeta?'block':'none';
   if(isTarjeta){
     // Rellenar selector de cuenta de cargo
     const sel=$('fa-cargo');sel.innerHTML='';
     S.accs.forEach((a,i)=>{const o=document.createElement('option');o.value=i+1;o.textContent=a.name;sel.appendChild(o);});
   }
+  // Ahorro y préstamo: con o sin vencimiento, con los mismos textos que Xopard
+  const conVenc=tipo==='2'||tipo==='3';
+  $('venc-fields').style.display=conVenc?'block':'none';
+  if(conVenc){
+    const sel=$('fa-venc'), prev=sel.value||'1';
+    const ops=tipo==='2'?[['1','Fondo o inversión sin vencimiento fijo'],['2','Depósito a plazo fijo']]
+                        :[['1','Préstamo sin vencimiento fijo'],['2','Préstamo con vencimiento']];
+    sel.innerHTML=ops.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');
+    sel.value=prev;
+    toggleVencFields();
+  }
+}
+function toggleVencFields(){ $('venc-datos').style.display=$('fa-venc').value==='2'?'flex':'none'; }
+// Fecha de vencimiento: admite d-m-aa, dd/mm/aaaa…; devuelve dd-mm-aa como la guarda Xopard, o '' si no vale
+function fechaVenc(s){
+  const m=String(s||'').trim().match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})$/);
+  if(!m) return '';
+  const d=+m[1], mo=+m[2], y=m[3].length===4?+m[3]:2000+(+m[3]);
+  const f=new Date(y,mo-1,d);
+  if(f.getFullYear()!==y||f.getMonth()!==mo-1||f.getDate()!==d) return '';
+  return String(d).padStart(2,'0')+'-'+String(mo).padStart(2,'0')+'-'+String(y).slice(-2);
+}
+// Interés con coma decimal, como lo guarda Xopard (con punto lo lee mal: 3.25 -> 3)
+function interesVenc(s){
+  const t=String(s||'').trim().replace(',','.');
+  if(t==='') return '0';
+  if(!/^\d+(\.\d+)?$/.test(t)) return null;
+  return String(parseFloat(t)).replace('.',',');
 }
 function showAddAcc(){
   S.editAcc=-1;$('mdl-acc-ttl').textContent='Añadir Cuenta';
   $('fa-activa').checked=true;$('fa-nombre').value='';$('fa-desc').value='';
   $('fa-banco').value='';$('fa-tipo').value='1';$('fa-grupo').value='';buildGruposList();
-  $('tarjeta-fields').style.display='none';
+  $('tarjeta-fields').style.display='none';$('venc-fields').style.display='none';
+  $('fa-venc').innerHTML='';$('fa-vfecha').value='';$('fa-vinteres').value='';
   $('fa-dcierre').value='31';$('fa-dcargo').value='1';$('fa-amort').value='0,00';
   showModal('mdl-acc');setTimeout(()=>$('fa-nombre').focus(),50);
 }
@@ -2214,7 +2253,12 @@ function showEditAcc(idx){
   $('mdl-acc-ttl').textContent='Editar Cuenta';
   $('fa-activa').checked=a.active;$('fa-nombre').value=a.name;
   $('fa-desc').value=a.desc;$('fa-banco').value=a.bank;$('fa-tipo').value=a.type;$('fa-grupo').value=a.grupo||'';buildGruposList();
+  $('fa-venc').innerHTML='';
   toggleTarjetaFields();
+  // Vencimiento: se proponen los valores guardados si tienen buena pinta (Xopard también los enseña)
+  if(a.type==='2'||a.type==='3'){ $('fa-venc').value=a.level==='2'?'2':'1'; toggleVencFields(); }
+  $('fa-vfecha').value=fechaVenc(a.c8);
+  $('fa-vinteres').value=interesVenc(a.c7)??'';
   if(a.type==='4'){
     $('fa-cargo').value=a.c10||'1';
     $('fa-dcierre').value=a.c9||'20';
@@ -2296,7 +2340,7 @@ function saveAcc(){
   const acc={
     type:tipo, bank:$('fa-banco').value.trim(),
     name:$('fa-nombre').value.trim(), desc:$('fa-desc').value.trim(),
-    level: orig ? orig.level : 1,
+    level: orig ? orig.level : '1',
     active:$('fa-activa').checked,
     c7:  tipo==='4' ? String(Math.round(parseAmt($('fa-amort').value)||0)) : (orig?orig.c7:'0'),
     c8:  tipo==='4' ? ($('fa-dcargo').value||'1')   : (orig?orig.c8:'1'),
@@ -2304,6 +2348,20 @@ function saveAcc(){
     c10: tipo==='4' ? ($('fa-cargo').value||'1')    : (orig?orig.c10:'1'),
     grupo: $('fa-grupo').value.trim()
   };
+  // Vencimiento (verificado con Xopard): campo 5 = 2 con vencimiento, 1 sin; con vencimiento,
+  // campo 7 = interés con coma decimal y campo 8 = fecha dd-mm-aa. Los campos 9 y 10 no se tocan.
+  if(tipo==='2'||tipo==='3'){
+    if($('fa-venc').value==='2'){
+      const f=fechaVenc($('fa-vfecha').value), it=interesVenc($('fa-vinteres').value);
+      if(!f){ alert('Fecha de vencimiento no válida. Escríbela como día-mes-año, por ejemplo 15-06-27.'); return; }
+      if(it===null){ alert('Tipo de interés no válido. Escribe solo el número, por ejemplo 2,5.'); return; }
+      acc.level='2'; acc.c7=it; acc.c8=f;
+    }else if(acc.level==='2'){
+      acc.level='1'; // pasa a sin vencimiento; los campos 7 y 8 se dejan como estaban
+    }
+  }else if(acc.level==='2'){
+    acc.level='1'; // ya no es ahorro ni préstamo
+  }
   if(S.editAcc<0){
     // La cuenta nueva ocupa la posición siguiente: si hay movimientos sin cuenta que apuntan ahí, pasarían a ella
     const heredados=S.movs.filter(m=>m.ai===S.accs.length);
@@ -2333,7 +2391,9 @@ function delAcc(){
   }
   if(!confirm(`¿Eliminar la cuenta "${nombre}"?`))return;
   saveUndo('Cuenta eliminada: '+nombre);
-  S.movs=S.movs.filter(m=>m.ai!==idx).map(m=>({...m,ai:m.ai>idx?m.ai-1:m.ai}));
+  // Los que no tienen cuenta válida no se renumeran: si no, podrían caer en una cuenta existente
+  const nAcc=S.accs.length;
+  S.movs=S.movs.filter(m=>m.ai!==idx).map(m=>({...m,ai:(m.ai>idx&&m.ai<nAcc)?m.ai-1:m.ai}));
   // Las tarjetas que apuntan a una cuenta posterior bajan un puesto
   S.accs.forEach(a=>{
     const c=parseInt(a.c10);
@@ -3133,7 +3193,7 @@ function cuBuildSums(){
   const n=S.cats.length;
   const sums=Array.from({length:n},()=>new Map());
   for(const m of S.movs){
-    if(m.ci<0||m.ci>=n||!m.period)continue;
+    if(m.ci<0||m.ci>=n||!m.period||!movConCuenta(m))continue; // sin cuenta: Xopard tampoco los suma
     const p=cuP(m.period);if(!p)continue;
     sums[m.ci].set(p,(sums[m.ci].get(p)||0)+m.amount);
   }
@@ -3252,18 +3312,20 @@ function cuRenderMovs(){
   let movs;
   if(CU.selPeriod==='ALL'){
     // Todos los movimientos de la categoría sin restricción de fecha
-    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.date);
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.date&&movConCuenta(m));
     $('cu-movs-title').textContent=`${S.cats[CU.selCat].name} — todos los movimientos`;
   } else if(CU.selIsYear){
     const y=CU.selPeriod;
-    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&Math.floor(cuP(m.period)/100)===y);
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&Math.floor(cuP(m.period)/100)===y&&movConCuenta(m));
   }else{
-    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&cuP(m.period)===CU.selPeriod);
+    movs=S.movs.map((m,i)=>({...m,oi:i})).filter(m=>cats.has(m.ci)&&m.period&&cuP(m.period)===CU.selPeriod&&movConCuenta(m));
   }
   movs.sort((a,b)=>dateSort(a.date)<dateSort(b.date)?-1:1);
-  const MN=['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-  const pStr=CU.selIsYear?String(CU.selPeriod):(()=>{const mm=CU.selPeriod%100,yy=Math.floor(CU.selPeriod/100);return`${MN[mm]}-${String(yy).slice(-2)}`;})();
-  $('cu-movs-title').textContent=`${S.cats[CU.selCat].name} en ${pStr}`;
+  if(CU.selPeriod!=='ALL'){ // con 'ALL' el título ya está puesto arriba (antes salía «… en undefined-aN»)
+    const MN=['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const pStr=CU.selIsYear?String(CU.selPeriod):(()=>{const mm=CU.selPeriod%100,yy=Math.floor(CU.selPeriod/100);return`${MN[mm]}-${String(yy).slice(-2)}`;})();
+    $('cu-movs-title').textContent=`${S.cats[CU.selCat].name} en ${pStr}`;
+  }
   if(!movs.length){list.innerHTML='<div style="padding:8px 16px;color:#999;font-size:12px">Sin movimientos</div>';
     const cc=$('cu-movs-count');if(cc)cc.textContent='';return;}
   const cc=$('cu-movs-count');if(cc)cc.textContent=`(${movs.length})`;
@@ -3370,9 +3432,19 @@ function cuOpenEditCats() {
   showModal('mdl-edit-cats');
 }
 
+// «Cobros y pagos extraordinarios» no se puede renombrar ni borrar mientras sea la única con
+// ese nombre: si falta, Xopard da ese nombre a la categoría de la posición 37 del bloque (verificado)
+const CAT_COBROS='Cobros y pagos extraordinarios';
+const MSG_COBROS='Xopard necesita una categoría llamada «'+CAT_COBROS+'». Si falta, al abrir el fichero le pone ese nombre a la categoría de la posición 37, sea cual sea. Por eso no se puede renombrar ni borrar (puede quedarse vacía).';
+function cueProtegida(i){
+  const c=CUE.cats[i];
+  return !!c&&c.name===CAT_COBROS&&CUE.cats.filter(x=>x.name===CAT_COBROS).length===1;
+}
 function cuRenderEditList() {
   const LCLS=['ecat-lv1','ecat-lv2','ecat-lv3','ecat-lv4','ecat-lv5','ecat-lv6'];
   let html='';
+  const inp=$('edit-cat-name');
+  if(inp){ const p=cueProtegida(CUE.sel); inp.disabled=p; inp.title=p?MSG_COBROS:''; }
   CUE.cats.forEach((c,i)=>{
     const indent=(c.level-1)*12;
     const lc=LCLS[Math.min(c.level-1,5)];
@@ -3384,7 +3456,7 @@ function cuRenderEditList() {
       ondragover="cuEditDragOver(event,${i})"
       ondragleave="cuEditDragLeave(event)"
       ondrop="cuEditDrop(event,${i})">
-      <span class="ecat-name ${lc}" style="padding-left:${indent}px">${c.name}</span>
+      <span class="ecat-name ${lc}" style="padding-left:${indent}px">${c.name}</span>${cueProtegida(i)?`<span title="${MSG_COBROS}" style="margin-left:6px;font-size:11px">🔒</span>`:''}
     </div>`;
   });
   $('edit-cats-list').innerHTML=html||'<div style="padding:16px;color:#999;text-align:center">Sin categorías</div>';
@@ -3402,7 +3474,15 @@ function cuEditSel(i){
 
 function cuEditNameChange(){
   if(CUE.sel<0||!CUE.cats[CUE.sel])return;
+  if(cueProtegida(CUE.sel)){ $('edit-cat-name').value=CAT_COBROS; return; }
+  const antes=CUE.cats[CUE.sel].name;
   CUE.cats[CUE.sel].name=$('edit-cat-name').value;
+  // Si entra o sale el nombre protegido, repintar para actualizar los candados
+  if(antes===CAT_COBROS||CUE.cats[CUE.sel].name===CAT_COBROS){
+    cuRenderEditList();
+    const inp=$('edit-cat-name'); if(!inp.disabled){ inp.focus(); const n=inp.value.length; inp.setSelectionRange(n,n); }
+    return;
+  }
   // Actualizar solo el texto sin re-render completo
   const rows=$('edit-cats-list').querySelectorAll('.ecat-row');
   if(rows[CUE.sel]){
@@ -3432,11 +3512,17 @@ function cuEditDel(){
       parentOrigIdx=CUE.cats[i].origIdx;break;
     }
   }
-  if(!confirm(`Se borrará la categoría y todas las subcategorías que contenga.\nLos movimientos asignados a la categoría borrada quedarán automáticamente asignados a la categoría que las contenía.\n¿Deseas borrar "${delCat.name}"?`))return;
-  // Recoger índices eliminados con su padre para reasignar movimientos al guardar
   const lv=delCat.level;
   let end=CUE.sel+1;
   while(end<CUE.cats.length&&CUE.cats[end].level>lv)end++;
+  // No dejar sin «Cobros y pagos extraordinarios» (ni borrándola ni borrando la categoría que la contiene)
+  const quedan=CUE.cats.filter((c,j)=>c.name===CAT_COBROS&&(j<CUE.sel||j>=end)).length;
+  if(!quedan&&CUE.cats.slice(CUE.sel,end).some(c=>c.name===CAT_COBROS)){
+    alert((delCat.name===CAT_COBROS?'':'«'+delCat.name+'» contiene la categoría «'+CAT_COBROS+'».\n\n')+MSG_COBROS);
+    return;
+  }
+  if(!confirm(`Se borrará la categoría y todas las subcategorías que contenga.\nLos movimientos asignados a la categoría borrada quedarán automáticamente asignados a la categoría que las contenía.\n¿Deseas borrar "${delCat.name}"?`))return;
+  // Recoger índices eliminados con su padre para reasignar movimientos al guardar
   for(let j=CUE.sel;j<end;j++){
     if(CUE.cats[j].origIdx>=0)
       CUE.deletions.push({origIdx:CUE.cats[j].origIdx,parentOrigIdx});
@@ -3674,6 +3760,11 @@ function csvDate(){
   const d=new Date();
   return`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
 }
+// Exportaciones: también con el prefijo Zenba_ (el fichero lo ha hecho Zenba) y con
+// «_Exportado_» para que nunca se confundan con una contabilidad (ver esConta)
+function nombreExport(parte){
+  return `${PREFIJO}${CONTA.nombre||'sin_nombre'}_Exportado_${parte}_${csvDate()}.csv`.replace(/[\\/:*?"<>|]/g,'-');
+}
 
 // Abrir modal de exportación (3 usos distintos)
 function exportMovsCsv(){
@@ -3786,7 +3877,7 @@ function _doExportMovsAccs(){
     if(inclBal)row.push(fmtAmt(running));
     rows.push(row);
   }
-  downloadCsv(rows,`${acc.name}_${csvDate()}.csv`);
+  downloadCsv(rows,nombreExport(acc.name));
   toast(`Exportados ${movs.length} movimientos ✓`);
 }
 
@@ -3831,7 +3922,7 @@ function _doExportCuGrid(){
   }
   const roots=(CU.tree.sorted||[...Array(S.cats.length).keys()]).filter(i=>CU.tree.parent[i]===-1);
   for(const i of roots)addRow(i,0);
-  downloadCsv(rows,`Cuadro_${y1}-${y2}_${csvDate()}.csv`);
+  downloadCsv(rows,nombreExport(`Cuadro_${y1}-${y2}`));
   toast('Cuadro exportado ✓');
 }
 
@@ -3852,8 +3943,8 @@ function _doExportCuMovs(){
     r.push(src.period||m.period,fmtAmt(src.amount!=null?src.amount:m.amount));
     rows.push(r);
   }
-  const title=($('cu-movs-title')?.textContent||'Resultados').replace(/[^\w\sáéíóúüñÁÉÍÓÚÜÑ-]/g,'').trim().substring(0,40);
-  downloadCsv(rows,`${title}_${csvDate()}.csv`);
+  const title=($('cu-movs-title')?.textContent||'Resultados').replace(/[^\w\sáéíóúüñÁÉÍÓÚÜÑ-]/g,'').replace(/\s+/g,' ').trim().substring(0,40);
+  downloadCsv(rows,nombreExport(title));
   toast(`Exportados ${rows.length-1} movimientos ✓`);
 }
 
@@ -3930,7 +4021,7 @@ function cuSearchLive(){
   const hasta=($('cu-search-hasta')?.value||'').trim();
   if(!q&&!qAmt&&!desde&&!hasta){$('cu-search-prev').textContent='';return;}
 
-  let results=S.movs.filter(m=>matchesConcept(m.concept,q)&&matchesAmt(m.amount,qAmt));
+  let results=S.movs.filter(m=>movConCuenta(m)&&matchesConcept(m.concept,q)&&matchesAmt(m.amount,qAmt));
   if(desde){const ds=dateSort(desde);results=results.filter(m=>dateSort(m.date)>=ds);}
   if(hasta){const dh=dateSort(hasta);results=results.filter(m=>dateSort(m.date)<=dh);}
 
@@ -4046,7 +4137,7 @@ window.addEventListener('popstate',()=>{
 });
 
 // ── VERSIÓN ──────────────────────────────────────────────────
-const APP_VERSION='030';
+const APP_VERSION='034';
 
 function about(){
   closeMenu();
@@ -4072,7 +4163,7 @@ const CONTA = { nombre:'', path:'' };
 const LS_CONTA = 'conta_actual';
 
 function contaPath(n){ return DBX_DIR+'/'+PREFIJO+n+'.csv'; }
-function esConta(fname){ return fname.toLowerCase().startsWith(PREFIJO.toLowerCase())&&/\.csv$/i.test(fname); }
+function esConta(fname){ return fname.toLowerCase().startsWith(PREFIJO.toLowerCase())&&/\.csv$/i.test(fname)&&!/_Exportado_/i.test(fname); }
 // Nombre a partir de un fichero: sin .csv, sin el " (1)" de las descargas repetidas y sin el prefijo
 function nombreDeFichero(fname){
   let n=(fname||'').replace(/\.csv$/i,'').replace(/ \(\d+\)$/,'');
@@ -4142,16 +4233,27 @@ function cargarTexto(txt){
   S.chartGroup=null; S.selGroup=null; S.selMovs.clear(); S.lastMovClick=-1;
   CU.tree=null; CU.sums=null; CU.selCat=-1; CU.selPeriod=null; CU.selMovOi=-1; CU.collapsedCats=new Set();
   parseCSV(txt);
-  setTimeout(avisarHuerfanos,300);
+  setTimeout(()=>{ avisarHuerfanos(); avisarSinCobros(); },300);
+}
+
+// Sin «Cobros y pagos extraordinarios», Xopard renombra la categoría de la posición 37 al abrir
+function avisarSinCobros(){
+  if(S.cats.length<37||S.cats.some(c=>c.name===CAT_COBROS)) return;
+  alert('Aviso sobre «'+(CONTA.nombre||'este fichero')+'»:\n\nNo hay ninguna categoría llamada «'+CAT_COBROS+'». '+
+    'Si abres este fichero en Xopard, le pondrá ese nombre a «'+S.cats[36].name+'» (la posición 37).\n\n'+
+    'Para evitarlo, crea en el editor de categorías una llamada «'+CAT_COBROS+'». Puede quedarse vacía.');
 }
 
 // Movimientos que apuntan a una cuenta o categoría que no existe. Xopard los deja al
 // borrar una cuenta (verificado). Se conservan tal cual; solo se avisa.
+// Movimiento con cuenta válida. Los que no la tienen (cuenta borrada, o «NaN»: los
+// apuntes fantasma que dejaba Xopard al editar) no se ven ni se suman, igual que en Xopard.
+function movConCuenta(m){ return Number.isInteger(m.ai)&&m.ai>=0&&m.ai<S.accs.length; }
 function movsHuerfanos(){
-  const na=S.accs.length, nc=S.cats.length;
+  const nc=S.cats.length;
   return {
-    cuenta: S.movs.filter(m=>m.ai<0||m.ai>=na),
-    categoria: S.movs.filter(m=>m.ai>=0&&m.ai<na&&(m.ci<0||m.ci>=nc)),
+    cuenta: S.movs.filter(m=>!movConCuenta(m)),
+    categoria: S.movs.filter(m=>movConCuenta(m)&&!(Number.isInteger(m.ci)&&m.ci>=0&&m.ci<nc)),
   };
 }
 function avisarHuerfanos(){
@@ -4159,11 +4261,37 @@ function avisarHuerfanos(){
   if(!h.cuenta.length&&!h.categoria.length) return;
   const det=l=>l.slice(0,5).map(m=>'  '+m.date+'  '+m.concept+'  '+fmtAmt(m.amount)).join('\n')+(l.length>5?'\n  …':'');
   let msg='Aviso sobre «'+(CONTA.nombre||'este fichero')+'»:\n\n';
-  if(h.cuenta.length) msg+=h.cuenta.length+' movimiento'+(h.cuenta.length>1?'s apuntan':' apunta')+' a una cuenta que ya no existe (Xopard los deja al borrar una cuenta):\n'+det(h.cuenta)+'\n\n'+
-    'No se ven en ninguna cuenta. Si se crea una cuenta nueva, pueden aparecer en ella.\n\n';
-  if(h.categoria.length) msg+=h.categoria.length+' movimiento'+(h.categoria.length>1?'s apuntan':' apunta')+' a una categoría que no existe:\n'+det(h.categoria)+'\n\n';
-  msg+='Zenba los conserva tal cual y no cambia nada.';
-  alert(msg);
+  if(h.categoria.length) msg+=h.categoria.length+' movimiento'+(h.categoria.length>1?'s apuntan':' apunta')+' a una categoría que no existe:\n'+det(h.categoria)+'\n\n'+
+    'Se conservan tal cual.\n\n';
+  if(!h.cuenta.length){ alert(msg.trim()); return; }
+  const n=h.cuenta.length;
+  msg+=n+' movimiento'+(n>1?'s':'')+' sin cuenta válida (de una cuenta borrada, o apuntes fantasma de Xopard con «NaN»):\n'+det(h.cuenta)+'\n\n'+
+    'No se ven en ninguna cuenta ni se suman en ningún total, ni en Xopard ni en Zenba.\n\n'+
+    '¿Quitarlos del fichero?\n\nAceptar: quitarlos'+(LOCAL.active?'':' (antes se guarda una copia del fichero en «anteriores»)')+'. Se puede deshacer.\nCancelar: dejarlos como están.';
+  if(confirm(msg)) quitarHuerfanos();
+}
+async function quitarHuerfanos(){
+  const n=S.movs.filter(m=>!movConCuenta(m)).length;
+  if(!n) return;
+  if(!LOCAL.active&&CONTA.path){
+    showLoading('Guardando copia antes de limpiar…');
+    try{
+      const actual=await callDropbox(()=>dbxDownload(CONTA.path));
+      await callDropbox(()=>dbxUpload(actual,DBX_DIR+'/anteriores/'+PREFIJO+CONTA.nombre+'_('+sello()+')_antes_de_limpiar.csv'));
+    }catch(e){
+      hideLoading();
+      alert('No se ha podido guardar la copia previa ('+e.message+'). No se ha quitado nada.');
+      return;
+    }
+    hideLoading();
+  }
+  saveUndo('Movimientos sin cuenta quitados');
+  S.movs=S.movs.filter(movConCuenta);
+  S.selMov=-1; S.selMovs.clear(); S.lastMovClick=-1;
+  CU.sums=null;
+  renderAll();
+  toast(n+' movimiento'+(n>1?'s':'')+' sin cuenta quitado'+(n>1?'s':'')+' ✓');
+  saveToDropbox();
 }
 
 // Si hay cambios sin guardar, guardarlos antes de cambiar de contabilidad.
