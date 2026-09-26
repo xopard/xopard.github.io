@@ -309,7 +309,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="003";
+const APP_VERSION="004";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -1611,25 +1611,9 @@ function goLocal(err){
   if(String(code).indexOf("permission-denied")>=0||String(code).indexOf("PERMISSION_DENIED")>=0)ui.salaError=true;
   if(mode!=="firebase"){mode="local";render()}
 }
-async function migrarSiHaceFalta(){
-  if(SALA!=="principal")return;
-  try{
-    const ya=await colRef("bar").doc("config").get();
-    if(ya.exists)return;
-    const cfg=await db.collection("bar").doc("config").get();
-    if(!cfg.exists)return;
-    const cur=await db.collection("bar").doc("current").get();
-    const rs=await db.collection("rounds").get();
-    await colRef("bar").doc("config").set(cfg.data());
-    if(cur.exists)await colRef("bar").doc("current").set(cur.data());
-    for(const doc of rs.docs)await colRef("rounds").doc(doc.id).set(doc.data());
-    console.log("Datos anteriores copiados a la sala principal");
-  }catch(e){console.warn("migración:",e)}
-}
 async function initFirebase(){
   if(!SALA){mode="local";render();return}
   if(!db){goLocal();return}
-  await migrarSiHaceFalta();
   const META={includeMetadataChanges:true};
   colRef("bar").doc("config").onSnapshot(META,snap=>{
     if(snap.exists)S.config=normConfig(snap.data());
