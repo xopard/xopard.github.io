@@ -4191,7 +4191,7 @@ window.addEventListener('popstate',()=>{
 });
 
 // ── VERSIÓN ──────────────────────────────────────────────────
-const APP_VERSION='039';
+const APP_VERSION='040';
 
 function about(){
   closeMenu();
@@ -4633,7 +4633,8 @@ async function revisarSiCambio(){
     }
     // Nada pendiente aquí: cargar la versión nueva, conservando la cuenta y la pestaña a la vista
     const cuenta=S.selAcc>=0&&S.accs[S.selAcc]?S.accs[S.selAcc].name:null;
-    const enCuadro=$('tab-cuadro').style.display!=='none';
+    // Lo que se ve de verdad (al abrir la app el Cuadro no lleva estilo propio: lo oculta la hoja de estilos)
+    const enCuadro=getComputedStyle($('tab-cuadro')).display!=='none';
     await abrirConta(CONTA.nombre,{sinPreguntar:true});
     setTimeout(()=>{
       if(enCuadro) switchTab('cuadro',document.querySelector('.tab[onclick*="cuadro"]'));
