@@ -1148,8 +1148,9 @@ async function saveToDropbox(forzar){
     return false;
   }finally{hideLoading();}
 }
-function avisarConflicto(){
-  if(!confirm('«'+CONTA.nombre+'» se ha modificado en Dropbox desde otro aparato o ventana después de abrirla aquí. Para no borrar esos cambios, Zenba no ha guardado.\n\n'+
+function avisarConflicto(alVolver){
+  if(!confirm('«'+CONTA.nombre+'» se ha modificado en Dropbox desde otro aparato o ventana después de abrirla aquí. '+
+    (alVolver?'Aquí tienes cambios sin guardar, y si se guardaran borrarían esos cambios.\n\n':'Para no borrar esos cambios, Zenba no ha guardado.\n\n')+
     'Aceptar: descargar al ordenador una copia de lo que tienes aquí (por si acaso) y cargar la versión de Dropbox.\n'+
     'Cancelar: seguir aquí sin guardar (más tarde: Menú → Recargar desde Dropbox).')) return;
   downloadBackup();
@@ -4190,7 +4191,7 @@ window.addEventListener('popstate',()=>{
 });
 
 // ── VERSIÓN ──────────────────────────────────────────────────
-const APP_VERSION='038';
+const APP_VERSION='039';
 
 function about(){
   closeMenu();
@@ -4606,6 +4607,44 @@ async function volverDropbox(){
   if(!(await antesDeCambiar())) return;
   location.reload();
 }
+
+// ── AL VOLVER A ZENBA: ¿HAY UNA VERSIÓN MÁS NUEVA EN DROPBOX? (039) ──
+// Al volver a la pestaña, a la ventana o a la app del móvil, se pregunta a Dropbox la versión
+// del fichero. Si otro aparato ha guardado: sin cambios pendientes aquí, se carga la nueva sin
+// perder nada; con cambios pendientes, se avisa antes de seguir (al guardar se pisarían).
+let _ultRevision=0, _revisando=false;
+async function revisarSiCambio(){
+  if(LOCAL.active||!S.token||!CONTA.path||!CONTA.rev||CONTA.conflicto||_revisando) return;
+  if(document.visibilityState!=='visible') return;
+  if(Date.now()-_ultRevision<15000) return; // como mucho una vez cada 15 s
+  // Con una ventana abierta (editando un movimiento…) o cargando, no se toca nada
+  if($('overlay')?.classList.contains('show')||$('loading')?.classList.contains('show')) return;
+  _revisando=true; _ultRevision=Date.now();
+  try{
+    let rev=null;
+    try{ const m=await callDropbox(()=>dbxApi('files/get_metadata',{path:CONTA.path})); rev=m&&m.rev; }
+    catch(e){ return; } // sin conexión: ya avisará al guardar
+    if(!rev||rev===CONTA.rev) return;
+    if(_saveTimer||_hayPendiente){
+      CONTA.conflicto=true; markPending(true);
+      setStatus('Sin guardar · «'+CONTA.nombre+'» ha cambiado en Dropbox');
+      avisarConflicto(true);
+      return;
+    }
+    // Nada pendiente aquí: cargar la versión nueva, conservando la cuenta y la pestaña a la vista
+    const cuenta=S.selAcc>=0&&S.accs[S.selAcc]?S.accs[S.selAcc].name:null;
+    const enCuadro=$('tab-cuadro').style.display!=='none';
+    await abrirConta(CONTA.nombre,{sinPreguntar:true});
+    setTimeout(()=>{
+      if(enCuadro) switchTab('cuadro',document.querySelector('.tab[onclick*="cuadro"]'));
+      const i=cuenta?S.accs.findIndex(a=>a.name===cuenta):-1;
+      if(i>=0) selAcc(i);
+    },120);
+    toast('«'+CONTA.nombre+'» actualizada con lo guardado desde otro aparato',5000);
+  }finally{ _revisando=false; }
+}
+document.addEventListener('visibilitychange',revisarSiCambio);
+window.addEventListener('focus',revisarSiCambio);
 
 // ── MODO LOCAL (sin Dropbox: fichero del disco) ──────────────
 const LOCAL = { active:false, name:'' };
