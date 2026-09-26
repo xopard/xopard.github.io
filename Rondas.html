@@ -108,8 +108,16 @@ textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1p
 .set-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
 .set-row input[type=text]{flex:1;min-width:0}
 .x{background:none;border:0;color:var(--muted);font-size:1.2rem;padding:6px;flex-shrink:0}
-.catbox{padding:6px 0 10px 10px;margin:12px 0}
-.grpbox{border:1px dashed var(--line);border-radius:8px;padding:8px 8px 10px;margin:8px 0}
+.catbox{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:2px 10px 2px 6px;margin:8px 0}
+.catbox.open{padding-bottom:10px}
+.grpbox{border:1px dashed var(--line);border-radius:8px;padding:2px 8px;margin:8px 0}
+.grpbox.open{padding-bottom:10px}
+.fold{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:none;border:0;text-align:left;padding:10px 4px}
+.fold .catname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fold .note{flex-shrink:0}
+.buscar{width:100%;margin:0 0 10px;font-size:1.05rem;padding:10px 12px}
+.found{border-bottom:1px solid var(--line);padding:6px 0}
+.found:last-child{border-bottom:0}
 .catname{font:700 1.1rem var(--cond)}
 .emo{width:3.2em;text-align:center;padding:8px 4px;flex-shrink:0}
 .lock{width:2.2em;text-align:center;flex-shrink:0}
@@ -309,7 +317,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="004";
+const APP_VERSION="005";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -329,7 +337,7 @@ let netCache=false,netPending=false;
 let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:""};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -1006,9 +1014,9 @@ function vStats(){
   return h+'</section>';
 }
 
-function vItemRow(it,used){
+function vItemRow(it,used,sinArrastre){
   const u=used.has(it.id);
-  return `<div class="set-row" data-key="${it.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}"${u?" disabled":""}><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="editMix" data-id="${it.id}" title="Opciones propias">${it.mix?"🍹":"🍸"}</button><button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div>`;
+  return `<div class="set-row" data-key="${it.id}">${sinArrastre?"":'<button class="grip" data-grip aria-label="Mover">⠿</button>'}<input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}"${u?" disabled":""}><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}"> €<button class="x" data-act="editMix" data-id="${it.id}" title="Opciones propias">${it.mix?"🍹":"🍸"}</button><button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div>`;
 }
 function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
@@ -1031,6 +1039,7 @@ function vAjustes(){
 
   h+=`<section class="card"><h2>Sala de la cuadrilla</h2><p class="note">Cada sala tiene sus pedidos, su cuadrilla, sus cartas y sus cuentas, sin mezclarse con las demás. Comparte el enlace solo con los tuyos.</p><p><b>Sala actual:</b> ${esc(SALA)}</p><button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de esta sala</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otra sala</button><button class="btn small" data-act="salaChange">↪ Entrar en otra sala</button></div><button class="btn small" data-act="salaClone">⧉ Copiar esta sala a un código nuevo</button><p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
+  h+=`<button class="btn primary" data-act="tab" data-id="carta">✏️ Editar «${esc(curMenu().name)}» · ${countProducts(catalog())} productos</button>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
   h+=`<button class="btn small${hasDefaultMenu()?"":" primary"}" data-act="menuFromDefault">+ Añadir la carta ${esc(DEFAULT_NAME)} (${countProducts(DEFAULT_CATALOG)} productos)</button>`;
   h+=`<button class="btn small primary" data-act="tab" data-id="importar">⬇️ Importar productos (Excel, Word, foto…)</button>`;
@@ -1039,25 +1048,6 @@ function vAjustes(){
   h+=`<div class="row2"><button class="btn small" data-act="menuRename">✏️ Renombrar</button><button class="btn small warn" data-act="menuDel"${menus().length>1?"":" disabled"}>🗑 Borrar carta</button></div>`;
   h+=`<button class="btn small warn" data-act="menuDefaults">↻ Restaurar esta carta a la de por defecto</button><p class="note">Al restaurar se guarda antes una copia de seguridad de la carta actual, así que no se pierde nada.</p></section>`;
 
-  h+=`<section class="card"><h2>Carta activa: ${esc(curMenu().name)}</h2><p class="note">🔒 = ya pedido esta noche: se puede cambiar el precio, pero no el nombre ni borrarlo. ⧉ = duplicar. Un subgrupo (Ron, Ginebra…) añade un nivel y puede llevar mezclas por defecto.</p>`;
-  h+='<div data-droplist="cats">';
-  catalog().forEach(c=>{
-    const cUsed=groupUsed(c,used);
-    h+=`<div class="catbox" style="border-left:5px solid ${c.color}" data-key="${c.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover categoría">⠿</button><input type="text" class="catname" value="${esc(c.name)}" data-cname="${c.id}"${cUsed?" disabled":""}><button class="x" data-act="dupCat" data-id="${c.id}" title="Duplicar">⧉</button>${cUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${c.id}" aria-label="Borrar">🗑</button>`}</div><button class="btn small" data-act="editMix" data-id="${c.id}">🍹 Opciones de la categoría: ${c.mix?esc(c.mix.options.map(o=>o.name+(o.extra?" +"+eur(o.extra):"")).join(", ")):"ninguna"}</button><div data-droplist="nodes:${c.id}">`;
-    (c.items||[]).forEach(n=>{
-      if(n.group){
-        const gUsed=groupUsed(n,used);
-        h+=`<div class="grpbox" data-key="${n.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover grupo">⠿</button><input type="text" class="emo" value="${esc(n.emoji)}" data-iemoji="${n.id}" aria-label="Emoji"><input type="text" class="catname" value="${esc(n.name)}" data-cname="${n.id}"${gUsed?" disabled":""}><button class="x" data-act="dupItem" data-id="${n.id}" title="Duplicar">⧉</button>${gUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${n.id}" aria-label="Borrar">🗑</button>`}</div>`;
-        h+=`<button class="btn small" data-act="editMix" data-id="${n.id}">🍹 Mezclas: ${n.mix?esc(n.mix.options.map(o=>o.name+(o.extra?" +"+eur(o.extra):"")).join(", ")):"ninguna"}</button>`;
-        h+=`<div data-droplist="nodes:${n.id}">`;
-        (n.items||[]).forEach(it=>{h+=vItemRow(it,used)});
-        h+=`</div><button class="btn small" data-act="addItem" data-id="${n.id}">+ Producto en ${esc(n.name)}</button></div>`;
-      }else h+=vItemRow(n,used);
-    });
-    h+=`</div><div class="row2"><button class="btn small" data-act="addItem" data-id="${c.id}">+ Producto</button><button class="btn small" data-act="addGroup" data-id="${c.id}">+ Subgrupo</button></div></div>`;
-  });
-  h+='</div>';
-  h+='<button class="btn" data-act="addCat">+ Nueva categoría</button></section>';
   h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: noche nueva, vaciar o reabrir rondas, cambiar el pagador de una ronda cerrada, borrar personas o cartas y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
   return h;
 }
@@ -1083,6 +1073,56 @@ function vImport(){
   h+=`<section class="card" style="margin-top:14px"><h2>📷 Desde una foto de la carta</h2><p class="note">La app no lee fotos por sí sola. Lo práctico: haz la foto, mándasela a Claude (u otro asistente) pidiéndole que la transcriba a tabla, y pega aquí el resultado. El botón copia la petición ya redactada.</p><button class="btn small" data-act="copyPrompt">📋 Copiar la petición para el asistente</button></section>`;
   return h;
 }
+/* Editor de la carta activa: pantalla propia, categorías y subgrupos plegables (solo uno
+   abierto a la vez) y buscador. ui.cartaCat / ui.cartaGrp = lo abierto; ui.cartaQ = búsqueda. */
+function vCarta(){
+  let h=`<div class="pad-head"><h2>${esc(curMenu().name)}</h2><button class="mini" data-act="tab" data-id="ajustes">← Volver</button></div>`;
+  h+=`<input type="search" id="cartaBuscar" class="buscar" placeholder="🔍 Buscar producto…" value="${esc(ui.cartaQ||"")}" autocomplete="off" aria-label="Buscar producto">`;
+  return h+`<div id="cartaLista">${vCartaLista()}</div>`;
+}
+const mixTxt=m=>m?esc(m.options.map(o=>o.name+(o.extra?" +"+eur(o.extra):"")).join(", ")):"ninguna";
+function vCartaLista(){
+  const used=usedIds(),q=canon(ui.cartaQ||"");
+  if(q)return vCartaBusqueda(q,used);
+  let h=`<p class="note">Toca una categoría para abrirla. ⠿ = arrastrar para ordenar. ⧉ = duplicar. 🔒 = ya pedido esta noche: se puede cambiar el precio, pero no el nombre ni borrarlo.</p>`;
+  h+='<div data-droplist="cats">';
+  catalog().forEach(c=>{
+    const open=ui.cartaCat===c.id,cUsed=groupUsed(c,used),n=countProducts([c]);
+    h+=`<div class="catbox${open?" open":""}" style="border-left:6px solid ${c.color}" data-key="${c.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover categoría">⠿</button><button class="fold" data-act="cartaCat" data-id="${c.id}" aria-expanded="${open}"><span class="catname">${esc(c.name)}</span><span class="note">${n} producto${n===1?"":"s"}</span><span aria-hidden="true">${open?"▾":"▸"}</span></button></div>`;
+    if(open){
+      h+=`<div class="set-row"><input type="text" class="catname" value="${esc(c.name)}" data-cname="${c.id}" aria-label="Nombre de la categoría"${cUsed?" disabled":""}><button class="x" data-act="dupCat" data-id="${c.id}" title="Duplicar">⧉</button>${cUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${c.id}" aria-label="Borrar">🗑</button>`}</div>`;
+      h+=`<button class="btn small" data-act="editMix" data-id="${c.id}">🍹 Opciones de la categoría: ${mixTxt(c.mix)}</button><div data-droplist="nodes:${c.id}">`;
+      (c.items||[]).forEach(nd=>{h+=nd.group?vGrupoCarta(nd,used):vItemRow(nd,used)});
+      h+=`</div><div class="row2"><button class="btn small" data-act="addItem" data-id="${c.id}">+ Producto</button><button class="btn small" data-act="addGroup" data-id="${c.id}">+ Subgrupo</button></div>`;
+    }
+    h+='</div>';
+  });
+  h+='</div><button class="btn" data-act="addCat">+ Nueva categoría</button>';
+  return h;
+}
+function vGrupoCarta(g,used){
+  const open=ui.cartaGrp===g.id,gUsed=groupUsed(g,used),n=countProducts([g]);
+  let h=`<div class="grpbox${open?" open":""}" data-key="${g.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover grupo">⠿</button><button class="fold" data-act="cartaGrp" data-id="${g.id}" aria-expanded="${open}"><span class="catname">${esc(g.emoji||"")} ${esc(g.name)}</span><span class="note">${n}</span><span aria-hidden="true">${open?"▾":"▸"}</span></button></div>`;
+  if(open){
+    h+=`<div class="set-row"><input type="text" class="emo" value="${esc(g.emoji)}" data-iemoji="${g.id}" aria-label="Emoji"><input type="text" class="catname" value="${esc(g.name)}" data-cname="${g.id}" aria-label="Nombre del subgrupo"${gUsed?" disabled":""}><button class="x" data-act="dupItem" data-id="${g.id}" title="Duplicar">⧉</button>${gUsed?'<span class="lock">🔒</span>':`<button class="x" data-act="rmCat" data-id="${g.id}" aria-label="Borrar">🗑</button>`}</div>`;
+    h+=`<button class="btn small" data-act="editMix" data-id="${g.id}">🍹 Mezclas: ${mixTxt(g.mix)}</button><div data-droplist="nodes:${g.id}">`;
+    (g.items||[]).forEach(it=>{h+=vItemRow(it,used)});
+    h+=`</div><button class="btn small" data-act="addItem" data-id="${g.id}">+ Producto en ${esc(g.name)}</button>`;
+  }
+  return h+'</div>';
+}
+function vCartaBusqueda(q,used){
+  // Busca en el nombre del producto y en el de su subgrupo ("ron" encuentra los rones).
+  const hits=[];
+  catalog().forEach(c=>(c.items||[]).forEach(nd=>{
+    if(nd.group)(nd.items||[]).forEach(it=>{if(canon(it.name).includes(q)||canon(nd.name).includes(q))hits.push({it,ruta:c.name+" › "+nd.name})});
+    else if(canon(nd.name).includes(q))hits.push({it:nd,ruta:c.name});
+  }));
+  if(!hits.length)return`<p class="hint">Ningún producto coincide con «${esc(ui.cartaQ)}».</p>`;
+  let h=`<p class="status">${hits.length} producto${hits.length===1?"":"s"}</p><div class="card">`;
+  hits.forEach(x=>{h+=`<div class="found"><div class="note">${esc(x.ruta)}</div>${vItemRow(x.it,used,true)}</div>`});
+  return h+'</div>';
+}
 function vSala(){
   const aviso=ui.salaError?`<section class="card" style="border-color:var(--bad)"><h2>⚠️ Ese código no vale</h2><p>La sala <b>${esc(SALA)}</b> no existe o no está autorizada. Comprueba el enlace que te han pasado.</p></section>`:"";
   return aviso+`<section class="card" style="margin-top:20px"><h2>Entrar en una sala</h2>
@@ -1094,9 +1134,9 @@ function vSala(){
 }
 function vMezclas(){
   const f=findNode(catalog(),ui.mixFor);
-  if(!f)return`<p class="hint">No encuentro ese grupo.</p><button class="btn" data-act="tab" data-id="ajustes">← Volver a Ajustes</button>`;
+  if(!f)return`<p class="hint">No encuentro ese grupo.</p><button class="btn" data-act="tab" data-id="carta">← Volver a la carta</button>`;
   const n=f.node,m=n.mix;
-  let h=`<div class="pad-head"><h2>Opciones de ${esc(n.name)}</h2><button class="mini" data-act="tab" data-id="ajustes">← Volver</button></div>`;
+  let h=`<div class="pad-head"><h2>Opciones de ${esc(n.name)}</h2><button class="mini" data-act="tab" data-id="carta">← Volver</button></div>`;
   h+=`<p class="note">Arrastra por ⠿ para ordenarlas: el orden es el que verás al pedir. La marcada con ⭐ se aplica sola al apuntar; si no marcas ninguna, la bebida se apunta sin nada. El suplemento se suma al precio de esa consumición.</p>`;
   if(!n.group&&!n.items){
     const hereda=mixFrom(n.id);
@@ -1116,7 +1156,7 @@ function vMezclas(){
   h+=`<p class="note">Por defecto ahora: <b>${m&&m.def?esc(m.def):"ninguna"}</b></p>`;
   return h;
 }
-const VIEWS={sala:vSala,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
+const VIEWS={sala:vSala,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 const sheet=inner=>`<div class="modal" data-act="modalClose"><div class="sheet" data-act="noop">${inner}</div></div>`;
 function vModal(){
@@ -1159,7 +1199,9 @@ document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0)
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
-    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;window.scrollTo(0,0);break;
+    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;if(id!=="carta"&&id!=="mezclas")ui.cartaQ="";window.scrollTo(0,0);break;
+    case"cartaCat":ui.cartaCat=ui.cartaCat===id?null:id;ui.cartaGrp=null;alTope(id);break;
+    case"cartaGrp":ui.cartaGrp=ui.cartaGrp===id?null:id;alTope(id);break;
     case"sel":if(ui.multi||ui.pending){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.path=[];ui.lastAdd=null;ui.editMix=null}break;
     case"cat":ui.path=ui.path.length?[ui.path[0],id]:[id];ui.lastAdd=null;ui.editMix=null;break;
     case"back":ui.path=ui.path.slice(0,-1);ui.lastAdd=null;break;
@@ -1421,12 +1463,14 @@ document.addEventListener("click",e=>{
     case"addCat":{
       const n=prompt("Nombre de la nueva categoría:");if(!n||!n.trim())return;
       const usedCol=catalog().map(c=>c.color),col=PALETTE.find(x=>!usedCol.includes(x))||PALETTE[catalog().length%PALETTE.length];
-      editMenu(m=>{m.catalog.push({id:uid("c"),name:n.trim().slice(0,30),color:col,items:[]})});flash("Categoría creada");return;
+      const cid=uid("c");ui.cartaCat=cid;ui.cartaGrp=null;
+      editMenu(m=>{m.catalog.push({id:cid,name:n.trim().slice(0,30),color:col,items:[]})});flash("Categoría creada");alTope(cid);return;
     }
     case"addGroup":{
       const n=prompt("Nombre del subgrupo (p. ej. Ginebra):");if(!n||!n.trim())return;
       const mix=prompt('Mezclas separadas por coma. La primera es la de por defecto. Añade "+1" para suplemento. Vacío = sin mezcla:',"con tónica, con limón, solo");
-      editMenu(m=>{const f=findNode(m.catalog,id);if(f)f.node.items.push({id:uid("g"),name:n.trim().slice(0,30),emoji:"",group:true,mix:parseMix(mix),items:[]})});
+      const gid=uid("g");ui.cartaGrp=gid;
+      editMenu(m=>{const f=findNode(m.catalog,id);if(f)f.node.items.push({id:gid,name:n.trim().slice(0,30),emoji:"",group:true,mix:parseMix(mix),items:[]})});
       flash("Subgrupo creado");return;
     }
     case"editMix":ui.mixFor=id;ui.tab="mezclas";window.scrollTo(0,0);break;
@@ -1548,7 +1592,14 @@ function copyOut(txt,okMsg){
     .then(()=>flash(okMsg))
     .catch(()=>prompt("Copia este texto:",txt));
 }
-document.addEventListener("input",e=>{if(e.target&&e.target.id==="impText")ui.impText=e.target.value});
+document.addEventListener("input",e=>{
+  if(e.target&&e.target.id==="impText")ui.impText=e.target.value;
+  // Solo se redibuja la lista: redibujar la pantalla entera quitaría el foco y cerraría el teclado.
+  if(e.target&&e.target.id==="cartaBuscar"){ui.cartaQ=e.target.value;const l=$("#cartaLista");if(l)l.innerHTML=vCartaLista()}
+});
+// Tras abrir una categoría o subgrupo, que quede arriba en pantalla (si no, al cerrarse la de
+// arriba, la recién abierta puede quedar fuera de la vista).
+function alTope(id){setTimeout(()=>{const el=document.querySelector(`#view [data-key="${id}"]`);if(el&&el.scrollIntoView)el.scrollIntoView({block:"start"})},0)}
 document.addEventListener("change",e=>{
   if(e.target&&e.target.id==="impText"){ui.impText=e.target.value;render(true);return}
   const t=e.target;
