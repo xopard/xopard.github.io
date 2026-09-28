@@ -340,7 +340,8 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
   /* Barra de filtros y edición masiva */
   #flt-bar{flex-wrap:wrap;gap:4px}
   #flt-bar input,#flt-bar select{font-size:12px}
-  #bulk-bar{flex-wrap:wrap}
+  /* En el móvil la barra crece en altura: antes cortaba todo lo que no cabía en una línea */
+  #bulk-bar{flex-wrap:wrap;height:auto!important;margin-bottom:0!important;overflow:visible!important;padding:4px 6px}
 
   /* Barras separadoras: ocultar en móvil */
   #divider-v,#cu-hdivider,#cu-vdivider{display:none}
@@ -495,6 +496,10 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
           <button onclick="applyBulkEdit()"
             style="background:var(--wine);color:#fff;border:none;padding:3px 12px;border-radius:3px;cursor:pointer;font-size:11px;font-weight:600">
             Aplicar a seleccionados
+          </button>
+          <button onclick="showCopyModal()" title="Copiar los movimientos seleccionados a otra cuenta"
+            style="background:#fff;color:var(--wine);border:1px solid var(--wine);padding:2px 10px;border-radius:3px;cursor:pointer;font-size:11px;font-weight:600">
+            Copiar a…
           </button>
         </div>
       </div>
@@ -738,6 +743,24 @@ display:flex;gap:6px;color:#888;font-size:10.5px;padding-bottom:1px}
     </div>
     <div class="mbtns">
       <button class="bok" onclick="confirmTransfer()">Ok</button>
+      <button class="bcan" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- MODAL: Copiar varios movimientos a otra cuenta -->
+  <div id="mdl-copiar" class="modal" style="display:none;max-width:400px">
+    <button class="mcls" onclick="closeModal()">×</button>
+    <h3 id="copiar-titulo">Copiar a</h3>
+    <div class="fr">
+      <select id="copiar-cuenta" style="font-size:13px;padding:7px"></select>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:#444;margin:4px 0 8px">
+      <input type="checkbox" id="copiar-signo" style="width:auto;margin:0">
+      Cambiar el signo de los importes (la otra mitad de unos traspasos)
+    </label>
+    <div style="font-size:11.5px;color:#777;line-height:1.5">Se copian con la misma fecha, periodo, concepto, categoría e importe. El tic azul y la marca de dividido no se copian. Los originales no cambian.</div>
+    <div class="mbtns">
+      <button class="bok" onclick="confirmCopy()">Copiar</button>
       <button class="bcan" onclick="closeModal()">Cancelar</button>
     </div>
   </div>
@@ -2115,7 +2138,7 @@ function _renderChartFromDaily(daily){
 // ── MODALS ───────────────────────────────────────────────────
 function showModal(id){
   $('overlay').classList.add('show');
-  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search','mdl-export','mdl-grupos','mdl-contas'].forEach(m=>$(m).style.display='none');
+  ['mdl-mov','mdl-acc','mdl-paste','mdl-info','mdl-transfer','mdl-divide','mdl-edit-cats','mdl-cu-search','mdl-export','mdl-grupos','mdl-contas','mdl-copiar'].forEach(m=>$(m).style.display='none');
   $(id).style.display='block';
 }
 function closeModal(){$('overlay').classList.remove('show');S.editMov=-1;S.editAcc=-1;}
@@ -2561,6 +2584,61 @@ function confirmTransfer() {
   closeModal();
   renderAll();
   saveToDropbox();
+}
+
+// Copiar varios movimientos a otra cuenta (042). Las copias van al final del bloque, como
+// cualquier movimiento nuevo; los originales no cambian.
+let _copiaDestino = -1; // última cuenta a la que se copió (solo mientras la app está abierta)
+function showCopyModal() {
+  const n = S.selMovs.size;
+  if (!n) { toast('Selecciona primero los movimientos'); return; }
+  const showAll = S.filter === 'todas';
+  const sel = $('copiar-cuenta');
+  sel.innerHTML = '';
+  for (const tipo of ['1','2','3','4']) {
+    for (const i of S.displayOrder) {
+      if (!S.accs[i] || S.accs[i].type !== tipo) continue;
+      if (!showAll && !S.accs[i].active && i !== S.selAcc) continue;
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = S.accs[i].name + (i === S.selAcc ? ' (esta misma)' : '');
+      sel.appendChild(opt);
+    }
+  }
+  // Por defecto, la última a la que se copió; si no, la primera que no sea esta
+  const otra = [...sel.options].find(o => parseInt(o.value) === _copiaDestino && _copiaDestino !== S.selAcc)
+            || [...sel.options].find(o => parseInt(o.value) !== S.selAcc);
+  if (otra) sel.value = otra.value;
+  $('copiar-signo').checked = false;
+  $('copiar-titulo').textContent = 'Copiar ' + n + ' movimiento' + (n !== 1 ? 's' : '') + ' a';
+  showModal('mdl-copiar');
+}
+
+function confirmCopy() {
+  const n = S.selMovs.size;
+  if (!n) return;
+  const dest = parseInt($('copiar-cuenta').value);
+  if (!(dest >= 0 && S.accs[dest])) return;
+  const invertir = $('copiar-signo').checked;
+  _copiaDestino = dest;
+  saveUndo('Copia de ' + n + ' movimiento' + (n !== 1 ? 's' : '') + ' a ' + S.accs[dest].name);
+  const nuevos = [];
+  for (const oi of [...S.selMovs].sort((a, b) => a - b)) {
+    const m = S.movs[oi];
+    S.movs.push({
+      c1:'', ai:dest, shaded:'', div:'',
+      period:m.period, date:m.date, concept:m.concept,
+      c8:'', ci:m.ci, amount: invertir ? -m.amount : m.amount
+    });
+    nuevos.push(S.movs.length - 1);
+  }
+  closeModal();
+  // Ir a la cuenta de destino con las copias seleccionadas, listas para retocarlas
+  selAcc(dest);
+  nuevos.forEach(i => S.selMovs.add(i));
+  renderMovs(dest);
+  updateSelCount();
+  saveToDropbox();
+  toast(n + ' movimiento' + (n !== 1 ? 's copiados' : ' copiado') + ' a ' + S.accs[dest].name + (invertir ? ' con el signo cambiado' : '') + ' ✓', 4000);
 }
 
 function downloadBackup() {
@@ -4193,7 +4271,7 @@ window.addEventListener('popstate',()=>{
 });
 
 // ── VERSIÓN ──────────────────────────────────────────────────
-const APP_VERSION='041';
+const APP_VERSION='042';
 
 function about(){
   closeMenu();
