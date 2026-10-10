@@ -191,10 +191,10 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '002';
+const APP_VERSION = '003';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
-// Vacía hasta dar de alta la app en Dropbox; mientras tanto se trabaja con un fichero del disco.
-const DROPBOX_APP_KEY = '';
+// Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
+const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
 // Dirección de vuelta de Dropbox: la de la propia página. Tiene que estar dada de alta en la consola de Dropbox.
 const REDIRECT = (location.protocol === 'https:' || ['127.0.0.1', 'localhost'].includes(location.hostname))
   ? location.origin + location.pathname : 'https://xopard.github.io/Ruedak.html';
