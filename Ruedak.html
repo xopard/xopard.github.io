@@ -1,0 +1,1339 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ruedak</title>
+<style>
+:root {
+  --fondo: #f5f6f8; --papel: #ffffff; --tinta: #1c232c; --suave: #5b6673; --raya: #dbe0e6; --tinte: #eef2f6;
+  --acento: #1f5f99; --acento-tinte: #e3eef8;
+  --rojo: #c63b3b; --rojo-tinte: #fbeaea; --ambar: #b9780b; --ambar-tinte: #fcf2dc; --verde: #2e8550; --verde-tinte: #e4f3e9;
+  --gris: #9aa4af; --radio: 10px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #111418; --papel: #1a1f26; --tinta: #e6eaef; --suave: #9ba6b3; --raya: #2d353f; --tinte: #222932;
+    --acento: #7fb3e6; --acento-tinte: #1c2a38;
+    --rojo: #ff7b72; --rojo-tinte: #3b2020; --ambar: #f0b44c; --ambar-tinte: #3a2e17; --verde: #62c98a; --verde-tinte: #183424;
+    --gris: #6c7783; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: var(--tinta); font-size: 15px; line-height: 1.45; }
+a { color: var(--acento); }
+h1, h2, h3 { line-height: 1.2; margin: 0; }
+h1 { font-size: 1.6em; }
+h2 { font-size: 1.15em; }
+h3 { font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--suave); margin: 1.4em 0 0.4em; }
+p { margin: 0.4em 0; }
+.sub { color: var(--suave); font-size: 0.9em; }
+.mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; overflow-wrap: anywhere; }
+
+/* barra superior */
+.barra { position: sticky; top: 0; z-index: 5; background: var(--papel); border-bottom: 1px solid var(--raya);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 16px; }
+.marca { font-weight: 800; font-size: 1.15em; color: var(--tinta); text-decoration: none; letter-spacing: 0.02em; }
+#nav { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+#nav a { text-decoration: none; color: var(--suave); padding: 4px 10px; border-radius: 999px; font-size: 0.92em; white-space: nowrap; }
+#nav a.activa { background: var(--acento-tinte); color: var(--acento); font-weight: 600; }
+#estado-guardado { font-size: 0.82em; color: var(--suave); white-space: nowrap; }
+#estado-guardado.sucio { color: var(--ambar); }
+
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.cargando { color: var(--suave); }
+
+/* tarjetas */
+.tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.tarjeta, .caja { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); padding: 14px 16px; min-width: 0; }
+.tarjeta header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.tarjeta header a { color: var(--tinta); text-decoration: none; }
+.km { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-weight: 600; }
+.resumen { display: flex; flex-wrap: wrap; gap: 6px; }
+.mini { list-style: none; padding: 0; margin: 0.6em 0 0; display: grid; gap: 4px; }
+.mini li { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; align-items: baseline; }
+.mini li .sub { grid-column: 2; }
+.mas { display: inline-block; margin-top: 0.7em; font-size: 0.92em; }
+section.bloque { margin-top: 26px; }
+section.bloque > h2 { margin-bottom: 8px; }
+
+/* semáforo y etiquetas */
+.punto { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--gris); flex: none; }
+.punto.rojo { background: var(--rojo); } .punto.ambar { background: var(--ambar); } .punto.verde { background: var(--verde); }
+.chip { display: inline-block; font-size: 0.8em; font-weight: 600; padding: 1px 9px; border-radius: 999px; background: var(--tinte); color: var(--suave); white-space: nowrap; }
+.chip.rojo { background: var(--rojo-tinte); color: var(--rojo); }
+.chip.ambar { background: var(--ambar-tinte); color: var(--ambar); }
+.chip.verde { background: var(--verde-tinte); color: var(--verde); }
+
+/* botones y formularios */
+.boton { font: inherit; font-size: 0.92em; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--raya); background: var(--papel); color: var(--tinta); cursor: pointer; }
+.boton:hover { border-color: var(--suave); }
+.boton.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
+.boton.peque { padding: 2px 9px; font-size: 0.82em; font-weight: 500; }
+.botones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+select, input, textarea { font: inherit; color: var(--tinta); background: var(--papel); border: 1px solid var(--raya); border-radius: 7px; padding: 5px 8px; max-width: 100%; }
+label { display: block; margin: 10px 0 0; font-size: 0.9em; color: var(--suave); }
+label input, label select, label textarea { display: block; width: 100%; margin-top: 3px; }
+label.interruptor { display: inline-flex; align-items: center; gap: 8px; color: var(--tinta); margin: 0; }
+label.interruptor input { width: auto; margin: 0; }
+
+/* cabecera de vehículo y pestañas */
+.cab-veh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.pestanas { display: flex; flex-wrap: wrap; gap: 4px; margin: 14px 0 6px; border-bottom: 1px solid var(--raya); padding-bottom: 8px; }
+.pestana { text-decoration: none; color: var(--suave); padding: 4px 10px; border-radius: 7px; font-size: 0.92em; }
+.pestana.activa { background: var(--tinta); color: var(--papel); }
+.herramientas { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 8px 0; }
+
+/* lista de elementos */
+.lista-el { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); }
+.fila-el { display: grid; grid-template-columns: 12px minmax(0, 1fr) 150px 220px 128px;
+  grid-template-areas: "p n u x d" ". t t t t"; gap: 4px 12px; align-items: start; padding: 9px 12px; border-top: 1px solid var(--raya); }
+.fila-el:first-child { border-top: 0; }
+.fila-el > .punto { grid-area: p; margin-top: 5px; }
+.el-nombre { grid-area: n; min-width: 0; } .el-ult { grid-area: u; } .el-prox { grid-area: x; } .el-dec { grid-area: d; }
+.el-detalle { grid-area: t; min-width: 0; }
+.el-boton { font: inherit; font-weight: 700; color: var(--tinta); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.el-boton::before { content: "▸ "; color: var(--suave); font-weight: 400; }
+.el-boton[aria-expanded="true"]::before { content: "▾ "; }
+.el-ult, .el-prox { font-size: 0.9em; }
+.etq { display: none; color: var(--suave); font-size: 0.85em; margin-right: 4px; }
+.cabecera-el { color: var(--suave); font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.05em; }
+details > summary { cursor: pointer; }
+details > summary::marker { color: var(--suave); }
+.detalle { margin: 8px 0 4px; padding: 8px 10px; background: var(--tinte); border-radius: 8px; font-size: 0.9em; }
+dl.datos { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 0; }
+dl.datos dt { color: var(--suave); }
+dl.datos dd { margin: 0; overflow-wrap: anywhere; }
+
+/* tablas */
+.tabla-wrap { overflow-x: auto; }
+table.tabla { width: 100%; border-collapse: collapse; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+.tabla th { text-align: left; font-size: 0.8em; color: var(--suave); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 5px 8px; border-bottom: 2px solid var(--raya); white-space: nowrap; }
+.tabla td { padding: 5px 8px; border-bottom: 1px solid var(--raya); vertical-align: top; }
+.tabla .num { text-align: right; white-space: nowrap; }
+
+/* visitas */
+.lista-visitas { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.visita { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); padding: 9px 12px; min-width: 0; }
+.visita summary { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; }
+.visita summary b { min-width: 6.5em; }
+.visita .cuerpo { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+
+/* barras de gastos */
+.barras { display: grid; gap: 5px; }
+.b-fila { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) 7.5em; gap: 8px; align-items: center; font-size: 0.9em; }
+.b-pista { background: var(--tinte); border-radius: 4px; height: 14px; overflow: hidden; }
+.b-relleno { display: block; height: 100%; background: var(--acento); border-radius: 4px; }
+.b-valor { text-align: right; font-variant-numeric: tabular-nums; }
+.cifras { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 14px; }
+.cifra { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); padding: 8px 12px; }
+.cifra b { display: block; font-size: 1.25em; }
+
+/* avisos, diálogo y mensajes */
+.aviso { border-radius: var(--radio); padding: 10px 14px; margin-bottom: 14px; border: 1px solid; }
+.aviso.error, .aviso.conflicto { background: var(--rojo-tinte); border-color: var(--rojo); }
+.aviso.info { background: var(--acento-tinte); border-color: var(--acento); }
+.vacio { max-width: 560px; margin: 40px auto; text-align: center; }
+dialog { border: 1px solid var(--raya); border-radius: 12px; padding: 0; width: min(440px, calc(100vw - 32px)); background: var(--papel); color: var(--tinta); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.dlg { padding: 16px 18px; }
+.dlg .error { color: var(--rojo); font-size: 0.9em; }
+.dlg-botones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+#toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--tinta); color: var(--papel); padding: 8px 16px; border-radius: 999px;
+  font-size: 0.9em; opacity: 0; transition: opacity 0.2s; pointer-events: none; max-width: calc(100vw - 32px); }
+#toast.ver { opacity: 1; }
+ul.importacion { padding-left: 1.2em; }
+ul.importacion li.mal { color: var(--rojo); }
+.pend { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 9px 12px; border-top: 1px solid var(--raya); }
+.pend:first-child { border-top: 0; }
+.pend .botones { margin-top: 0; flex-wrap: nowrap; }
+.boton.peligro { color: var(--rojo); border-color: var(--rojo); }
+.tabla .boton.peque { white-space: nowrap; }
+.tabla td.det { min-width: 13em; }                /* en el móvil la tabla se desplaza de lado en vez de partir el detalle palabra a palabra */
+.tabla td.fecha { white-space: nowrap; }
+
+/* diálogos de edición */
+dialog { max-height: calc(100vh - 32px); overflow: auto; }
+.dlg-botones .boton.peligro { margin-right: auto; }
+.rejilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.rejilla .ancha { grid-column: 1 / -1; }
+.dlg fieldset { border: 1px solid var(--raya); border-radius: 8px; margin: 14px 0 0; padding: 2px 10px 10px; min-width: 0; }
+.dlg legend { font-size: 0.85em; color: var(--suave); padding: 0 4px; }
+.dlg label.interruptor { margin-top: 12px; }
+
+@media (max-width: 760px) {
+  main { padding: 12px; }
+  .barra { padding: 8px 12px 6px; }
+  #estado-guardado { margin-left: auto; }
+  #nav { order: 3; flex: 0 0 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .cabecera-el { display: none; }
+  .fila-el { grid-template-columns: 12px minmax(0, 1fr) auto; grid-template-areas: "p n d" ". u u" ". x x" ". t t"; }
+  .etq { display: inline; }
+  .b-fila { grid-template-columns: 3.4em minmax(0, 1fr) 6.6em; }
+  dl.datos { grid-template-columns: minmax(0, 1fr); }
+  dl.datos dt { margin-top: 6px; font-size: 0.88em; }
+}
+</style>
+</head>
+<body>
+<header class="barra">
+  <a class="marca" href="#/">Ruedak</a>
+  <nav id="nav" aria-label="Secciones"></nav>
+  <span id="estado-guardado" aria-live="polite"></span>
+</header>
+<main id="app"><p class="cargando">Cargando…</p></main>
+<dialog id="dlg"></dialog>
+<div id="toast" role="status"></div>
+
+<script>
+'use strict';
+
+// ─── Constantes ──────────────────────────────────────────────────────────────
+const APP_VERSION = '002';
+// Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
+// Vacía hasta dar de alta la app en Dropbox; mientras tanto se trabaja con un fichero del disco.
+const DROPBOX_APP_KEY = '';
+// Dirección de vuelta de Dropbox: la de la propia página. Tiene que estar dada de alta en la consola de Dropbox.
+const REDIRECT = (location.protocol === 'https:' || ['127.0.0.1', 'localhost'].includes(location.hostname))
+  ? location.origin + location.pathname : 'https://xopard.github.io/Ruedak.html';
+const RUTA = '/ruedak.json';                  // relativa a la carpeta de la app en Dropbox
+const LS = { refresh: 'ruedak.dbx.refresh', pkce: 'ruedak.dbx.pkce', verTodos: 'ruedak.verTodos' };
+const DBX = { token: 'https://api.dropboxapi.com/oauth2/token', api: 'https://api.dropboxapi.com/2/', contenido: 'https://content.dropboxapi.com/2/' };
+
+const DECISIONES = [['', '—'], ['SI', 'Sí'], ['NO', 'No'], ['Revisar', 'Revisar'], ['Presupuesto', 'Presupuesto']];
+const REINICIAN = ['cambiado', 'hecho'];       // acciones que reinician el intervalo de un elemento
+const ACCIONES = { cambiado: 'Cambiado', hecho: 'Hecho', revisado: 'Revisado', reparado: 'Reparado', 'no hecho': 'No hecho', dudoso: 'Dudoso' };
+const TIPOS_VISITA = { taller: 'Taller', itv: 'ITV', compra: 'Compra', garantia: 'Garantía', 'campaña': 'Campaña', sello: 'Sello del libro' };
+const TIPOS_VEH = { coche: 'Coche', moto: 'Moto', bici: 'Bici', otro: 'Otro' };
+const TIPOS_PEND = { sintoma: 'Síntoma', revisar: 'Revisar', presupuesto: 'Presupuesto' };
+const PESTANAS = [['estado', 'Estado'], ['historial', 'Historial'], ['ficha', 'Ficha'], ['neumaticos', 'Neumáticos'],
+  ['caducidades', 'Caducidades'], ['pendientes', 'Pendientes'], ['gastos', 'Gastos']];
+
+// Estado de la app. origen: 'dropbox' | 'local' | null. rev: versión de Dropbox del fichero abierto.
+const S = { datos: null, origen: null, rev: null, archivo: null, nombreArchivo: null, token: '', sucio: false,
+  cola: Promise.resolve(), aviso: null, importacion: null, cargando: true,
+  abiertos: new Set() };                        // elementos con el detalle abierto («vehículo/elemento»)
+const $ = sel => document.querySelector(sel);
+
+// ─── Pruebas ─────────────────────────────────────────────────────────────────
+// test-humo.html carga la app en un marco y le pasa un Dropbox simulado y una fecha fija.
+function prueba() { try { return window.parent !== window ? window.parent.RUEDAK_PRUEBA || null : null; } catch (e) { return null; } }
+function red(url, opts) { const p = prueba(); return p ? p.fetch(url, opts) : fetch(url, opts); }
+function clave() { return prueba() ? 'prueba' : DROPBOX_APP_KEY; }
+function hoy() { const p = prueba(); if (p && p.hoy) return p.hoy; const d = new Date(); return iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+
+// ─── Utilidades ──────────────────────────────────────────────────────────────
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function iso(y, m, d) { return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
+function partes(f) { return f.split('-').map(Number); }
+function utc(f) { const [y, m, d] = partes(f); return Date.UTC(y, m - 1, d); }
+function dias(a, b) { return Math.round((utc(b) - utc(a)) / 864e5); }
+function sumaDias(f, n) { const t = new Date(utc(f) + Math.round(n) * 864e5); return iso(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate()); }
+function sumaMeses(f, n) {
+  let [y, m, d] = partes(f); const t = m - 1 + n;
+  y += Math.floor(t / 12); m = ((t % 12) + 12) % 12 + 1;
+  return iso(y, m, Math.min(d, new Date(Date.UTC(y, m, 0)).getUTCDate()));
+}
+function fFecha(f) { if (!f) return '—'; const [y, m, d] = partes(f); return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`; }
+function fMes(f) { if (!f) return '—'; const [y, m] = partes(f); return `${String(m).padStart(2, '0')}/${y}`; }
+function fNum(n, dec = 0) {
+  if (n == null || isNaN(n)) return '—';
+  let [e, d] = Math.abs(n).toFixed(dec).split('.');
+  e = e.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (n < 0 ? '−' : '') + e + (d ? ',' + d : '');
+}
+function fKm(n) { return n == null ? '—' : fNum(n, Number.isInteger(n) ? 0 : 1) + ' km'; }
+function fEur(n) { return n == null ? '—' : fNum(n, 2) + ' €'; }
+function plural(n, uno, varios) { return `${fNum(n)} ${n === 1 ? uno : varios}`; }
+function cuanto(d) {                           // «en 16 días», «hace 5,5 años»
+  const a = Math.abs(d);
+  const t = a < 45 ? plural(a, 'día', 'días') : a < 730 ? plural(Math.round(a / 30.44), 'mes', 'meses')
+    : fNum(Math.round(a / 365.25 * 10) / 10, 1).replace(',0', '') + ' años';
+  return d >= 0 ? 'en ' + t : 'hace ' + t;
+}
+// Número escrito a la española: «1.118,95», «161.338». Sin coma, «24.18» (uno o dos decimales) también vale como decimal.
+function numero(s) {
+  let t = String(s ?? '').trim().replace(/\s/g, '');
+  if (t === '') return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (!/^-?\d+\.\d{1,2}$/.test(t)) t = t.replace(/\./g, '');
+  const n = Number(t);
+  return isNaN(n) ? null : n;
+}
+function fEdit(n, dec) { return n == null ? '' : (dec != null ? n.toFixed(dec) : String(n)).replace('.', ','); }   // número para un campo de texto
+function limpio(s) { return String(s ?? '').trim() || undefined; }                    // texto vacío: el campo desaparece del JSON
+function slug(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'nuevo'; }
+function idLibre(base, usados) { let id = base, n = 2; while (usados.includes(id)) id = `${base}-${n++}`; return id; }
+function porFecha(a, b) { return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0; }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('ver'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('ver'), 2600); }
+function leerLS(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function escribirLS(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { } }
+
+// ─── Datos y cálculos ────────────────────────────────────────────────────────
+const D = () => S.datos;
+function vehiculos(todos) { return (D()?.vehiculos || []).filter(v => todos || !v.baja); }
+function veh(id) { return D()?.vehiculos.find(v => v.id === id) || null; }
+function elemento(v, id) { return v.elementos.find(e => e.id === id) || null; }
+function nombreTaller(id, d = D()) { if (!id) return '—'; if (id === 'yo') return 'Yo'; const t = (d.talleres || []).find(t => t.id === id); return t ? t.nombre : id; }
+function ajusteAmbar(v) { const a = D().ajustes?.ambar || {}; return a[v.tipo] || a.coche || { meses: 2, pctKm: 10 }; }
+function velocidadBici() { return D().ajustes?.velocidadMediaBici || 13; }
+
+function leerDatos(texto) {
+  const d = JSON.parse(texto);
+  if (!d || d.formato !== 1 || !Array.isArray(d.vehiculos)) throw new Error('El fichero no tiene el formato de datos de Ruedak');
+  for (const v of d.vehiculos) for (const k of ['elementos', 'visitas', 'lecturas', 'caducidades', 'pendientes', 'ficha']) v[k] = v[k] || [];
+  d.talleres = d.talleres || [];
+  return d;
+}
+
+// Lecturas de km: alta, visitas con km y lecturas sueltas, ordenadas por fecha.
+function lecturas(v) {
+  const L = [{ fecha: v.alta.fecha, km: v.alta.km, fuente: 'Alta' }];
+  for (const x of v.visitas) if (x.km != null) L.push({ fecha: x.fecha, km: x.km, fuente: 'Visita' });
+  for (const l of v.lecturas) if (l.km != null) L.push(l);
+  return L.sort((a, b) => porFecha(a, b) || a.km - b.km);
+}
+function kmActual(v) { let m = null; for (const l of lecturas(v)) if (!m || l.km >= m.km) m = l; return m; }
+// Ritmo en km al día: con el último año de lecturas; si no hay tanto, con toda la historia.
+function ritmo(v) {
+  const L = lecturas(v), u = kmActual(v); let ref = L[0];
+  for (const l of L) if (dias(l.fecha, u.fecha) >= 300) ref = l;
+  const d = dias(ref.fecha, u.fecha);
+  return d < 30 || u.km <= ref.km ? null : (u.km - ref.km) / d;
+}
+// Km de hoy: la última lectura más lo que se estima recorrido desde entonces.
+function kmHoy(v) {
+  const u = kmActual(v), r = ritmo(v), d = Math.max(0, dias(u.fecha, hoy()));
+  return { km: u.km + (r ? r * d : 0), estimado: !!(r && d > 0), base: u };
+}
+function kmEnFecha(v, f) {
+  let a = null, b = null;
+  for (const l of lecturas(v)) { if (l.fecha <= f) a = l; else { b = l; break; } }
+  if (a && b && a.fecha !== f) return a.km + (b.km - a.km) * dias(a.fecha, f) / Math.max(1, dias(a.fecha, b.fecha));
+  return a ? a.km : null;
+}
+// Fecha en que se llegó (o se llegará) a unos km: con las lecturas si ya pasó; si no, con el ritmo actual.
+function fechaEnKm(v, km) {
+  const L = lecturas(v), u = kmActual(v);
+  if (km > u.km) { const r = ritmo(v); return r ? sumaDias(u.fecha, (km - u.km) / r) : null; }
+  for (let i = 1; i < L.length; i++) {
+    const a = L[i - 1], b = L[i];
+    if (b.km >= km && a.km <= km) return b.km === a.km ? a.fecha : sumaDias(a.fecha, dias(a.fecha, b.fecha) * (km - a.km) / (b.km - a.km));
+  }
+  return L[0].fecha;
+}
+function lineasDe(v, idEl) {
+  const r = [];
+  for (const x of v.visitas) for (const l of x.lineas) if (l.elemento === idEl) r.push({ visita: x, linea: l });
+  return r.sort((a, b) => porFecha(a.visita, b.visita));
+}
+function ultimoCambio(v, idEl) { const r = lineasDe(v, idEl).filter(x => REINICIAN.includes(x.linea.accion)); return r[r.length - 1] || null; }
+
+// Semáforo de un elemento: rojo (vencido), ámbar (pronto), verde (en plazo) o gris (sin intervalo).
+function estadoElemento(v, el) {
+  const iv = el.intervalo, ult = ultimoCambio(v, el.id);
+  const r = { el, ult, color: 'gris', texto: '', vence: null, venceKm: null };
+  if (!iv) return r;
+  const primera = !ult;
+  const base = ult ? { fecha: ult.visita.fecha, km: ult.visita.km ?? kmEnFecha(v, ult.visita.fecha) } : { fecha: v.alta.fecha, km: v.alta.km };
+  const meses = primera && iv.primeraMeses ? iv.primeraMeses : iv.meses;
+  const kms = [primera && iv.primeraKm ? iv.primeraKm : iv.km, iv.horas ? iv.horas * velocidadBici() : null].filter(Boolean);
+  const intKm = kms.length ? Math.min(...kms) : null;
+  const h = hoy(), act = kmHoy(v), am = ajusteAmbar(v);
+  const vFecha = meses ? sumaMeses(base.fecha, meses) : null;
+  const vKm = intKm && base.km != null ? Math.round(base.km + intKm) : null;
+  const fechaKm = vKm != null ? fechaEnKm(v, vKm) : null;
+  Object.assign(r, { vFecha, venceKm: vKm, fechaKm, intKm, vence: [vFecha, fechaKm].filter(Boolean).sort()[0] || null });
+  if ((vFecha && vFecha <= h) || (vKm != null && act.km >= vKm)) r.color = 'rojo';
+  else if ((r.vence && r.vence <= sumaMeses(h, am.meses)) || (vKm != null && vKm - act.km <= intKm * am.pctKm / 100)) r.color = 'ambar';
+  else r.color = 'verde';
+  const aprox = r.vence && r.vence === fechaKm && r.vence !== vFecha ? '≈ ' : '';
+  if (r.color === 'rojo') r.texto = r.vence && r.vence <= h ? `Vencido ${cuanto(dias(h, r.vence))}` : `Vencido: pasado de ${fKm(vKm)}`;
+  else r.texto = [r.vence ? `${aprox}${fFecha(r.vence)} (${cuanto(dias(h, r.vence))})` : '', vKm != null ? `a los ${fKm(vKm)}` : ''].filter(Boolean).join(' · ');
+  return r;
+}
+function estadoCaducidad(v, c) {
+  const h = hoy(), am = ajusteAmbar(v), d = dias(h, c.vence);
+  const color = c.vence < h ? 'rojo' : c.vence <= sumaMeses(h, am.meses) ? 'ambar' : 'verde';
+  return { color, dias: d, texto: `${fFecha(c.vence)} (${cuanto(d)})` };
+}
+const PESO = { rojo: 0, ambar: 1, verde: 2, gris: 3 };
+function porUrgencia(a, b) { return PESO[a.color] - PESO[b.color] || (a.vence || '9999') .localeCompare(b.vence || '9999'); }
+function textoIntervalo(iv) {
+  if (!iv) return 'Sin intervalo';
+  const t = m => m % 12 === 0 ? plural(m / 12, 'año', 'años') : plural(m, 'mes', 'meses');
+  const p = [];
+  if (iv.meses) p.push('cada ' + t(iv.meses));
+  if (iv.km) p.push((p.length ? '' : 'cada ') + fKm(iv.km));
+  if (iv.horas) p.push(`${p.length ? '' : 'cada '}${fNum(iv.horas)} h (≈ ${fKm(Math.round(iv.horas * velocidadBici()))})`);
+  let s = p.join(' o ');
+  if (iv.primeraMeses) s += `; la 1ª vez a ${t(iv.primeraMeses)}`;
+  if (iv.primeraKm) s += `; la 1ª vez a ${fKm(iv.primeraKm)}`;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+const esNeumatico = id => /^(neumaticos|cubierta)-/.test(id);
+
+// ─── Pintado ─────────────────────────────────────────────────────────────────
+const punto = c => `<span class="punto ${c}" title="${({ rojo: 'Vencido', ambar: 'Pronto', verde: 'En plazo', gris: 'Sin intervalo' })[c]}"></span>`;
+function ruta() { return location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent); }
+
+function render() {
+  // Los desplegables abiertos siguen abiertos al volver a pintar la misma pantalla.
+  const mismaRuta = S.rutaPintada === location.hash;
+  const abiertos = mismaRuta ? [...document.querySelectorAll('details[open][id]')].map(d => d.id) : [];
+  S.rutaPintada = location.hash;
+  pintarNav(); pintarEstadoGuardado();
+  const app = $('#app'), r = ruta();
+  let html;
+  if (S.cargando) html = '<p class="cargando">Cargando…</p>';
+  else if (r[0] === 'ajustes') html = vistaAjustes();
+  else if (!D()) html = vistaSinDatos();
+  else if (r[0] === 'v' && veh(r[1])) html = vistaVehiculo(veh(r[1]), r[2] || 'estado');
+  else if (r[0] === 'gastos') html = vistaGastosTodos();
+  else html = vistaInicio();
+  app.innerHTML = avisoHTML() + html;
+  for (const id of abiertos) document.getElementById(id)?.setAttribute('open', '');
+  if (S.abrir) {                                // visita recién añadida: se abre y se lleva a la vista
+    const d = document.getElementById(S.abrir); S.abrir = null;
+    if (d) { d.setAttribute('open', ''); d.scrollIntoView({ block: 'nearest' }); }
+  }
+}
+function pintarNav() {
+  const r = ruta(), act = r[0] === 'v' ? 'v/' + r[1] : r[0] || '';
+  const enlaces = [['', 'Inicio'], ...vehiculos().map(v => ['v/' + v.id, v.nombre]), ['gastos', 'Gastos'], ['ajustes', 'Ajustes']];
+  $('#nav').innerHTML = enlaces.filter(([k]) => D() || k === '' || k === 'ajustes')
+    .map(([k, t]) => `<a href="#/${k}" class="${k === act ? 'activa' : ''}">${esc(t)}</a>`).join('');
+}
+function pintarEstadoGuardado() {
+  const e = $('#estado-guardado');
+  e.className = S.sucio ? 'sucio' : '';
+  e.textContent = S.sucio ? 'Sin guardar' : S.origen === 'dropbox' ? 'Dropbox' : S.origen === 'local' ? 'Fichero local' : '';
+}
+function avisoHTML() {
+  const a = S.aviso; if (!a) return '';
+  const botones = a.tipo === 'conflicto' ? '<button class="boton primario" data-accion="recargar">Recargar los datos de Dropbox</button>'
+    : a.tipo === 'error' && S.sucio ? '<button class="boton primario" data-accion="reintentar">Volver a intentar guardar</button>' : '';
+  return `<div class="aviso ${a.tipo}" role="alert"><p>${esc(a.texto)}</p><div class="botones">${botones}<button class="boton" data-accion="cerrar-aviso">Cerrar</button></div></div>`;
+}
+function aviso(a) { S.aviso = a; }
+
+function vistaSinDatos() {
+  const conDbx = S.origen === 'dropbox';
+  return `<section class="vacio"><h1>Ruedak</h1>
+    <p>${conDbx ? 'Dropbox está conectado, pero todavía no hay datos guardados. Importa los datos completos (ruedak.json) en Ajustes.' : 'No hay datos abiertos.'}</p>
+    <div class="botones" style="justify-content:center">
+      ${conDbx ? '<a class="boton primario" href="#/ajustes">Ir a Ajustes</a>' : `${clave() ? '<button class="boton primario" data-accion="conectar">Conectar Dropbox</button>' : ''}
+      <button class="boton${clave() ? '' : ' primario'}" data-accion="abrir-local">Abrir un fichero del disco</button>`}
+    </div>
+    ${!clave() && !conDbx ? '<p class="sub">Falta dar de alta la app en Dropbox. Mientras tanto se trabaja con un fichero del disco.</p>' : ''}
+  </section>`;
+}
+
+// Inicio: una tarjeta por vehículo, próximas caducidades y pendientes abiertos.
+function vistaInicio() {
+  const vs = vehiculos();
+  const tarjetas = vs.map(v => {
+    const est = v.elementos.map(e => estadoElemento(v, e));
+    const rojos = est.filter(e => e.color === 'rojo'), ambar = est.filter(e => e.color === 'ambar');
+    const urg = [...rojos, ...ambar].sort(porUrgencia).slice(0, 5);
+    const cads = v.caducidades.map(c => ({ c, e: estadoCaducidad(v, c) })).sort((a, b) => a.c.vence.localeCompare(b.c.vence));
+    const u = kmActual(v);
+    return `<article class="tarjeta">
+      <header><a href="#/v/${v.id}"><h2>${esc(v.nombre)}</h2></a><span class="sub">${esc(v.matricula || TIPOS_VEH[v.tipo] || '')}</span></header>
+      <p class="km">${fKm(u.km)} <span class="sub">${fFecha(u.fecha)}</span><button class="boton peque" data-accion="km" data-veh="${v.id}">Apuntar km</button></p>
+      <p class="resumen">${rojos.length ? `<span class="chip rojo">${plural(rojos.length, 'vencido', 'vencidos')}</span>` : ''}${ambar.length ? `<span class="chip ambar">${fNum(ambar.length)} pronto</span>` : ''}${!rojos.length && !ambar.length ? '<span class="chip verde">Todo en plazo</span>' : ''}</p>
+      ${urg.length ? `<ul class="mini">${urg.map(e => `<li>${punto(e.color)}<span>${esc(e.el.nombre)}</span><span class="sub">${esc(e.texto)}</span></li>`).join('')}</ul>` : ''}
+      ${cads.length ? `<ul class="mini">${cads.map(({ c, e }) => `<li>${punto(e.color)}<span>${esc(c.tipo)}</span><span class="sub">${esc(e.texto)}</span></li>`).join('')}</ul>` : ''}
+      <a class="mas" href="#/v/${v.id}">Ver ${esc(v.nombre)} →</a>
+    </article>`;
+  }).join('');
+  const cads = vs.flatMap(v => v.caducidades.map(c => ({ v, c, e: estadoCaducidad(v, c) }))).sort((a, b) => a.c.vence.localeCompare(b.c.vence));
+  const pends = vs.flatMap(v => v.pendientes.filter(p => p.estado === 'abierto').map(p => ({ v, p })));
+  return `<div class="tarjetas">${tarjetas}</div>
+    <section class="bloque"><h2>Próximas caducidades</h2>
+      ${cads.length ? `<div class="tabla-wrap"><table class="tabla"><thead><tr><th></th><th>Vehículo</th><th>Qué</th><th>Vence</th></tr></thead><tbody>
+      ${cads.map(({ v, c, e }) => `<tr><td>${punto(e.color)}</td><td><a href="#/v/${v.id}/caducidades">${esc(v.nombre)}</a></td><td>${esc(c.tipo)}</td><td>${esc(e.texto)}</td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="sub">No hay caducidades apuntadas.</p>'}
+    </section>
+    <section class="bloque"><h2>Pendientes abiertos</h2>
+      ${pends.length ? `<ul class="mini">${pends.map(({ v, p }) => `<li><span class="punto"></span><span><a href="#/v/${v.id}/pendientes">${esc(v.nombre)}</a> · ${esc(p.texto)}</span><span class="sub">${esc(TIPOS_PEND[p.tipo] || p.tipo)} desde ${fFecha(p.desde)}</span></li>`).join('')}</ul>` : '<p class="sub">No hay pendientes abiertos.</p>'}
+    </section>`;
+}
+
+function vistaVehiculo(v, pest) {
+  if (!PESTANAS.some(([k]) => k === pest)) pest = 'estado';
+  const k = kmHoy(v);
+  const cuerpo = { estado: pestEstado, historial: pestHistorial, ficha: pestFicha, neumaticos: pestNeumaticos,
+    caducidades: pestCaducidades, pendientes: pestPendientes, gastos: pestGastos }[pest](v);
+  return `<div class="cab-veh"><h1>${esc(v.nombre)}</h1><span class="sub">${esc([v.matricula, TIPOS_VEH[v.tipo]].filter(Boolean).join(' · '))}</span></div>
+    <p class="km">${fKm(k.base.km)} <span class="sub">el ${fFecha(k.base.fecha)}${k.estimado ? ` · hoy ≈ ${fKm(Math.round(k.km))}` : ''}</span>
+      <button class="boton peque" data-accion="km" data-veh="${v.id}">Apuntar km</button></p>
+    <nav class="pestanas" aria-label="Pestañas">${PESTANAS.map(([id, t]) => `<a class="pestana${id === pest ? ' activa' : ''}" href="#/v/${v.id}/${id}">${t}</a>`).join('')}</nav>
+    ${cuerpo}`;
+}
+
+function pestEstado(v) {
+  const todos = leerLS(LS.verTodos) === '1';
+  const est = v.elementos.map(e => estadoElemento(v, e));
+  const vis = est.filter(e => todos || e.el.intervalo || e.el.proxima?.decision);
+  const cuenta = c => est.filter(e => e.color === c).length;
+  const dec = {}; for (const e of est) { const d = e.el.proxima?.decision; if (d) dec[d] = (dec[d] || 0) + 1; }
+  const grupos = new Map();
+  for (const e of vis) { const g = e.el.grupo || 'Otros'; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(e); }
+  return `<div class="herramientas">
+      <span class="resumen"><span class="chip rojo">${plural(cuenta('rojo'), 'vencido', 'vencidos')}</span><span class="chip ambar">${fNum(cuenta('ambar'))} pronto</span><span class="chip verde">${fNum(cuenta('verde'))} en plazo</span></span>
+      <label class="interruptor"><input type="checkbox" data-accion="ver-todos" ${todos ? 'checked' : ''}> Ver todos los elementos (${v.elementos.length})</label>
+      <button class="boton peque" data-accion="nuevo-elemento" data-veh="${v.id}">Añadir elemento</button>
+    </div>
+    ${Object.keys(dec).length ? `<p class="sub">Para la próxima visita: ${DECISIONES.filter(([k]) => dec[k]).map(([k, t]) => `${t} ${dec[k]}`).join(' · ')}</p>` : ''}
+    ${[...grupos].map(([g, es]) => `<h3>${esc(g)}</h3><div class="lista-el">
+      <div class="fila-el cabecera-el"><span></span><span>Elemento</span><span>Último cambio</span><span>Próximo</span><span>Próxima visita</span></div>
+      ${es.map(e => filaElemento(v, e)).join('')}</div>`).join('')}`;
+}
+function filaElemento(v, e) {
+  const el = e.el, u = e.ult;
+  const ult = u ? `${fMes(u.visita.fecha)}${u.visita.km != null ? ' · ' + fKm(u.visita.km) : ''}` : el.intervalo ? 'Nunca' : '—';
+  const abierto = S.abiertos.has(v.id + '/' + el.id);
+  return `<div class="fila-el">${punto(e.color)}
+    <div class="el-nombre"><button class="el-boton" data-accion="ver-el" data-veh="${v.id}" data-el="${esc(el.id)}" aria-expanded="${abierto}">${esc(el.nombre)}</button></div>
+    <div class="el-detalle"${abierto ? '' : ' hidden'}>${detalleElemento(v, e)}</div>
+    <div class="el-ult"><span class="etq">Último:</span>${ult}</div>
+    <div class="el-prox"><span class="etq">Próximo:</span>${esc(e.texto || (el.intervalo ? '' : 'Sin intervalo'))}</div>
+    <div class="el-dec"><select data-accion="decision" data-veh="${v.id}" data-el="${esc(el.id)}" aria-label="Próxima visita: ${esc(el.nombre)}">
+      ${DECISIONES.map(([val, t]) => `<option value="${val}"${(el.proxima?.decision || '') === val ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+  </div>`;
+}
+function detalleElemento(v, e) {
+  const el = e.el, hist = lineasDe(v, el.id).reverse();
+  const filas = [['Referencia', el.referencia], ['Especificación', el.especificacion], ['Intervalo', textoIntervalo(el.intervalo)],
+    ['Fuente', el.fuente], ['Nota', el.nota]].filter(([, x]) => x);
+  return `<div class="detalle"><dl class="datos">${filas.map(([k, x]) => `<dt>${k}</dt><dd>${esc(x)}</dd>`).join('')}
+      <dt>Próxima visita</dt><dd>${esc(el.proxima?.nota || '—')} <button class="boton peque" data-accion="nota-proxima" data-veh="${v.id}" data-el="${esc(el.id)}">Editar</button></dd></dl>
+    ${hist.length ? tablaLineas(v, hist) : '<p class="sub">Sin registros en el historial.</p>'}
+    <div class="botones"><button class="boton peque" data-accion="editar-elemento" data-veh="${v.id}" data-el="${esc(el.id)}">Editar el elemento</button></div></div>`;
+}
+// Historial de un elemento: cuándo, dónde (con el total de la factura), qué, detalle e importe de la línea.
+function tablaLineas(v, hist) {
+  const cant = l => l.cantidad != null ? fNum(l.cantidad, Number.isInteger(l.cantidad) ? 0 : 1) + (l.unidad ? ' ' + l.unidad : '') : '';
+  return `<div class="tabla-wrap"><table class="tabla" style="margin-top:8px"><thead><tr><th>Fecha</th><th>Dónde</th><th>Qué</th><th>Detalle</th><th class="num">Importe</th><th></th></tr></thead><tbody>
+    ${hist.map(({ visita: x, linea: l }) => `<tr><td class="fecha">${fFecha(x.fecha)}${x.km != null ? `<br><span class="sub">${fKm(x.km)}</span>` : ''}</td>
+      <td>${esc(nombreTaller(x.taller))}${x.importe != null ? `<br><span class="sub">Factura ${fEur(x.importe)}</span>` : ''}</td>
+      <td>${ACCIONES[l.accion] || esc(l.accion)}</td>
+      <td class="det">${esc([l.marca, l.texto, cant(l), l.dot ? 'DOT ' + l.dot : '', l.nota].filter(Boolean).join(' · '))}</td>
+      <td class="num">${l.importe != null ? fEur(l.importe) + (x.lineasConIva ? '' : '<br><span class="sub">sin IVA</span>') : ''}</td>
+      <td><button class="boton peque" data-accion="editar-linea" data-veh="${v.id}" data-vis="${esc(x.id)}" data-lin="${x.lineas.indexOf(l)}">Editar</button></td></tr>`).join('')}
+  </tbody></table></div>
+  <p class="sub">«Factura»: el total de la visita, con IVA. El importe de la línea va como viene en la factura.</p>`;
+}
+
+function pestHistorial(v) {
+  const vs = [...v.visitas].sort((a, b) => -porFecha(a, b));
+  return `<div class="herramientas"><span class="sub">${plural(vs.length, 'visita', 'visitas')}. Pulsa una para ver el detalle.</span>
+      <button class="boton peque" data-accion="nueva-visita" data-veh="${v.id}">Añadir visita</button></div>
+    <div class="lista-visitas">${vs.map(x => visitaHTML(v, x)).join('')}</div>`;
+}
+// Mano de obra: horas, precio y total. El total sale de la factura (manoObraImporte) o de horas × precio.
+function textoManoObra(x) {
+  const total = x.manoObraImporte ?? (x.manoObraHoras != null && x.manoObraPrecioHora ? Math.round(x.manoObraHoras * x.manoObraPrecioHora * 100) / 100 : null);
+  const horas = x.manoObraHoras != null ? `${fNum(x.manoObraHoras, Number.isInteger(x.manoObraHoras) ? 0 : 1)} h${x.manoObraPrecioHora ? ` a ${fNum(x.manoObraPrecioHora, 2)} €/h` : ''}`
+    : x.manoObraPrecioHora ? `a ${fNum(x.manoObraPrecioHora, 2)} €/h` : '';
+  if (total == null && !horas) return '';
+  return `Mano de obra: ${[horas, total != null ? fEur(total) + (x.lineasConIva ? '' : ' sin IVA') : ''].filter(Boolean).join(' · ')}`;
+}
+function visitaHTML(v, x) {
+  const tipo = x.tipo !== 'taller' ? `<span class="chip">${esc(TIPOS_VISITA[x.tipo] || x.tipo)}</span>` : '';
+  const itv = x.itv ? `<span class="chip ${x.itv.resultado === 'favorable' ? 'verde' : 'rojo'}">${x.itv.resultado === 'favorable' ? 'Favorable' : 'Desfavorable'}</span>` : '';
+  const dudosas = x.lineas.filter(l => l.accion === 'dudoso').length;
+  const conImporte = x.lineas.some(l => l.importe != null);
+  const mo = textoManoObra(x), f = x.factura;
+  return `<details class="visita" id="det-vis-${esc(x.id)}"><summary><b>${fFecha(x.fecha)}</b><span>${esc(nombreTaller(x.taller))}</span>
+      <span class="sub">${x.km != null ? fKm(x.km) : ''}</span><span>${x.importe != null ? fEur(x.importe) : ''}</span>${tipo}${itv}${dudosas ? `<span class="chip ambar">${plural(dudosas, 'línea dudosa', 'líneas dudosas')}</span>` : ''}</summary>
+    <div class="cuerpo">
+      ${x.itv?.defectos ? `<p>Defectos: ${esc(x.itv.defectos)}</p>` : ''}
+      ${x.lineas.length ? `<div class="tabla-wrap"><table class="tabla"><thead><tr><th>Elemento</th><th>Detalle</th><th class="num">Cant.</th><th class="num">Importe</th><th>Acción</th><th></th></tr></thead><tbody>
+        ${x.lineas.map((l, i) => { const el = l.elemento ? elemento(v, l.elemento) : null; return `<tr><td>${esc(el ? el.nombre : l.texto || l.elemento)}</td>
+          <td class="det">${esc([el ? l.texto : '', l.marca, l.referencia, l.dot ? 'DOT ' + l.dot : '', l.nota].filter(Boolean).join(' · '))}</td>
+          <td class="num">${l.cantidad != null ? fNum(l.cantidad, Number.isInteger(l.cantidad) ? 0 : 1) + (l.unidad ? ' ' + esc(l.unidad) : '') : ''}</td>
+          <td class="num">${l.importe != null ? fEur(l.importe) : ''}</td><td>${ACCIONES[l.accion] || esc(l.accion)}</td>
+          <td><button class="boton peque" data-accion="editar-linea" data-veh="${v.id}" data-vis="${esc(x.id)}" data-lin="${i}">Editar</button></td></tr>`; }).join('')}
+      </tbody></table></div>` : '<p class="sub">Sin líneas.</p>'}
+      ${conImporte ? `<p class="sub">Importes de las líneas ${x.lineasConIva ? 'con' : 'sin'} IVA${x.importe != null ? '; el total de la visita lleva IVA' : ''}.</p>` : ''}
+      ${mo ? `<p>${mo}</p>` : ''}
+      ${x.notas ? `<p class="sub">${esc(x.notas)}</p>` : ''}
+      ${f ? `<p>Factura${f.numero ? ` nº ${esc(f.numero)}` : ''}${f.fichero ? `: <span class="mono">${esc(f.fichero)}</span>` : ''}${f.enlace ? ` · <a href="${esc(f.enlace)}" target="_blank" rel="noopener">abrir</a>` : ''}</p>` : ''}
+      <div class="botones"><button class="boton peque" data-accion="nueva-linea" data-veh="${v.id}" data-vis="${esc(x.id)}">Añadir línea</button>
+        <button class="boton peque" data-accion="editar-visita" data-veh="${v.id}" data-vis="${esc(x.id)}">Editar la visita</button></div>
+    </div></details>`;
+}
+
+function pestFicha(v) {
+  const filas = [...v.ficha.map(f => [f.campo, f.valor]), ['Alta', `${fFecha(v.alta.fecha)} · ${fKm(v.alta.km)}`]];
+  if (v.baja) filas.push(['Baja', `${fFecha(v.baja.fecha)} · ${v.baja.motivo || ''}`]);
+  const cf = v.carpetaFacturas;
+  const lec = v.lecturas.map((l, i) => ({ l, i })).sort((a, b) => -porFecha(a.l, b.l) || b.l.km - a.l.km);
+  return `<div class="caja"><dl class="datos">${filas.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}
+    ${cf ? `<dt>Facturas</dt><dd><span class="mono">${esc(cf.ruta || cf.nombre || '')}</span>${cf.enlace ? ` · <a href="${esc(cf.enlace)}" target="_blank" rel="noopener">abrir la carpeta</a>` : ''}</dd>` : ''}
+  </dl></div>
+  <h3>Lecturas de km</h3>
+  ${lec.length ? `<div class="tabla-wrap"><table class="tabla"><thead><tr><th>Fecha</th><th class="num">Km</th><th>De dónde sale</th><th></th></tr></thead><tbody>
+    ${lec.map(({ l, i }) => `<tr><td>${fFecha(l.fecha)}</td><td class="num">${fKm(l.km)}</td><td>${esc(l.fuente || '')}</td>
+      <td><button class="boton peque" data-accion="borrar-lectura" data-veh="${v.id}" data-lec="${i}">Borrar</button></td></tr>`).join('')}
+  </tbody></table></div>` : '<p class="sub">No hay lecturas sueltas.</p>'}
+  <p class="sub">Además de estas, cuentan como lecturas el alta y los km de cada visita.</p>`;
+}
+
+function pestNeumaticos(v) {
+  const k = kmHoy(v), h = hoy();
+  const els = v.elementos.filter(e => esNeumatico(e.id));
+  if (!els.length) return '<p class="sub">Este vehículo no tiene neumáticos apuntados.</p>';
+  return els.map(el => {
+    const hist = lineasDe(v, el.id).reverse();
+    const ult = hist.find(x => x.linea.accion === 'cambiado');
+    const km = ult ? ult.visita.km ?? kmEnFecha(v, ult.visita.fecha) : null;
+    return `<h3>${esc(el.nombre)}</h3><div class="caja">
+      ${el.especificacion ? `<p>Medida: ${esc(el.especificacion)}</p>` : ''}
+      ${ult ? `<p><b>${esc(ult.linea.marca || ult.linea.texto || 'Montados')}</b> desde el ${fFecha(ult.visita.fecha)}${km != null ? ` (${fKm(Math.round(km))})` : ''}${ult.visita.taller ? ` en ${esc(nombreTaller(ult.visita.taller))}` : ''}:
+        ${km != null ? `llevan ≈ ${fKm(Math.round(k.km - km))}, ` : ''}${cuanto(dias(ult.visita.fecha, h)).replace('en ', '')}.${ult.linea.dot ? ` DOT ${esc(ult.linea.dot)}.` : ''}</p>` : '<p class="sub">No consta ningún cambio.</p>'}
+      ${hist.length ? tablaLineas(v, hist) : ''}</div>`;
+  }).join('');
+}
+
+function pestCaducidades(v) {
+  const boton = `<div class="botones"><button class="boton peque" data-accion="nueva-caducidad" data-veh="${v.id}">Añadir caducidad</button></div>`;
+  if (!v.caducidades.length) return boton + '<p class="sub">No hay caducidades apuntadas.</p>';
+  return boton + [...v.caducidades].sort((a, b) => a.vence.localeCompare(b.vence)).map(c => {
+    const e = estadoCaducidad(v, c), dt = c.datos || {};
+    const filas = [['Entidad', dt.entidad], ['Póliza', dt.poliza], ['Modalidad', dt.modalidad], ['Importe', dt.importe != null ? fEur(dt.importe) : ''], ['Notas', c.notas]].filter(([, x]) => x);
+    return `<h3>${esc(c.tipo)}</h3><div class="caja">
+      <p>${punto(e.color)} Vence el <b>${esc(e.texto)}</b> <button class="boton peque" data-accion="renovar" data-veh="${v.id}" data-cad="${esc(c.id)}">Renovar</button>
+        <button class="boton peque" data-accion="editar-caducidad" data-veh="${v.id}" data-cad="${esc(c.id)}">Editar</button></p>
+      ${filas.length ? `<dl class="datos">${filas.map(([k, x]) => `<dt>${k}</dt><dd>${esc(x)}</dd>`).join('')}</dl>` : ''}
+      ${c.historial?.length ? `<div class="tabla-wrap"><table class="tabla" style="margin-top:8px"><thead><tr><th>Periodo</th><th>Entidad</th><th class="num">Importe</th><th>Nota</th></tr></thead><tbody>
+        ${[...c.historial].reverse().map(x => `<tr><td>${x.pagado ? 'Pagado ' + fFecha(x.pagado) : `${x.desde ? fFecha(x.desde) : '…'} – ${x.hasta ? fFecha(x.hasta) : '…'}`}</td><td>${esc(x.entidad || '')}</td><td class="num">${x.importe != null ? fEur(x.importe) : ''}</td><td>${esc(x.nota || '')}</td></tr>`).join('')}
+      </tbody></table></div>` : ''}</div>`;
+  }).join('');
+}
+
+function pestPendientes(v) {
+  const ab = v.pendientes.filter(p => p.estado === 'abierto'), ce = v.pendientes.filter(p => p.estado !== 'abierto');
+  const nombreEl = id => id ? elemento(v, id)?.nombre || id : '';
+  return `<div class="botones"><button class="boton primario" data-accion="nuevo-pendiente" data-veh="${v.id}">Añadir pendiente</button></div>
+    <h3>Abiertos</h3>${ab.length ? `<div class="lista-el">${ab.map(p => `<div class="pend"><div><b>${esc(p.texto)}</b><br><span class="sub">${esc(TIPOS_PEND[p.tipo] || p.tipo)} desde ${fFecha(p.desde)}${p.elemento ? ' · ' + esc(nombreEl(p.elemento)) : ''}${p.nota ? ' · ' + esc(p.nota) : ''}</span></div>
+      <div class="botones"><button class="boton peque" data-accion="editar-pendiente" data-veh="${v.id}" data-pend="${esc(p.id)}">Editar</button><button class="boton peque" data-accion="cerrar-pendiente" data-veh="${v.id}" data-pend="${esc(p.id)}">Cerrar</button></div></div>`).join('')}</div>` : '<p class="sub">No hay pendientes abiertos.</p>'}
+    ${ce.length ? `<h3>Cerrados</h3><div class="lista-el">${ce.map(p => `<div class="pend"><div>${esc(p.texto)}<br><span class="sub">${p.estado === 'hecho' ? 'Hecho' : 'Descartado'}${p.cierre?.fecha ? ' el ' + fFecha(p.cierre.fecha) : ''}${p.cierre?.nota ? ' · ' + esc(p.cierre.nota) : ''}</span></div>
+      <div class="botones"><button class="boton peque" data-accion="editar-pendiente" data-veh="${v.id}" data-pend="${esc(p.id)}">Editar</button><button class="boton peque" data-accion="reabrir-pendiente" data-veh="${v.id}" data-pend="${esc(p.id)}">Reabrir</button></div></div>`).join('')}</div>` : ''}`;
+}
+
+// Gastos: importes de las visitas (con IVA), sin la compra del vehículo.
+function gastosDe(v) { return v.visitas.filter(x => x.importe != null && x.tipo !== 'compra'); }
+function barras(items) {
+  const max = Math.max(0, ...items.map(i => i.valor));
+  return `<div class="barras">${items.map(i => `<div class="b-fila"><span>${esc(i.etq)}</span><span class="b-pista"><span class="b-relleno" style="width:${max ? (i.valor / max * 100).toFixed(1) : 0}%"></span></span><span class="b-valor">${fEur(i.valor)}</span></div>`).join('')}</div>`;
+}
+function porAno(visitas, desde, hasta) {
+  const m = new Map(); for (let a = desde; a <= hasta; a++) m.set(a, 0);
+  for (const x of visitas) { const a = partes(x.fecha)[0]; m.set(a, (m.get(a) || 0) + x.importe); }
+  return m;
+}
+function pestGastos(v) {
+  const g = gastosDe(v);
+  if (!g.length) return '<p class="sub">No hay gastos con importe.</p>';
+  const a0 = partes(v.alta.fecha)[0], a1 = partes(hoy())[0], m = porAno(g, a0, a1);
+  const total = g.reduce((s, x) => s + x.importe, 0), km = kmActual(v).km - v.alta.km;
+  const t = new Map(); for (const x of g) t.set(x.taller, (t.get(x.taller) || 0) + x.importe);
+  const sinImporte = v.visitas.filter(x => x.importe == null && ['taller', 'sello'].includes(x.tipo)).length;
+  const compra = v.visitas.find(x => x.tipo === 'compra' && x.importe != null);
+  return `<div class="cifras">
+      <div class="cifra"><span class="sub">Total</span><b>${fEur(total)}</b></div>
+      <div class="cifra"><span class="sub">Media al año</span><b>${fEur(total / Math.max(1, a1 - a0 + 1))}</b></div>
+      <div class="cifra"><span class="sub">Por km</span><b>${km > 0 ? fNum(total / km, 3) + ' €' : '—'}</b></div>
+      ${compra ? `<div class="cifra"><span class="sub">Compra (aparte)</span><b>${fEur(compra.importe)}</b></div>` : ''}
+    </div>
+    <h3>Por año</h3>${barras([...m].reverse().map(([a, x]) => ({ etq: String(a), valor: x })))}
+    <h3>Por taller</h3>${barras([...t].sort((a, b) => b[1] - a[1]).map(([id, x]) => ({ etq: nombreTaller(id), valor: x })))}
+    <p class="sub">Importes con IVA de ${plural(g.length, 'visita', 'visitas')}${sinImporte ? `; ${plural(sinImporte, 'visita no tiene', 'visitas no tienen')} importe` : ''}. Por km: desde el alta.</p>`;
+}
+function vistaGastosTodos() {
+  const vs = vehiculos(true).filter(v => gastosDe(v).length);
+  if (!vs.length) return '<p class="sub">No hay gastos con importe.</p>';
+  const a0 = Math.min(...vs.map(v => partes(v.alta.fecha)[0])), a1 = partes(hoy())[0];
+  const tablas = vs.map(v => porAno(gastosDe(v), a0, a1));
+  const anos = []; for (let a = a1; a >= a0; a--) anos.push(a);
+  const tot = a => tablas.reduce((s, m) => s + (m.get(a) || 0), 0);
+  return `<h1>Gastos de todos</h1>
+    <h3>Por año</h3>${barras(anos.map(a => ({ etq: String(a), valor: tot(a) })))}
+    <h3>Detalle</h3><div class="tabla-wrap"><table class="tabla"><thead><tr><th>Año</th>${vs.map(v => `<th class="num">${esc(v.nombre)}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>
+      ${anos.map(a => `<tr><td>${a}</td>${tablas.map(m => `<td class="num">${m.get(a) ? fEur(m.get(a)) : ''}</td>`).join('')}<td class="num"><b>${fEur(tot(a))}</b></td></tr>`).join('')}
+      <tr><td><b>Total</b></td>${tablas.map(m => `<td class="num"><b>${fEur([...m.values()].reduce((s, x) => s + x, 0))}</b></td>`).join('')}<td class="num"><b>${fEur(anos.reduce((s, a) => s + tot(a), 0))}</b></td></tr>
+    </tbody></table></div>
+    <p class="sub">Importes con IVA de las visitas al taller, sin la compra de los vehículos.</p>`;
+}
+
+function vistaAjustes() {
+  const d = D(), imp = S.importacion;
+  const origen = S.origen === 'dropbox' ? 'Dropbox (Aplicaciones/Ruedak/ruedak.json)' : S.origen === 'local' ? `Fichero del disco: ${S.nombreArchivo || ''}` : 'Ninguno';
+  const tipos = ['coche', 'moto', 'bici', 'otro'];
+  const am = d?.ajustes?.ambar || {};
+  return `<h1>Ajustes</h1>
+  <section class="bloque"><h2>Dónde se guardan los datos</h2><div class="caja">
+    <dl class="datos"><dt>Ahora</dt><dd>${esc(origen)}</dd>${d?.guardado ? `<dt>Última modificación</dt><dd>${esc(d.guardado.replace('T', ' '))}</dd>` : ''}</dl>
+    <div class="botones">
+      ${S.origen === 'dropbox' ? '<button class="boton" data-accion="desconectar">Desconectar Dropbox</button>'
+        : clave() ? '<button class="boton primario" data-accion="conectar">Conectar Dropbox</button>' : ''}
+      <button class="boton" data-accion="abrir-local">Abrir un fichero del disco</button>
+      ${d ? '<button class="boton" data-accion="guardar-como">Guardar en un fichero del disco</button><button class="boton" data-accion="descargar">Descargar una copia</button>' : ''}
+    </div>
+    ${!clave() ? '<p class="sub">Falta la clave de la app de Dropbox: los pasos para darla de alta están en PROYECTO.md. Mientras tanto, abre ruedak.json desde el disco.</p>' : ''}
+  </div></section>
+  <section class="bloque"><h2>Importar</h2><div class="caja">
+    <p class="sub">Un fichero de importación que prepara Claude con una factura, o unos datos completos (ruedak.json). Antes de aplicar nada se enseña lo que va a cambiar${S.origen === 'dropbox' ? ', y en Dropbox se guarda una copia en la carpeta copias' : ''}.</p>
+    <input type="file" id="imp-fichero" accept=".json,application/json" data-accion="importar">
+    ${imp ? `<div id="imp-vista">
+      <p><b>${esc(imp.nombre)}</b>${imp.descripcion ? ' · ' + esc(imp.descripcion) : ''}</p>
+      ${imp.error ? `<p class="error" style="color:var(--rojo)">${esc(imp.error)}</p>` : `<ul class="importacion">${imp.items.map(i => `<li class="${i.ok ? 'bien' : 'mal'}">${esc(i.texto)}</li>`).join('')}</ul>
+      <div class="botones">${imp.completo || imp.validas ? `<button class="boton primario" data-accion="confirmar-import">${imp.completo ? 'Cargar estos datos' : `Importar ${plural(imp.validas, 'cambio', 'cambios')}`}</button>` : ''}<button class="boton" data-accion="cancelar-import">Cancelar</button></div>`}
+    </div>` : ''}
+  </div></section>
+  ${d ? `<section class="bloque"><h2>Semáforo</h2><div class="caja">
+    <p class="sub">Un elemento se pone en ámbar cuando faltan menos de los meses indicados, o menos de ese porcentaje del intervalo en km.</p>
+    <div class="tabla-wrap"><table class="tabla"><thead><tr><th>Tipo</th><th>Meses</th><th>% de los km</th></tr></thead><tbody>
+      ${tipos.map(t => `<tr><td>${TIPOS_VEH[t]}</td><td><input type="number" min="0" step="1" style="width:5em" name="am-${t}-meses" value="${(am[t] || am.coche || {}).meses ?? 2}"></td><td><input type="number" min="0" step="1" style="width:5em" name="am-${t}-pct" value="${(am[t] || am.coche || {}).pctKm ?? 10}"></td></tr>`).join('')}
+    </tbody></table></div>
+    <label>Velocidad media de la bici en movimiento (km/h), para pasar horas a km<input type="number" min="1" step="0.5" style="width:7em" name="vel-bici" value="${velocidadBici()}"></label>
+    <div class="botones"><button class="boton primario" data-accion="guardar-ajustes">Guardar ajustes</button></div>
+  </div></section>` : ''}
+  <section class="bloque"><h2>Acerca de</h2><div class="caja"><p>Ruedak · versión ${APP_VERSION}</p><p class="sub">Mantenimiento de los vehículos: historial, semáforo de lo que toca, caducidades y gastos.</p></div></section>`;
+}
+
+// ─── Diálogo ─────────────────────────────────────────────────────────────────
+// Devuelve los campos del formulario, null si se cancela, o { _borrar: true } con el botón «borrar».
+// preparar(form): se llama al abrir y en cada cambio (para enseñar u ocultar campos).
+function dialogo({ titulo, cuerpo, ok = 'Guardar', cancelar = 'Cancelar', borrar, validar, preparar, ancho }) {
+  return new Promise(resolve => {
+    const d = $('#dlg');
+    d.style.width = ancho ? `min(${ancho}px, calc(100vw - 32px))` : '';
+    d.innerHTML = `<form class="dlg" novalidate><h2>${esc(titulo)}</h2><div>${cuerpo}</div><p class="error" hidden></p>
+      <div class="dlg-botones">${borrar ? `<button type="button" class="boton peligro" data-dlg="borrar">${esc(borrar)}</button>` : ''}${cancelar ? `<button type="button" class="boton" data-dlg="no">${esc(cancelar)}</button>` : ''}<button type="submit" class="boton primario">${esc(ok)}</button></div></form>`;
+    const f = d.querySelector('form'), err = d.querySelector('.error');
+    let hecho = false;
+    const cerrar = v => { if (hecho) return; hecho = true; d.close(); resolve(v); };
+    d.querySelector('[data-dlg="no"]')?.addEventListener('click', () => cerrar(null));
+    d.querySelector('[data-dlg="borrar"]')?.addEventListener('click', () => cerrar({ _borrar: true }));
+    d.oncancel = e => { e.preventDefault(); cerrar(null); };
+    f.addEventListener('input', () => { err.hidden = true; });
+    if (preparar) { f.addEventListener('change', () => preparar(f)); preparar(f); }
+    f.addEventListener('submit', e => {
+      e.preventDefault();
+      const datos = Object.fromEntries(new FormData(f));
+      const m = validar ? validar(datos) : null;
+      if (m) { err.textContent = m; err.hidden = false; return; }
+      cerrar(datos);
+    });
+    d.showModal();
+    d.scrollTop = 0;
+    f.querySelector('input:not([type=hidden]), select, textarea')?.focus();
+  });
+}
+async function confirmar(titulo, texto, ok) { return !!(await dialogo({ titulo, cuerpo: `<p>${esc(texto)}</p>`, ok })); }
+
+// Campos de los formularios. Los números se escriben con coma decimal.
+const cTexto = (etq, name, val, extra = '') => `<label>${etq}<input type="text" name="${name}" value="${esc(val ?? '')}" autocomplete="off" ${extra}></label>`;
+const cNum = (etq, name, n, dec) => cTexto(etq, name, fEdit(n, dec), 'inputmode="decimal"');
+const cEur = (etq, name, n) => cNum(etq, name, n, 2);
+const cFecha = (etq, name, f) => `<label>${etq}<input type="date" name="${name}" value="${esc(f || '')}"></label>`;
+const cLista = (etq, name, ops, actual) => `<label>${etq}<select name="${name}">${ops.map(([k, t]) => `<option value="${esc(k)}"${String(actual ?? '') === String(k) ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+const cArea = (etq, name, val, filas = 3) => `<label>${etq}<textarea name="${name}" rows="${filas}">${esc(val || '')}</textarea></label>`;
+const cCasilla = (etq, name, marcada) => `<label class="interruptor"><input type="checkbox" name="${name}"${marcada ? ' checked' : ''}> ${etq}</label>`;
+// Primer campo numérico mal escrito, o null.
+function malNumero(x, campos) { for (const [k, etq] of campos) if (String(x[k] ?? '').trim() && numero(x[k]) == null) return `${etq}: no es un número.`; return null; }
+const esFecha = f => /^\d{4}-\d{2}-\d{2}$/.test(f || '');
+function opcionesTaller(actual) {
+  const ts = [...D().talleres].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map(t => [t.id, t.nombre]);
+  if (actual && actual !== 'yo' && !ts.some(([id]) => id === actual)) ts.unshift([actual, actual]);
+  return [['', '—'], ['yo', 'Yo'], ...ts];
+}
+function crearTaller(nombre) {
+  const t = D().talleres.find(x => x.nombre.toLowerCase() === nombre.toLowerCase());
+  if (t) return t.id;
+  const id = idLibre(slug(nombre), D().talleres.map(x => x.id));
+  D().talleres.push({ id, nombre });
+  return id;
+}
+function opcionesElemento(v, actual) {
+  const grupos = new Map();
+  for (const e of [...v.elementos].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))) {
+    const g = e.grupo || 'Otros'; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(e);
+  }
+  return `<option value="">— Sin elemento (mano de obra, material, tasas…) —</option>` + [...grupos].sort((a, b) => a[0].localeCompare(b[0], 'es'))
+    .map(([g, es]) => `<optgroup label="${esc(g)}">${es.map(e => `<option value="${esc(e.id)}"${e.id === actual ? ' selected' : ''}>${esc(e.nombre)}</option>`).join('')}</optgroup>`).join('');
+}
+// Km de una visita que no cuadran con el resto de lecturas (una errata al escribirlos), o null.
+function kmIncoherentes(v, fecha, km, visita) {
+  const L = [{ fecha: v.alta.fecha, km: v.alta.km }, ...v.visitas.filter(y => y !== visita && y.km != null), ...v.lecturas.filter(l => l.km != null)];
+  const antes = L.filter(l => l.fecha < fecha && l.km > km).sort((a, b) => b.km - a.km)[0];
+  if (antes) return `El ${fFecha(antes.fecha)} ya tenía ${fKm(antes.km)}: no puede tener menos el ${fFecha(fecha)}.`;
+  const despues = L.filter(l => l.fecha > fecha && l.km < km).sort((a, b) => a.km - b.km)[0];
+  if (despues) return `El ${fFecha(despues.fecha)} tenía ${fKm(despues.km)}: no puede tener más el ${fFecha(fecha)}.`;
+  return null;
+}
+
+// ─── Acciones ────────────────────────────────────────────────────────────────
+async function apuntarKm(id) {
+  const v = veh(id), u = kmActual(v), bici = v.tipo === 'bici';
+  const r = await dialogo({
+    titulo: `Apuntar km · ${v.nombre}`,
+    cuerpo: `<p class="sub">Última lectura: ${fKm(u.km)} el ${fFecha(u.fecha)}.</p>
+      <label>Fecha<input type="date" name="fecha" value="${hoy()}" max="${hoy()}"></label>
+      <label>Km del cuentakilómetros<input type="text" name="km" inputmode="decimal" autocomplete="off" placeholder="${bici ? '1234,5' : '123456'}"></label>
+      <label>De dónde sale<input type="text" name="fuente" value="Yo"></label>`,
+    validar: x => {
+      const km = numero(x.km);
+      if (km == null || km < 0) return 'Escribe los km.';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(x.fecha || '')) return 'Falta la fecha.';
+      if (x.fecha > hoy()) return 'La fecha no puede ser futura.';
+      if (x.fecha >= u.fecha && km < u.km) return `Son menos km que la última lectura (${fKm(u.km)}).`;
+      return null;
+    }
+  });
+  if (!r) return;
+  v.lecturas.push({ fecha: r.fecha, km: numero(r.km), fuente: r.fuente.trim() || 'Yo' });
+  await guardar('Km apuntados');
+}
+async function cambiarDecision(vid, eid, valor) {
+  const el = elemento(veh(vid), eid);
+  el.proxima = { ...(el.proxima || { nota: '' }), decision: valor };
+  await guardar('Próxima visita: ' + (DECISIONES.find(([k]) => k === valor)?.[1] || valor));
+}
+async function editarNotaProxima(vid, eid) {
+  const el = elemento(veh(vid), eid);
+  const r = await dialogo({ titulo: el.nombre, cuerpo: `<label>Nota para la próxima visita<textarea name="nota" rows="5">${esc(el.proxima?.nota || '')}</textarea></label>` });
+  if (!r) return;
+  el.proxima = { ...(el.proxima || { decision: '' }), nota: r.nota.trim() };
+  await guardar('Nota guardada');
+}
+async function renovarCaducidad(vid, cid) {
+  const v = veh(vid), c = v.caducidades.find(x => x.id === cid), dt = c.datos || {};
+  const r = await dialogo({
+    titulo: `Renovar ${c.tipo} · ${v.nombre}`,
+    cuerpo: `<p class="sub">Ahora vence el ${fFecha(c.vence)}.</p>
+      <label>Nueva fecha de vencimiento<input type="date" name="vence" value="${sumaMeses(c.vence, 12)}"></label>
+      <label>Importe (€, con IVA)<input type="text" name="importe" inputmode="decimal" value="${dt.importe != null ? fNum(dt.importe, 2) : ''}"></label>
+      <label>Nota<input type="text" name="nota"></label>`,
+    validar: x => !/^\d{4}-\d{2}-\d{2}$/.test(x.vence || '') ? 'Falta la fecha.' : x.vence <= c.vence ? 'La nueva fecha tiene que ser posterior.' : x.importe.trim() && numero(x.importe) == null ? 'El importe no es un número.' : null
+  });
+  if (!r) return;
+  const importe = numero(r.importe);
+  c.historial = c.historial || [];
+  c.historial.push({ entidad: dt.entidad, desde: c.vence, hasta: r.vence, importe: importe ?? undefined, nota: r.nota.trim() || undefined, renovado: hoy() });
+  c.vence = r.vence;
+  if (importe != null) c.datos = { ...dt, importe };
+  await guardar(`${c.tipo} renovado`);
+}
+// Pendiente nuevo (pid vacío) o editar uno, abierto o cerrado.
+async function editarPendiente(vid, pid) {
+  const v = veh(vid), nuevo = !pid;
+  const p = nuevo ? { tipo: 'sintoma', texto: '', desde: hoy(), estado: 'abierto' } : v.pendientes.find(x => x.id === pid);
+  const cerrado = p.estado !== 'abierto';
+  const r = await dialogo({
+    titulo: nuevo ? `Nuevo pendiente · ${v.nombre}` : 'Editar pendiente',
+    borrar: nuevo ? null : 'Borrar',
+    cuerpo: `${cLista('Tipo', 'tipo', Object.entries(TIPOS_PEND), p.tipo)}
+      ${cArea('Qué pasa', 'texto', p.texto)}
+      <label>Elemento (si tiene)<select name="elemento">${opcionesElemento(v, p.elemento).replace('— Sin elemento (mano de obra, material, tasas…) —', '—')}</select></label>
+      ${cFecha('Desde', 'desde', p.desde)}
+      ${cArea('Nota', 'nota', p.nota, 2)}
+      ${cerrado ? `<fieldset><legend>Cierre</legend>${cLista('Cómo quedó', 'estado', [['hecho', 'Hecho'], ['descartado', 'Descartado']], p.estado)}
+        ${cFecha('Fecha', 'cierreFecha', p.cierre?.fecha)}${cTexto('Nota del cierre', 'cierreNota', p.cierre?.nota)}</fieldset>` : ''}`,
+    validar: x => !x.texto.trim() ? 'Escribe qué pasa.' : !esFecha(x.desde) ? 'Falta la fecha de «desde».' : null
+  });
+  if (!r) return;
+  if (r._borrar) {
+    if (!await confirmar('Borrar el pendiente', `Se borra «${p.texto}». Si ya no hace falta, también se puede cerrar como «Descartado».`, 'Borrar')) return;
+    v.pendientes.splice(v.pendientes.indexOf(p), 1);
+    return guardar('Pendiente borrado');
+  }
+  Object.assign(p, { tipo: r.tipo, texto: r.texto.trim(), elemento: r.elemento || undefined, desde: r.desde, nota: limpio(r.nota) });
+  if (cerrado) Object.assign(p, { estado: r.estado, cierre: { ...p.cierre, fecha: r.cierreFecha || p.cierre?.fecha || hoy(), nota: limpio(r.cierreNota) } });
+  if (nuevo) { p.id = idLibre('p-' + Date.now().toString(36), v.pendientes.map(x => x.id)); v.pendientes.push(p); }
+  await guardar(nuevo ? 'Pendiente añadido' : 'Pendiente guardado');
+}
+// Reabrir: el cierre anterior se queda escrito en la nota.
+async function reabrirPendiente(vid, pid) {
+  const p = veh(vid).pendientes.find(x => x.id === pid);
+  const antes = `${p.estado === 'hecho' ? 'Hecho' : 'Descartado'}${p.cierre?.fecha ? ' el ' + fFecha(p.cierre.fecha) : ''}${p.cierre?.nota ? ` (${p.cierre.nota})` : ''}; reabierto el ${fFecha(hoy())}.`;
+  p.nota = [p.nota, antes].filter(Boolean).join(' ');
+  p.estado = 'abierto'; delete p.cierre;
+  await guardar('Pendiente reabierto');
+}
+
+// Visita nueva (xid vacío) o editar sus datos. Las líneas se editan aparte.
+async function editarVisita(vid, xid) {
+  const v = veh(vid), nueva = !xid;
+  const x = nueva ? { fecha: hoy(), tipo: 'taller', taller: null, lineasConIva: v.tipo === 'bici', lineas: [] } : v.visitas.find(y => y.id === xid);
+  const f = x.factura || {};
+  const r = await dialogo({
+    titulo: nueva ? `Nueva visita · ${v.nombre}` : `Visita del ${fFecha(x.fecha)}`, ancho: 560,
+    borrar: nueva ? null : 'Borrar la visita',
+    cuerpo: `<div class="rejilla">
+        ${cFecha('Fecha', 'fecha', x.fecha)}
+        ${cLista('Tipo', 'tipo', Object.entries(TIPOS_VISITA), x.tipo)}
+        ${cLista('Taller', 'taller', opcionesTaller(x.taller), x.taller ?? '')}
+        ${cTexto('o un taller nuevo', 'tallerNuevo', '', 'placeholder="Nombre del taller"')}
+        ${cNum('Km', 'km', x.km)}
+        ${cEur('Total de la factura (€, con IVA)', 'importe', x.importe)}
+      </div>
+      ${cCasilla('Los importes de las líneas llevan IVA', 'lineasConIva', x.lineasConIva)}
+      <fieldset><legend>Mano de obra</legend><div class="rejilla">
+        ${cNum('Horas', 'manoObraHoras', x.manoObraHoras)}${cEur('€ por hora', 'manoObraPrecioHora', x.manoObraPrecioHora)}
+        ${cEur('Total (€), si la factura lo da', 'manoObraImporte', x.manoObraImporte)}</div></fieldset>
+      <fieldset data-solo="itv"><legend>ITV</legend>
+        ${cLista('Resultado', 'itvResultado', [['favorable', 'Favorable'], ['desfavorable', 'Desfavorable']], x.itv?.resultado)}
+        ${cArea('Defectos', 'itvDefectos', x.itv?.defectos, 2)}</fieldset>
+      <fieldset><legend>Factura</legend>
+        ${cTexto('Número', 'facturaNumero', f.numero)}${cTexto('Fichero en el NAS', 'facturaFichero', f.fichero)}${cTexto('Enlace (QuickConnect)', 'facturaEnlace', f.enlace)}</fieldset>
+      ${cArea('Notas', 'notas', x.notas)}`,
+    preparar: form => { form.querySelector('[data-solo="itv"]').hidden = form.elements.tipo.value !== 'itv'; },
+    validar: y => {
+      if (!esFecha(y.fecha)) return 'Falta la fecha.';
+      const m = malNumero(y, [['km', 'Km'], ['importe', 'Total'], ['manoObraHoras', 'Horas'], ['manoObraPrecioHora', '€ por hora'], ['manoObraImporte', 'Total de mano de obra']]);
+      if (m) return m;
+      const km = numero(y.km);
+      if (km != null && km < 0) return 'Los km no pueden ser negativos.';
+      if (km != null && (km !== x.km || y.fecha !== x.fecha)) return kmIncoherentes(v, y.fecha, km, x);
+      return null;
+    }
+  });
+  if (!r) return;
+  if (r._borrar) {
+    if (!await confirmar('Borrar la visita', `Se borra la visita del ${fFecha(x.fecha)} (${nombreTaller(x.taller)}) con ${plural(x.lineas.length, 'línea', 'líneas')}. No se puede deshacer.`, 'Borrar')) return;
+    v.visitas.splice(v.visitas.indexOf(x), 1);
+    return guardar('Visita borrada');
+  }
+  const n = k => numero(r[k]) ?? undefined;
+  Object.assign(x, { fecha: r.fecha, tipo: r.tipo, taller: r.tallerNuevo.trim() ? crearTaller(r.tallerNuevo.trim()) : r.taller || null,
+    km: n('km'), importe: n('importe'), lineasConIva: !!r.lineasConIva,
+    manoObraHoras: n('manoObraHoras'), manoObraPrecioHora: n('manoObraPrecioHora'), manoObraImporte: n('manoObraImporte'), notas: limpio(r.notas) });
+  x.itv = r.tipo === 'itv' ? { ...x.itv, resultado: r.itvResultado, defectos: limpio(r.itvDefectos) } : undefined;
+  const fac = { ...f, numero: limpio(r.facturaNumero), fichero: limpio(r.facturaFichero), enlace: limpio(r.facturaEnlace) };
+  x.factura = fac.numero || fac.fichero || fac.enlace ? fac : undefined;
+  if (nueva) { x.id = idLibre(r.fecha, v.visitas.map(y => y.id)); v.visitas.push(x); S.abrir = 'det-vis-' + x.id; }
+  v.visitas.sort(porFecha);
+  await guardar(nueva ? 'Visita añadida' : 'Visita guardada');
+}
+
+// Línea nueva (i vacío) o editar una: elemento, qué se hizo (p. ej. de «Dudoso» a «Cambiado»), detalle e importe.
+async function editarLinea(vid, xid, i) {
+  const v = veh(vid), x = v.visitas.find(y => y.id === xid), nueva = i == null || i === '';
+  const l = nueva ? { accion: 'cambiado' } : x.lineas[Number(i)];
+  const r = await dialogo({
+    titulo: `${nueva ? 'Nueva línea' : 'Línea'} · ${fFecha(x.fecha)} · ${nombreTaller(x.taller)}`, ancho: 520,
+    borrar: nueva ? null : 'Borrar la línea',
+    cuerpo: `<label>Elemento<select name="elemento">${opcionesElemento(v, l.elemento)}</select></label>
+      ${cLista('Qué se hizo', 'accion', Object.entries(ACCIONES), l.accion)}
+      <p class="sub">Solo «Cambiado» y «Hecho» cuentan como último cambio para el semáforo.</p>
+      ${cTexto('Detalle', 'texto', l.texto, 'placeholder="5W30, kit, trasera dcha…"')}
+      <div class="rejilla">
+        ${cTexto('Referencia', 'referencia', l.referencia)}
+        ${cEur(`Importe (€, ${x.lineasConIva ? 'con' : 'sin'} IVA)`, 'importe', l.importe)}
+        ${cNum('Cantidad', 'cantidad', l.cantidad)}
+        ${cTexto('Unidad', 'unidad', l.unidad, 'placeholder="L, ud…"')}
+      </div>
+      <div class="rejilla" data-solo="neumatico">${cTexto('Marca y modelo', 'marca', l.marca)}${cTexto('DOT', 'dot', l.dot, 'placeholder="semana y año: 2423"')}</div>
+      ${cTexto('Nota', 'nota', l.nota)}`,
+    preparar: form => { form.querySelector('[data-solo="neumatico"]').hidden = !esNeumatico(form.elements.elemento.value); },
+    validar: y => !y.elemento && !y.texto.trim() ? 'Sin elemento, escribe en «Detalle» qué es (mano de obra, material…).'
+      : malNumero(y, [['importe', 'Importe'], ['cantidad', 'Cantidad']])
+  });
+  if (!r) return;
+  if (r._borrar) {
+    const que = elemento(v, l.elemento)?.nombre || l.texto || 'la línea';
+    if (!await confirmar('Borrar la línea', `Se borra «${que}» de la visita del ${fFecha(x.fecha)}.`, 'Borrar')) return;
+    x.lineas.splice(Number(i), 1);
+    return guardar('Línea borrada');
+  }
+  const datos = { elemento: r.elemento || undefined, accion: r.accion, texto: limpio(r.texto), referencia: limpio(r.referencia),
+    cantidad: numero(r.cantidad) ?? undefined, unidad: limpio(r.unidad), importe: numero(r.importe) ?? undefined,
+    marca: limpio(r.marca), dot: limpio(r.dot), nota: limpio(r.nota) };
+  if (nueva) x.lineas.push(datos); else Object.assign(l, datos);
+  await guardar(nueva ? 'Línea añadida' : `Línea guardada: ${ACCIONES[r.accion]}`);
+}
+
+// Elemento nuevo (eid vacío) o editar uno: nombre, grupo, referencia e intervalo.
+async function editarElemento(vid, eid) {
+  const v = veh(vid), nuevo = !eid;
+  const el = nuevo ? { grupo: '', nombre: '', proxima: { decision: '', nota: '' } } : elemento(v, eid);
+  const iv = el.intervalo || {};
+  const grupos = [...new Set(v.elementos.map(e => e.grupo).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const usado = !nuevo && (lineasDe(v, eid).length || v.pendientes.some(p => p.elemento === eid));
+  const r = await dialogo({
+    titulo: nuevo ? `Nuevo elemento · ${v.nombre}` : el.nombre, ancho: 520,
+    borrar: nuevo || usado ? null : 'Borrar el elemento',
+    cuerpo: `${cTexto('Nombre', 'nombre', el.nombre)}
+      ${cTexto('Grupo', 'grupo', el.grupo, 'list="grupos-dlg"')}<datalist id="grupos-dlg">${grupos.map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+      <div class="rejilla">${cTexto('Referencia', 'referencia', el.referencia)}${cTexto('Especificación', 'especificacion', el.especificacion)}</div>
+      <fieldset><legend>Intervalo: lo que llegue antes</legend><div class="rejilla">
+        ${cNum('Cada km', 'km', iv.km)}${cNum('Cada meses', 'meses', iv.meses)}
+        ${v.tipo === 'bici' || iv.horas ? cNum('Cada horas de uso', 'horas', iv.horas) : ''}
+        ${cNum('La 1ª vez, a los meses', 'primeraMeses', iv.primeraMeses)}${cNum('La 1ª vez, a los km', 'primeraKm', iv.primeraKm)}
+      </div><p class="sub">Vacío: sin intervalo (gris en el semáforo).</p></fieldset>
+      ${cTexto('De dónde sale el intervalo', 'fuente', el.fuente)}
+      ${cArea('Nota', 'nota', el.nota, 2)}
+      ${usado ? '<p class="sub">No se puede borrar: tiene líneas en el historial o pendientes.</p>' : ''}`,
+    validar: y => !y.nombre.trim() ? 'Falta el nombre.'
+      : malNumero(y, [['km', 'Cada km'], ['meses', 'Cada meses'], ['horas', 'Cada horas'], ['primeraMeses', 'La 1ª vez, meses'], ['primeraKm', 'La 1ª vez, km']])
+  });
+  if (!r) return;
+  if (r._borrar) {
+    if (!await confirmar('Borrar el elemento', `Se borra «${el.nombre}». No tiene nada en el historial.`, 'Borrar')) return;
+    v.elementos.splice(v.elementos.indexOf(el), 1); S.abiertos.delete(v.id + '/' + el.id);
+    return guardar('Elemento borrado');
+  }
+  const intervalo = {};
+  for (const k of ['km', 'meses', 'horas', 'primeraMeses', 'primeraKm']) { const n = numero(r[k]); if (n) intervalo[k] = n; }
+  Object.assign(el, { nombre: r.nombre.trim(), grupo: limpio(r.grupo) || 'Otros', referencia: limpio(r.referencia), especificacion: limpio(r.especificacion),
+    intervalo: Object.keys(intervalo).length ? intervalo : undefined, fuente: limpio(r.fuente), nota: limpio(r.nota) });
+  if (nuevo) { el.id = idLibre(slug(el.nombre), v.elementos.map(e => e.id)); v.elementos.push(el); S.abiertos.add(v.id + '/' + el.id); }
+  const oculto = nuevo && !el.intervalo && leerLS(LS.verTodos) !== '1';
+  await guardar(nuevo ? (oculto ? 'Elemento añadido; sin intervalo, se ve con «Ver todos»' : 'Elemento añadido') : 'Elemento guardado');
+}
+
+// Caducidad nueva (cid vacío) o editar una. Renovar sigue siendo aparte (guarda el periodo en el historial).
+async function editarCaducidad(vid, cid) {
+  const v = veh(vid), nueva = !cid;
+  const c = nueva ? { tipo: 'ITV', vence: '', datos: {}, historial: [] } : v.caducidades.find(x => x.id === cid);
+  const dt = c.datos || {};
+  const r = await dialogo({
+    titulo: nueva ? `Nueva caducidad · ${v.nombre}` : `${c.tipo} · ${v.nombre}`,
+    borrar: nueva ? null : 'Borrar',
+    cuerpo: `${cTexto('Qué es', 'tipo', c.tipo, 'list="tipos-cad"')}<datalist id="tipos-cad">${['ITV', 'Seguro', 'Impuesto', 'Garantía'].map(t => `<option value="${t}">`).join('')}</datalist>
+      ${cFecha('Vence', 'vence', c.vence)}
+      <div class="rejilla">${cTexto('Entidad', 'entidad', dt.entidad)}${cTexto('Póliza', 'poliza', dt.poliza)}
+        ${cTexto('Modalidad', 'modalidad', dt.modalidad)}${cEur('Importe (€)', 'importe', dt.importe)}</div>
+      ${cArea('Notas', 'notas', c.notas, 2)}`,
+    validar: y => !y.tipo.trim() ? 'Falta qué es (ITV, seguro…).' : !esFecha(y.vence) ? 'Falta la fecha de vencimiento.' : malNumero(y, [['importe', 'Importe']])
+  });
+  if (!r) return;
+  if (r._borrar) {
+    if (!await confirmar('Borrar la caducidad', `Se borra «${c.tipo}» con su historial de renovaciones.`, 'Borrar')) return;
+    v.caducidades.splice(v.caducidades.indexOf(c), 1);
+    return guardar('Caducidad borrada');
+  }
+  const datos = { ...dt, entidad: limpio(r.entidad), poliza: limpio(r.poliza), modalidad: limpio(r.modalidad), importe: numero(r.importe) ?? undefined };
+  Object.assign(c, { tipo: r.tipo.trim(), vence: r.vence, datos: Object.values(datos).some(x => x != null) ? datos : undefined, notas: limpio(r.notas) });
+  if (nueva) { c.id = idLibre(slug(c.tipo), v.caducidades.map(x => x.id)); v.caducidades.push(c); }
+  await guardar(nueva ? 'Caducidad añadida' : 'Caducidad guardada');
+}
+
+async function borrarLectura(vid, i) {
+  const v = veh(vid), l = v.lecturas[Number(i)];
+  if (!await confirmar('Borrar la lectura', `Se borra la lectura de ${fKm(l.km)} del ${fFecha(l.fecha)}.`, 'Borrar')) return;
+  v.lecturas.splice(Number(i), 1);
+  await guardar('Lectura borrada');
+}
+async function cerrarPendiente(vid, pid) {
+  const v = veh(vid), p = v.pendientes.find(x => x.id === pid);
+  const r = await dialogo({
+    titulo: 'Cerrar pendiente', ok: 'Cerrar pendiente',
+    cuerpo: `<p>${esc(p.texto)}</p>
+      <label>Cómo queda<select name="estado"><option value="hecho">Hecho</option><option value="descartado">Descartado</option></select></label>
+      <label>Fecha<input type="date" name="fecha" value="${hoy()}"></label>
+      <label>Nota<input type="text" name="nota"></label>`
+  });
+  if (!r) return;
+  p.estado = r.estado;
+  p.cierre = { fecha: r.fecha || hoy(), nota: r.nota.trim() || undefined };
+  await guardar('Pendiente cerrado');
+}
+async function guardarAjustes() {
+  const d = D(), val = n => numero(document.querySelector(`[name="${n}"]`)?.value);
+  const ambar = {};
+  for (const t of ['coche', 'moto', 'bici', 'otro']) ambar[t] = { meses: val(`am-${t}-meses`) ?? 2, pctKm: val(`am-${t}-pct`) ?? 10 };
+  d.ajustes = { ...(d.ajustes || {}), ambar, velocidadMediaBici: val('vel-bici') || 13 };
+  await guardar('Ajustes guardados');
+}
+
+// ─── Guardar ─────────────────────────────────────────────────────────────────
+// Los guardados van en cola, uno detrás de otro.
+function guardar(msg) { S.cola = S.cola.then(() => guardarAhora(msg)); return S.cola; }
+async function guardarAhora(msg) {
+  S.datos.guardado = new Date().toISOString().slice(0, 19);
+  S.sucio = true; render();
+  try {
+    const texto = JSON.stringify(S.datos, null, 1);
+    if (S.origen === 'dropbox') S.rev = (await dbx(() => subir(RUTA, texto, S.rev))).rev;
+    else if (S.origen === 'local') await guardarLocal(texto);
+    else throw new Error('SIN_ORIGEN');
+    S.sucio = false; aviso(null); toast(msg || 'Guardado');
+  } catch (e) {
+    if (e.message === 'CONFLICTO') aviso({ tipo: 'conflicto', texto: 'Otro aparato ha guardado cambios en Dropbox después de que abrieras los datos. Tu último cambio no se ha guardado: recarga los datos y vuelve a hacerlo.' });
+    else if (e.message === 'SIN_ORIGEN') aviso({ tipo: 'error', texto: 'Los datos no se guardan en ningún sitio. En Ajustes, conecta Dropbox o guárdalos en un fichero del disco.' });
+    else aviso({ tipo: 'error', texto: `No se ha podido guardar (${e.message}).` });
+  }
+  render();
+}
+
+// ─── Dropbox ─────────────────────────────────────────────────────────────────
+function b64url(bytes) { return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+async function conectarDropbox() {
+  if (!clave()) return toast('Falta la clave de la app de Dropbox');
+  const verificador = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const reto = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verificador))));
+  const estado = b64url(crypto.getRandomValues(new Uint8Array(12)));
+  escribirLS(LS.pkce, JSON.stringify({ verificador, estado }));
+  location.href = 'https://www.dropbox.com/oauth2/authorize?' + new URLSearchParams({ client_id: clave(), response_type: 'code', redirect_uri: REDIRECT,
+    code_challenge: reto, code_challenge_method: 'S256', token_access_type: 'offline', state: estado });
+}
+// A la vuelta de Dropbox la dirección trae ?code=…&state=…: se cambia por un token y se quita de la dirección.
+async function volverDeDropbox() {
+  const q = new URLSearchParams(location.search), code = q.get('code');
+  if (!code) return false;
+  history.replaceState(null, '', location.pathname + location.hash);
+  const p = JSON.parse(leerLS(LS.pkce) || 'null');
+  escribirLS(LS.pkce, null);
+  if (!p || p.estado !== q.get('state')) throw new Error('La vuelta de Dropbox no corresponde a esta petición');
+  const r = await red(DBX.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ code, grant_type: 'authorization_code', client_id: clave(), redirect_uri: REDIRECT, code_verifier: p.verificador }) });
+  const j = await r.json();
+  if (!j.access_token) throw new Error('Dropbox no ha dado acceso');
+  S.token = j.access_token;
+  if (j.refresh_token) escribirLS(LS.refresh, j.refresh_token);
+  return true;
+}
+async function renovarToken() {
+  const rt = leerLS(LS.refresh);
+  if (!rt) throw new Error('SIN_SESION');
+  const r = await red(DBX.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: rt, client_id: clave() }) });
+  const j = await r.json().catch(() => ({}));
+  if (!j.access_token) throw new Error('SIN_SESION');
+  S.token = j.access_token;
+}
+async function dbx(fn) {
+  if (!S.token) await renovarToken();
+  try { return await fn(); } catch (e) { if (e.message !== 'TOKEN') throw e; await renovarToken(); return await fn(); }
+}
+async function bajar(ruta) {
+  const r = await red(DBX.contenido + 'files/download', { method: 'POST', headers: { Authorization: 'Bearer ' + S.token, 'Dropbox-API-Arg': JSON.stringify({ path: ruta }) } });
+  if (r.status === 401) throw new Error('TOKEN');
+  if (r.status === 409) return null;                          // no existe
+  if (!r.ok) throw new Error('Dropbox respondió ' + r.status);
+  let rev = null; try { rev = JSON.parse(r.headers.get('Dropbox-API-Result')).rev; } catch (e) { }
+  return { texto: await r.text(), rev };
+}
+// rev: solo se guarda si el fichero de Dropbox sigue en esa versión; si otro aparato guardó después, CONFLICTO.
+async function subir(ruta, texto, rev, copia = false) {
+  const mode = copia || !rev ? 'add' : { '.tag': 'update', update: rev };
+  const r = await red(DBX.contenido + 'files/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + S.token,
+    'Dropbox-API-Arg': JSON.stringify({ path: ruta, mode, autorename: copia, mute: true }), 'Content-Type': 'application/octet-stream' },
+    body: new TextEncoder().encode(texto) });
+  if (r.status === 401) throw new Error('TOKEN');
+  if (r.status === 409) { const t = await r.text().catch(() => ''); throw new Error(t.includes('conflict') ? 'CONFLICTO' : 'Dropbox: ' + t.slice(0, 80)); }
+  if (!r.ok) throw new Error('Dropbox respondió ' + r.status);
+  return r.json();
+}
+async function revActual(ruta) {
+  const r = await red(DBX.api + 'files/get_metadata', { method: 'POST', headers: { Authorization: 'Bearer ' + S.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ path: ruta }) });
+  if (r.status === 401) throw new Error('TOKEN');
+  if (r.status === 409) return null;
+  if (!r.ok) throw new Error('Dropbox respondió ' + r.status);
+  return (await r.json()).rev;
+}
+async function cargarDropbox() {
+  const r = await dbx(() => bajar(RUTA));
+  S.datos = r ? leerDatos(r.texto) : null;
+  S.rev = r ? r.rev : null;
+  S.origen = 'dropbox'; S.archivo = null; S.sucio = false;
+}
+// Al volver a la pestaña: si otro aparato ha guardado y aquí no hay nada pendiente, se recargan los datos.
+async function comprobarCambios() {
+  if (S.origen !== 'dropbox' || S.sucio) return;
+  try {
+    const rev = await dbx(() => revActual(RUTA));
+    if (rev && rev !== S.rev) { await cargarDropbox(); render(); toast('Datos actualizados con los cambios de otro aparato'); }
+  } catch (e) { console.warn('No se ha podido comprobar la versión de Dropbox', e.message); }
+}
+async function desconectarDropbox() {
+  const r = await dialogo({ titulo: 'Desconectar Dropbox', ok: 'Desconectar', cuerpo: '<p>En este aparato dejarán de verse los datos hasta que vuelvas a conectar. En Dropbox no se borra nada.</p>' });
+  if (!r) return;
+  escribirLS(LS.refresh, null);
+  Object.assign(S, { token: '', origen: null, datos: null, rev: null, sucio: false, aviso: null });
+  location.hash = '#/'; render();
+}
+
+// ─── Fichero del disco ───────────────────────────────────────────────────────
+const TIPOS_FICHERO = [{ description: 'Datos de Ruedak', accept: { 'application/json': ['.json'] } }];
+async function abrirLocal() {
+  if (window.showOpenFilePicker) {
+    let h; try { [h] = await showOpenFilePicker({ types: TIPOS_FICHERO }); } catch (e) { return; }
+    usarLocal(await (await h.getFile()).text(), h, h.name);
+  } else {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json';
+    i.onchange = async () => { const f = i.files[0]; if (f) usarLocal(await f.text(), null, f.name); };
+    i.click();
+  }
+}
+function usarLocal(texto, handle, nombre) {
+  try { S.datos = leerDatos(texto); } catch (e) { aviso({ tipo: 'error', texto: `No se ha podido abrir ${nombre}: ${e.message}.` }); render(); return; }
+  Object.assign(S, { origen: 'local', archivo: handle, nombreArchivo: nombre, rev: null, sucio: false, aviso: null });
+  location.hash = '#/'; render(); toast('Abierto ' + nombre);
+}
+async function guardarLocal(texto) {
+  if (S.archivo && S.archivo.createWritable) { const w = await S.archivo.createWritable(); await w.write(texto); await w.close(); }
+  else descargar(texto, S.nombreArchivo || 'ruedak.json');      // sin acceso al disco: se descarga
+}
+async function guardarComo() {
+  if (!window.showSaveFilePicker) return descargar(JSON.stringify(D(), null, 1), 'ruedak.json');
+  let h; try { h = await showSaveFilePicker({ suggestedName: 'ruedak.json', types: TIPOS_FICHERO }); } catch (e) { return; }
+  Object.assign(S, { origen: 'local', archivo: h, nombreArchivo: h.name, rev: null });
+  await guardar('Guardado en ' + h.name);
+}
+function descargar(texto, nombre) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([texto], { type: 'application/json' })); a.download = nombre;
+  document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// ─── Importar ────────────────────────────────────────────────────────────────
+// Dos tipos de fichero: datos completos (formato 1 con vehiculos) o una importación
+// { formato: 1, tipo: "importacion", descripcion, operaciones: [ { op, vehiculo, … } ] }. Ver PROYECTO.md.
+async function leerImport(f) {
+  if (!f) return;
+  let obj;
+  try { obj = JSON.parse(await f.text()); } catch (e) { S.importacion = { nombre: f.name, error: 'No es un fichero JSON válido.' }; render(); return; }
+  S.importacion = prepararImport(obj, f.name);
+  render();
+}
+function prepararImport(obj, nombre) {
+  if (obj && obj.formato === 1 && Array.isArray(obj.vehiculos)) {
+    let datos; try { datos = leerDatos(JSON.stringify(obj)); } catch (e) { return { nombre, error: e.message }; }
+    const n = datos.vehiculos.reduce((s, v) => s + v.visitas.length, 0);
+    return { nombre, completo: true, datos, items: [{ ok: true, texto: `Datos completos: ${datos.vehiculos.map(v => v.nombre).join(', ')}; ${plural(n, 'visita', 'visitas')}.${D() ? ' Sustituyen a todos los datos actuales.' : ''}` }] };
+  }
+  if (!obj || obj.tipo !== 'importacion' || !Array.isArray(obj.operaciones)) return { nombre, error: 'No es una importación de Ruedak ni unos datos completos.' };
+  if (!D()) return { nombre, error: 'Primero hay que cargar unos datos completos.' };
+  const copia = structuredClone(D());
+  const items = obj.operaciones.map(op => aplicarOperacion(copia, op));
+  return { nombre, descripcion: obj.descripcion, completo: false, datos: copia, items, validas: items.filter(i => i.ok).length };
+}
+function aplicarOperacion(d, op) {
+  const mal = texto => ({ ok: false, texto });
+  const v = op.vehiculo ? d.vehiculos.find(x => x.id === op.vehiculo) : null;
+  const nv = v ? v.nombre : op.op === 'taller' ? 'Talleres' : String(op.vehiculo);
+  const porId = (lista, obj, que) => {             // añade o actualiza por id
+    if (!obj?.id) return mal(`${nv}: ${que} sin id`);
+    const i = lista.findIndex(x => x.id === obj.id);
+    if (i < 0) { lista.push(obj); return { ok: true, texto: `${nv}: ${que} nuevo «${obj.nombre || obj.texto || obj.tipo || obj.id}»` }; }
+    lista[i] = { ...lista[i], ...obj };
+    return { ok: true, texto: `${nv}: ${que} «${lista[i].nombre || lista[i].texto || lista[i].tipo || obj.id}» actualizado` };
+  };
+  if (op.op !== 'taller' && op.op !== 'vehiculo' && !v) return mal(`Vehículo «${op.vehiculo}» desconocido`);
+  switch (op.op) {
+    case 'visita': {
+      const x = op.visita;
+      if (!x?.id || !/^\d{4}-\d{2}-\d{2}$/.test(x.fecha || '')) return mal(`${nv}: visita sin id o sin fecha`);
+      if (v.visitas.some(y => y.id === x.id)) return mal(`${nv}: la visita ${x.id} ya existe; no se duplica`);
+      x.lineas = x.lineas || [];
+      const malos = x.lineas.filter(l => l.elemento && !v.elementos.some(e => e.id === l.elemento)).map(l => l.elemento);
+      if (malos.length) return mal(`${nv}: la visita ${x.id} usa elementos que no existen (${malos.join(', ')})`);
+      v.visitas.push(x); v.visitas.sort(porFecha);
+      return { ok: true, texto: `${nv}: visita del ${fFecha(x.fecha)} · ${nombreTaller(x.taller, d)}${x.km != null ? ' · ' + fKm(x.km) : ''}${x.importe != null ? ' · ' + fEur(x.importe) : ''} · ${plural(x.lineas.length, 'línea', 'líneas')}` };
+    }
+    case 'lectura': {
+      const l = op.lectura;
+      if (!l || l.km == null || !l.fecha) return mal(`${nv}: lectura sin fecha o sin km`);
+      if (v.lecturas.some(x => x.fecha === l.fecha && x.km === l.km)) return mal(`${nv}: la lectura de ${fKm(l.km)} del ${fFecha(l.fecha)} ya existe`);
+      v.lecturas.push(l);
+      return { ok: true, texto: `${nv}: ${fKm(l.km)} el ${fFecha(l.fecha)}` };
+    }
+    case 'elemento': return porId(v.elementos, op.elemento, 'elemento');
+    case 'pendiente': return porId(v.pendientes, op.pendiente, 'pendiente');
+    case 'caducidad': return porId(v.caducidades, op.caducidad, 'caducidad');
+    case 'taller': return porId(d.talleres, op.taller, 'taller');
+    case 'vehiculo': {
+      const n = op.vehiculo;
+      if (!n?.id || !n.nombre || !n.tipo || !n.alta) return mal('Vehículo nuevo incompleto (id, nombre, tipo y alta)');
+      if (d.vehiculos.some(x => x.id === n.id)) return mal(`El vehículo ${n.id} ya existe`);
+      for (const k of ['elementos', 'visitas', 'lecturas', 'caducidades', 'pendientes', 'ficha']) n[k] = n[k] || [];
+      d.vehiculos.push(n);
+      return { ok: true, texto: `Vehículo nuevo: ${n.nombre}` };
+    }
+    default: return mal(`Operación desconocida: ${op.op}`);
+  }
+}
+async function confirmarImport() {
+  const imp = S.importacion;
+  if (!imp || imp.error || !(imp.completo || imp.validas)) return;
+  if (S.origen === 'dropbox' && S.rev && D()) {          // copia de lo que hay antes de importar
+    const n = new Date(), f = iso(n.getFullYear(), n.getMonth() + 1, n.getDate()) + '_' + String(n.getHours()).padStart(2, '0') + String(n.getMinutes()).padStart(2, '0');
+    try { await dbx(() => subir(`/copias/ruedak_${f}.json`, JSON.stringify(D(), null, 1), null, true)); }
+    catch (e) { aviso({ tipo: 'error', texto: `No se ha podido guardar la copia previa en Dropbox (${e.message}). No se ha importado nada.` }); render(); return; }
+  }
+  S.datos = imp.datos; S.importacion = null;
+  location.hash = '#/';
+  await guardar(imp.completo ? 'Datos cargados' : `Importado: ${plural(imp.validas, 'cambio', 'cambios')}`);
+}
+
+// ─── Eventos ─────────────────────────────────────────────────────────────────
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-accion]');
+  if (!b || ['SELECT', 'INPUT'].includes(b.tagName)) return;
+  const { accion, veh: vid, el, cad, pend, vis, lin, lec } = b.dataset;
+  const acciones = {
+    'ver-el': () => {
+      const k = vid + '/' + el, abrir = !S.abiertos.has(k);
+      abrir ? S.abiertos.add(k) : S.abiertos.delete(k);
+      b.setAttribute('aria-expanded', abrir);
+      b.closest('.fila-el').querySelector('.el-detalle').hidden = !abrir;
+    },
+    km: () => apuntarKm(vid), 'nota-proxima': () => editarNotaProxima(vid, el), renovar: () => renovarCaducidad(vid, cad),
+    'nuevo-pendiente': () => editarPendiente(vid, null), 'editar-pendiente': () => editarPendiente(vid, pend),
+    'cerrar-pendiente': () => cerrarPendiente(vid, pend), 'reabrir-pendiente': () => reabrirPendiente(vid, pend),
+    'nueva-visita': () => editarVisita(vid, null), 'editar-visita': () => editarVisita(vid, vis),
+    'nueva-linea': () => editarLinea(vid, vis, null), 'editar-linea': () => editarLinea(vid, vis, lin),
+    'nuevo-elemento': () => editarElemento(vid, null), 'editar-elemento': () => editarElemento(vid, el),
+    'nueva-caducidad': () => editarCaducidad(vid, null), 'editar-caducidad': () => editarCaducidad(vid, cad),
+    'borrar-lectura': () => borrarLectura(vid, lec),
+    conectar: conectarDropbox, desconectar: desconectarDropbox, 'abrir-local': abrirLocal, 'guardar-como': guardarComo,
+    descargar: () => descargar(JSON.stringify(D(), null, 1), 'ruedak.json'), 'guardar-ajustes': guardarAjustes,
+    'confirmar-import': confirmarImport, 'cancelar-import': () => { S.importacion = null; render(); },
+    'cerrar-aviso': () => { aviso(null); render(); },
+    reintentar: () => guardar('Guardado'),
+    recargar: async () => { try { await cargarDropbox(); aviso(null); toast('Datos recargados'); } catch (e) { aviso({ tipo: 'error', texto: 'No se han podido recargar los datos: ' + e.message }); } render(); }
+  };
+  if (acciones[accion]) acciones[accion]();
+});
+document.addEventListener('change', e => {
+  const t = e.target, a = t.dataset?.accion;
+  if (a === 'decision') cambiarDecision(t.dataset.veh, t.dataset.el, t.value);
+  else if (a === 'ver-todos') { escribirLS(LS.verTodos, t.checked ? '1' : null); render(); }
+  else if (a === 'importar') leerImport(t.files[0]);
+});
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') comprobarCambios(); });
+window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+window.addEventListener('beforeunload', e => { if (S.sucio) { e.preventDefault(); e.returnValue = ''; } });
+
+// Para las pruebas (test-humo.html).
+window.Ruedak = {
+  version: APP_VERSION, S, comprobarCambios, numero,
+  estadoElemento: (vid, eid) => { const v = veh(vid), el = v && elemento(v, eid); return el ? estadoElemento(v, el) : null; },
+  estadoCaducidad: (vid, cid) => { const v = veh(vid), c = v?.caducidades.find(x => x.id === cid); return c ? estadoCaducidad(v, c) : null; },
+  kmHoy: vid => kmHoy(veh(vid))
+};
+
+// ─── Arranque ────────────────────────────────────────────────────────────────
+(async function arrancar() {
+  try {
+    if (await volverDeDropbox() || leerLS(LS.refresh)) await cargarDropbox();
+  } catch (e) {
+    if (e.message === 'SIN_SESION') { escribirLS(LS.refresh, null); aviso({ tipo: 'error', texto: 'La conexión con Dropbox ha caducado. Vuelve a conectar en Ajustes.' }); }
+    else aviso({ tipo: 'error', texto: 'No se han podido leer los datos de Dropbox: ' + e.message });
+  }
+  S.cargando = false;
+  render();
+})();
+</script>
+</body>
+</html>
