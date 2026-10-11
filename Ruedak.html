@@ -72,6 +72,7 @@ section.bloque > h2 { margin-bottom: 8px; }
 .boton:hover { border-color: var(--suave); }
 .boton.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
 .boton.peque { padding: 2px 9px; font-size: 0.82em; font-weight: 500; }
+a.boton { display: inline-block; text-decoration: none; }
 .botones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 select, input, textarea { font: inherit; color: var(--tinta); background: var(--papel); border: 1px solid var(--raya); border-radius: 7px; padding: 5px 8px; max-width: 100%; }
 label { display: block; margin: 10px 0 0; font-size: 0.9em; color: var(--suave); }
@@ -162,6 +163,48 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 .dlg fieldset { border: 1px solid var(--raya); border-radius: 8px; margin: 14px 0 0; padding: 2px 10px 10px; min-width: 0; }
 .dlg legend { font-size: 0.85em; color: var(--suave); padding: 0 4px; }
 .dlg label.interruptor { margin-top: 12px; }
+.dlg fieldset label.interruptor { margin-right: 14px; }
+
+/* hoja para el taller (en pantalla; al imprimir, ver @media print al final) */
+.hoja { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); padding: 20px 22px; max-width: 840px; margin: 0 auto; }
+.hoja > * + * { margin-top: 1.3em; }
+.hoja h1 { font-size: 1.8em; }
+.hoja h2 { font-size: 1.05em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--acento); display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2em 0.7em; margin-bottom: 0.5em; }
+.hoja h2 small { font-size: 0.78em; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--suave); }
+.h-cab { border-bottom: 3px solid var(--tinta); padding-bottom: 0.7em; display: grid; gap: 0.3em; }
+.h-eyebrow { font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.8em; color: var(--suave); }
+.h-ficha { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--raya); border: 1px solid var(--raya); margin: 0; }
+.h-ficha div { background: var(--papel); padding: 0.4em 0.65em; min-width: 0; }
+.h-ficha .w2 { grid-column: span 2; }
+.h-ficha .w3 { grid-column: 1 / -1; }
+.h-ficha dt { font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.07em; color: var(--suave); font-weight: 600; }
+.h-ficha dd { margin: 0.1em 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.hoja .tarde { color: var(--rojo); font-weight: 600; }
+.h-avisos { display: grid; gap: 0.6em; }
+.h-aviso { border: 2px solid var(--ambar); background: var(--ambar-tinte); padding: 0.55em 0.85em; }
+.h-aviso strong { display: block; color: var(--ambar); text-transform: uppercase; letter-spacing: 0.03em; }
+.hoja table { width: 100%; border-collapse: collapse; }
+.hoja th { text-align: left; font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.07em; color: var(--suave); font-weight: 600; padding: 0.4em 0.5em; border-bottom: 2px solid var(--tinta); white-space: nowrap; }
+.hoja td { padding: 0.5em; border-bottom: 1px solid var(--raya); vertical-align: top; }
+.hoja tr, .h-lista li, .h-hecho div, .h-junto { break-inside: avoid; page-break-inside: avoid; }
+.hoja td.c-casilla { width: 2.2em; padding-right: 0; }
+.hoja td.c-recambio { width: 26%; }
+.hoja td.c-ultimo { width: 13%; white-space: nowrap; }
+.casilla { display: inline-block; width: 1.1em; height: 1.1em; border: 2px solid var(--tinta); border-radius: 2px; }
+.h-tarea { font-weight: 600; }
+.h-nota { color: var(--suave); font-size: 0.9em; margin-top: 0.15em; }
+.h-lista { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--tinta); }
+.h-lista li { display: grid; grid-template-columns: 2.2em minmax(0, 1fr); padding: 0.5em 0 0.5em 0.5em; border-bottom: 1px solid var(--raya); }
+.h-hecho { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45em 1.4em; background: var(--tinte); padding: 0.7em 0.85em; }
+.h-hecho div { min-width: 0; }
+.h-hecho b { display: block; font-weight: 600; }
+.h-hecho span { color: var(--suave); font-size: 0.9em; }
+.h-pedir { margin: 0; padding-left: 1.2em; }
+.h-pedir li + li { margin-top: 0.2em; }
+.h-lineas i { display: block; height: 1.9em; border-bottom: 1px solid var(--raya); }
+.h-firmas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1em; margin-top: 2em; }
+.h-firmas div { border-top: 1px solid var(--tinta); padding-top: 0.25em; font-size: 0.75em; color: var(--suave); text-transform: uppercase; letter-spacing: 0.06em; }
+.h-pie { font-size: 0.8em; color: var(--suave); border-top: 1px solid var(--raya); padding-top: 0.5em; }
 
 @media (max-width: 760px) {
   main { padding: 12px; }
@@ -174,6 +217,35 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
   .b-fila { grid-template-columns: 3.4em minmax(0, 1fr) 6.6em; }
   dl.datos { grid-template-columns: minmax(0, 1fr); }
   dl.datos dt { margin-top: 6px; font-size: 0.88em; }
+  .hoja { padding: 14px; }
+  .h-ficha { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .h-ficha .w2 { grid-column: 1 / -1; }
+  .h-hecho, .h-firmas { grid-template-columns: minmax(0, 1fr); }
+  .hoja table { min-width: 540px; }
+}
+
+/* Impresión: solo la hoja para el taller, en A4 y en claro aunque la pantalla esté en oscuro */
+@page { size: A4; margin: 11mm 12mm 12mm; }
+@media print {
+  :root { --fondo: #fff; --papel: #fff; --tinta: #000; --suave: #444b55; --raya: #a3adb8; --tinte: #eef2f6; --acento: #1d5a8c;
+    --rojo: #a3271f; --ambar: #8a5a00; --ambar-tinte: #f7efdc; color-scheme: light; }
+  body { background: #fff; font-size: 9.5pt; line-height: 1.32; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .barra, #toast, .no-imprimir, .aviso { display: none !important; }
+  main { padding: 0; max-width: none; }
+  .hoja { border: 0; border-radius: 0; padding: 0; max-width: none; }
+  .hoja > * + * { margin-top: 0.8em; }
+  .hoja h2 { margin-bottom: 0.3em; }
+  .hoja td { padding: 0.35em 0.5em; }
+  .hoja table { min-width: 0; }
+  .h-lista li { padding-block: 0.3em; }
+  /* el A4 mide menos de 760 px: hay que deshacer aquí las reglas del móvil */
+  .h-ficha { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .h-ficha .w2 { grid-column: span 2; }
+  .h-ficha div { padding: 0.25em 0.6em; }
+  .h-hecho { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0.5em 0.8em; gap: 0.3em 1.4em; }
+  .h-firmas { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 1.4em; }
+  .h-lineas i { height: 1.6em; }
+  .tabla-wrap { overflow: visible; }
 }
 </style>
 </head>
@@ -191,7 +263,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '003';
+const APP_VERSION = '004';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -390,7 +462,7 @@ function render() {
   if (S.cargando) html = '<p class="cargando">Cargando…</p>';
   else if (r[0] === 'ajustes') html = vistaAjustes();
   else if (!D()) html = vistaSinDatos();
-  else if (r[0] === 'v' && veh(r[1])) html = vistaVehiculo(veh(r[1]), r[2] || 'estado');
+  else if (r[0] === 'v' && veh(r[1])) html = r[2] === 'hoja' ? vistaHoja(veh(r[1])) : vistaVehiculo(veh(r[1]), r[2] || 'estado');
   else if (r[0] === 'gastos') html = vistaGastosTodos();
   else html = vistaInicio();
   app.innerHTML = avisoHTML() + html;
@@ -469,7 +541,8 @@ function vistaVehiculo(v, pest) {
     caducidades: pestCaducidades, pendientes: pestPendientes, gastos: pestGastos }[pest](v);
   return `<div class="cab-veh"><h1>${esc(v.nombre)}</h1><span class="sub">${esc([v.matricula, TIPOS_VEH[v.tipo]].filter(Boolean).join(' · '))}</span></div>
     <p class="km">${fKm(k.base.km)} <span class="sub">el ${fFecha(k.base.fecha)}${k.estimado ? ` · hoy ≈ ${fKm(Math.round(k.km))}` : ''}</span>
-      <button class="boton peque" data-accion="km" data-veh="${v.id}">Apuntar km</button></p>
+      <button class="boton peque" data-accion="km" data-veh="${v.id}">Apuntar km</button>
+      <a class="boton peque" href="#/v/${v.id}/hoja">Hoja para el taller</a></p>
     <nav class="pestanas" aria-label="Pestañas">${PESTANAS.map(([id, t]) => `<a class="pestana${id === pest ? ' activa' : ''}" href="#/v/${v.id}/${id}">${t}</a>`).join('')}</nav>
     ${cuerpo}`;
 }
@@ -535,8 +608,11 @@ function pestHistorial(v) {
     <div class="lista-visitas">${vs.map(x => visitaHTML(v, x)).join('')}</div>`;
 }
 // Mano de obra: horas, precio y total. El total sale de la factura (manoObraImporte) o de horas × precio.
+function manoObraTotal(x) {
+  return x.manoObraImporte ?? (x.manoObraHoras != null && x.manoObraPrecioHora ? Math.round(x.manoObraHoras * x.manoObraPrecioHora * 100) / 100 : null);
+}
 function textoManoObra(x) {
-  const total = x.manoObraImporte ?? (x.manoObraHoras != null && x.manoObraPrecioHora ? Math.round(x.manoObraHoras * x.manoObraPrecioHora * 100) / 100 : null);
+  const total = manoObraTotal(x);
   const horas = x.manoObraHoras != null ? `${fNum(x.manoObraHoras, Number.isInteger(x.manoObraHoras) ? 0 : 1)} h${x.manoObraPrecioHora ? ` a ${fNum(x.manoObraPrecioHora, 2)} €/h` : ''}`
     : x.manoObraPrecioHora ? `a ${fNum(x.manoObraPrecioHora, 2)} €/h` : '';
   if (total == null && !horas) return '';
@@ -671,6 +747,88 @@ function vistaGastosTodos() {
     <p class="sub">Importes con IVA de las visitas al taller, sin la compra de los vehículos.</p>`;
 }
 
+// ─── Hoja para el taller ─────────────────────────────────────────────────────
+// Sale de la decisión «próxima visita» de cada elemento (Sí, Revisar, Presupuesto, No) y de los pendientes abiertos.
+// Lo que no sale de los datos (motivo, taller, avisos, peticiones) va en v.hoja y se cambia con «Ajustar la hoja».
+const DEL_VEHICULO = { coche: 'del coche', moto: 'de la moto', bici: 'de la bici', otro: 'del vehículo' };
+function vistaHoja(v) {
+  const h = v.hoja || {}, f = hoy(), u = kmActual(v);
+  const est = v.elementos.map(e => estadoElemento(v, e));
+  const con = d => est.filter(e => e.el.proxima?.decision === d);
+  const cambiar = con('SI'), revisar = con('Revisar'), presupuesto = con('Presupuesto'), no = con('NO');
+  // Un pendiente de un elemento que ya sale en la hoja va en la fila de ese elemento; los demás, aparte.
+  const abiertos = v.pendientes.filter(p => p.estado === 'abierto');
+  const enHoja = new Set([...cambiar, ...revisar, ...presupuesto].map(e => e.el.id));
+  const sueltos = abiertos.filter(p => !enHoja.has(p.elemento));
+  const pendRevisar = sueltos.filter(p => p.tipo !== 'presupuesto'), pendPresupuesto = sueltos.filter(p => p.tipo === 'presupuesto');
+  const itv = v.caducidades.find(c => /^itv$/i.test(c.tipo));
+  const itvCerca = itv && itv.vence <= sumaMeses(f, 3);
+  // Ficha: los campos «Fuente…» van al pie; el resto, salvo los que se ocultan en «Ajustar la hoja».
+  const fuentes = v.ficha.filter(x => /^fuente/i.test(x.campo));
+  const campos = [...(v.matricula ? [['Matrícula', v.matricula]] : []),
+    ['Kilómetros', `${fKm(u.km)} (${fFecha(u.fecha)})`],
+    ...(itv ? [['ITV', `Caduca el ${fFecha(itv.vence)}`, itvCerca]] : []),
+    ...v.ficha.filter(x => !/^fuente/i.test(x.campo) && !(h.ocultar || []).includes(x.campo)).map(x => [x.campo, x.valor])];
+  // Tres columnas: cada dato ocupa 1, 2 o 3 según lo largo que sea, y la última casilla de cada fila se estira hasta el borde.
+  const anchos = campos.map(([, x]) => x.length > 90 ? 3 : x.length > 38 ? 2 : 1);
+  for (let i = 0, usado = 0; i < anchos.length; i++) {
+    if (usado + anchos[i] > 3) { anchos[i - 1] += 3 - usado; usado = 0; }
+    usado = (usado + anchos[i]) % 3;
+    if (i === anchos.length - 1 && usado) anchos[i] += 3 - usado;
+  }
+  const celda = ([k, x, tarde], i) => `<div class="${['', '', 'w2', 'w3'][anchos[i]]}"><dt>${esc(k)}</dt><dd${tarde ? ' class="tarde"' : ''}>${esc(x)}</dd></div>`;
+  const avisos = String(h.avisos || '').split(/\n\s*\n/).map(b => b.trim()).filter(Boolean).map(b => {
+    const [t, ...resto] = b.split('\n');
+    return `<div class="h-aviso"><strong>${esc(t)}</strong>${resto.length ? `<p>${esc(resto.join(' '))}</p>` : ''}</div>`;
+  });
+  const notas = e => [e.el.proxima?.nota, ...abiertos.filter(p => p.elemento === e.el.id).map(p => `${TIPOS_PEND[p.tipo] || p.tipo}: ${p.texto}`)]
+    .filter(Boolean).map(t => `<div class="h-nota">${esc(t)}</div>`).join('');
+  const ultimo = e => e.ult ? `${fMes(e.ult.visita.fecha)}${e.ult.visita.km != null ? `<div class="h-nota">${fKm(e.ult.visita.km)}</div>` : ''}`
+    : e.el.intervalo ? 'Nunca' : '—';
+  const item = (titulo, notasHtml) => `<li><span class="casilla"></span><div><span class="h-tarea">${esc(titulo)}</span>${notasHtml}</div></li>`;
+  const itemsEl = es => es.map(e => item(e.el.nombre, notas(e))).join('');
+  const itemsPend = ps => ps.map(p => item(p.texto, `<div class="h-nota">${esc(TIPOS_PEND[p.tipo] || p.tipo)} desde ${fMes(p.desde)}</div>`)).join('');
+  const pedir = [`Detallar cada aceite, líquido y recambio con su referencia y cantidad, y los kilómetros ${DEL_VEHICULO[v.tipo] || DEL_VEHICULO.otro}.`,
+    ...String(h.pedir || '').split('\n').map(s => s.trim()).filter(Boolean),
+    'Llamar antes de hacer cualquier reparación que no esté en esta hoja.'];
+  let n = 0;
+  const titulo = (t, peque) => `<h2>${++n} · ${t}${peque ? ` <small>${peque}</small>` : ''}</h2>`;
+  const secciones = [
+    cambiar.length ? `<section>${titulo('Cambiar', 'marcar al terminar')}<div class="tabla-wrap"><table>
+      <thead><tr><th>Hecho</th><th>Trabajo</th><th>Aceite / recambio</th><th>Último cambio</th></tr></thead><tbody>
+      ${cambiar.map(e => `<tr><td class="c-casilla"><span class="casilla"></span></td>
+        <td><span class="h-tarea">${esc(e.el.nombre)}</span>${notas(e)}</td>
+        <td class="c-recambio">${esc(e.el.especificacion || '')}${e.el.referencia ? `<div class="h-nota">Ref. ${esc(e.el.referencia)}</div>` : ''}</td>
+        <td class="c-ultimo${e.color === 'rojo' ? ' tarde' : ''}">${ultimo(e)}${e.color === 'rojo' ? '<div>vencido</div>' : ''}</td></tr>`).join('')}
+      </tbody></table></div></section>` : '',
+    revisar.length || pendRevisar.length ? `<section>${titulo(itvCerca ? 'Revisar antes de la ITV' : 'Revisar', 'presupuestar antes de reparar')}
+      <ul class="h-lista">${itemsEl(revisar)}${itemsPend(pendRevisar)}</ul></section>` : '',
+    presupuesto.length || pendPresupuesto.length ? `<section class="h-junto">${titulo('Opcional', 'solo presupuesto')}
+      <ul class="h-lista">${itemsEl(presupuesto)}${itemsPend(pendPresupuesto)}</ul></section>` : '',
+    no.length ? `<section class="h-junto">${titulo('No hace falta ahora', 'hecho recientemente o sin desgaste')}<div class="h-hecho">
+      ${no.map(e => `<div><b>${esc(e.el.nombre)}</b><span>${e.ult ? `${fMes(e.ult.visita.fecha)}${e.ult.visita.km != null ? ' · ' + fKm(e.ult.visita.km) : ''}` : 'Sin cambios apuntados'}${e.vence && e.color !== 'rojo' ? ` · próximo hacia ${fMes(e.vence)}` : ''}</span></div>`).join('')}
+      </div></section>` : '',
+    `<section class="h-junto">${titulo('En la factura, por favor')}<ul class="h-pedir">${pedir.map(t => `<li>${esc(t)}</li>`).join('')}</ul></section>`];
+  const vacia = !cambiar.length && !revisar.length && !presupuesto.length && !abiertos.length;
+  return `<div class="herramientas no-imprimir"><a class="boton" href="#/v/${v.id}">← Volver</a>
+      <button class="boton primario" data-accion="imprimir" data-veh="${v.id}">Imprimir o guardar en PDF</button>
+      <button class="boton" data-accion="ajustar-hoja" data-veh="${v.id}">Ajustar la hoja</button></div>
+    <p class="sub no-imprimir">Sale de la columna «Próxima visita» de Estado (Sí, Revisar, Presupuesto y No) y de los pendientes abiertos.
+      Para cambiar lo que sale, cambia la decisión de cada elemento.</p>
+    ${vacia ? '<p class="aviso info no-imprimir">Todavía no hay nada marcado para la próxima visita: en Estado, elige «Sí», «Revisar» o «Presupuesto» en los elementos que quieras.</p>' : ''}
+    <article class="hoja">
+      <header class="h-cab"><span class="h-eyebrow">Orden de trabajo${h.motivo ? ' · ' + esc(h.motivo) : ''}${h.taller ? ' · ' + esc(nombreTaller(h.taller)) : ''}</span>
+        <h1>${esc(v.nombre)}${v.matricula ? ' ' + esc(v.matricula) : ''}</h1>
+        <p class="sub">Hoja preparada el ${fFecha(f)} a partir del historial ${DEL_VEHICULO[v.tipo] || DEL_VEHICULO.otro}. Por favor, presupuesten antes de empezar.</p></header>
+      <dl class="h-ficha">${campos.map(celda).join('')}</dl>
+      ${avisos.length ? `<div class="h-avisos">${avisos.join('')}</div>` : ''}
+      ${secciones.join('')}
+      <section class="h-junto"><h2>Observaciones del taller</h2><div class="h-lineas"><i></i><i></i><i></i></div>
+        <div class="h-firmas"><div>Fecha de entrada</div><div>Km a la entrega</div><div>Firma / sello</div></div></section>
+      <p class="h-pie">${fuentes.map(x => esc(`${x.campo}: ${x.valor}`) + '. ').join('')}Hoja preparada con Ruedak el ${fFecha(f)}.</p>
+    </article>`;
+}
+
 function vistaAjustes() {
   const d = D(), imp = S.importacion;
   const origen = S.origen === 'dropbox' ? 'Dropbox (Aplicaciones/Ruedak/ruedak.json)' : S.origen === 'local' ? `Fichero del disco: ${S.nombreArchivo || ''}` : 'Ninguno';
@@ -696,6 +854,10 @@ function vistaAjustes() {
       <div class="botones">${imp.completo || imp.validas ? `<button class="boton primario" data-accion="confirmar-import">${imp.completo ? 'Cargar estos datos' : `Importar ${plural(imp.validas, 'cambio', 'cambios')}`}</button>` : ''}<button class="boton" data-accion="cancelar-import">Cancelar</button></div>`}
     </div>` : ''}
   </div></section>
+  ${d ? `<section class="bloque"><h2>Exportar a Excel</h2><div class="caja">
+    <p class="sub">Una foto de todos los datos: el semáforo de cada elemento, el historial línea a línea, las visitas, la vista de siempre de cada vehículo (una columna por visita), las caducidades y los neumáticos. Es para consultar: no se vuelve a cargar en la app.</p>
+    <div class="botones"><button class="boton" data-accion="exportar-excel">Descargar el Excel</button></div>
+  </div></section>` : ''}
   ${d ? `<section class="bloque"><h2>Semáforo</h2><div class="caja">
     <p class="sub">Un elemento se pone en ámbar cuando faltan menos de los meses indicados, o menos de ese porcentaje del intervalo en km.</p>
     <div class="tabla-wrap"><table class="tabla"><thead><tr><th>Tipo</th><th>Meses</th><th>% de los km</th></tr></thead><tbody>
@@ -1032,6 +1194,213 @@ async function borrarLectura(vid, i) {
   v.lecturas.splice(Number(i), 1);
   await guardar('Lectura borrada');
 }
+
+// Lo que la hoja para el taller no saca de los datos. Se guarda con el vehículo (v.hoja) para la próxima vez.
+async function ajustarHoja(vid) {
+  const v = veh(vid), h = v.hoja || {}, ocultos = h.ocultar || [];
+  const campos = v.ficha.filter(x => !/^fuente/i.test(x.campo));
+  const r = await dialogo({
+    titulo: `Hoja para el taller · ${v.nombre}`, ancho: 560,
+    cuerpo: `${cTexto('Motivo de la visita', 'motivo', h.motivo, 'placeholder="Revisión antes de la ITV"')}
+      ${cLista('Taller', 'taller', opcionesTaller(h.taller).filter(([k]) => k !== 'yo'), h.taller || '')}
+      ${cArea('Avisos para el taller', 'avisos', h.avisos, 5)}
+      <p class="sub">Un aviso por párrafo, con una línea en blanco entre dos. La primera línea es el título.</p>
+      ${cArea('En la factura, por favor (una petición por línea)', 'pedir', h.pedir, 3)}
+      <p class="sub">Ya salen siempre: detallar aceites y recambios con referencia, cantidad y km, y llamar antes de reparar algo que no esté en la hoja.</p>
+      ${campos.length ? `<fieldset><legend>Datos de la ficha que salen en la hoja</legend>${campos.map((x, i) => cCasilla(esc(x.campo), 'ficha' + i, !ocultos.includes(x.campo))).join('')}</fieldset>` : ''}`
+  });
+  if (!r) return;
+  const ocultar = campos.filter((x, i) => !r['ficha' + i]).map(x => x.campo);
+  v.hoja = { motivo: limpio(r.motivo), taller: r.taller || undefined, avisos: limpio(r.avisos), pedir: limpio(r.pedir), ocultar: ocultar.length ? ocultar : undefined };
+  await guardar('Hoja guardada');
+}
+// El título de la página es el nombre que propone el navegador para el PDF.
+function imprimirHoja(vid) {
+  const v = veh(vid), antes = document.title;
+  document.title = `Hoja taller ${v.nombre}${v.matricula ? ' ' + v.matricula.replace(/\s/g, '') : ''} (${hoy().slice(0, 7)})`;
+  window.addEventListener('afterprint', () => { document.title = antes; }, { once: true });
+  window.print();
+}
+
+// ─── Exportar a Excel ────────────────────────────────────────────────────────
+// Un .xlsx es un zip de ficheros XML: se escribe a mano, sin librerías, con el zip sin comprimir.
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zip(ficheros) {                       // [{ nombre, texto }] → Uint8Array
+  const te = new TextEncoder(), trozos = [], central = [];
+  const n = new Date(), hora = (n.getHours() << 11) | (n.getMinutes() << 5) | (n.getSeconds() >> 1);
+  const dia = ((n.getFullYear() - 1980) << 9) | ((n.getMonth() + 1) << 5) | n.getDate();
+  const bytes = (tam, campos) => { const dv = new DataView(new ArrayBuffer(tam)); for (const [o, v, t] of campos) t === 4 ? dv.setUint32(o, v, true) : dv.setUint16(o, v, true); return new Uint8Array(dv.buffer); };
+  let pos = 0;
+  for (const f of ficheros) {
+    const nom = te.encode(f.nombre), dat = te.encode(f.texto), crc = crc32(dat);
+    trozos.push(bytes(30, [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [8, 0, 2], [10, hora, 2], [12, dia, 2], [14, crc, 4],
+      [18, dat.length, 4], [22, dat.length, 4], [26, nom.length, 2], [28, 0, 2]]), nom, dat);
+    central.push(bytes(46, [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x0800, 2], [10, 0, 2], [12, hora, 2], [14, dia, 2], [16, crc, 4],
+      [20, dat.length, 4], [24, dat.length, 4], [28, nom.length, 2], [30, 0, 2], [32, 0, 2], [34, 0, 2], [36, 0, 2], [38, 0, 4], [42, pos, 4]]), nom);
+    pos += 30 + nom.length + dat.length;
+  }
+  const tamCentral = central.reduce((s, b) => s + b.length, 0);
+  const todo = [...trozos, ...central, bytes(22, [[0, 0x06054b50, 4], [4, 0, 2], [6, 0, 2], [8, ficheros.length, 2], [10, ficheros.length, 2], [12, tamCentral, 4], [16, pos, 4], [20, 0, 2]])];
+  const r = new Uint8Array(todo.reduce((s, b) => s + b.length, 0));
+  let o = 0; for (const b of todo) { r.set(b, o); o += b.length; }
+  return r;
+}
+const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+const NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+function xEsc(s) { return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function colLetra(i) { let s = ''; for (i++; i; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s; return s; }   // 0 → A
+// Estilos de celda: [formato, fuente, relleno, ajustar texto]. Formatos 164 fecha, 165 euros, 166 km.
+// Fuentes: 0 normal, 1 negrita, 2 negrita blanca. Rellenos: 2 azul, 3 rojo, 4 ámbar, 5 verde, 6 gris, 7 amarillo (notas).
+const XF = { normal: [0, 0, 0], cab: [0, 2, 2, 1], fecha: [164, 0, 0], eur: [165, 0, 0], km: [166, 0, 0], texto: [0, 0, 0, 1],
+  rojo: [0, 0, 3, 1], ambar: [0, 0, 4, 1], verde: [0, 0, 5, 1], gris: [0, 0, 6, 1], nota: [0, 0, 7, 1], grupo: [0, 1, 6],
+  cabGris: [0, 1, 6, 1], fechaCab: [164, 1, 6], eurCab: [165, 1, 6], kmCab: [166, 1, 6], num: [0, 0, 0] };
+const EST = Object.fromEntries(Object.keys(XF).map((k, i) => [k, i]));
+const ESTILOS = XML + `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+  + `<numFmts count="3"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/><numFmt numFmtId="165" formatCode="#,##0.00\\ &quot;€&quot;"/><numFmt numFmtId="166" formatCode="#,##0"/></numFmts>`
+  + `<fonts count="3"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font>`
+  + `<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font></fonts>`
+  + `<fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>`
+  + ['FF305496', 'FFF4CCCC', 'FFFCE4B6', 'FFD9EAD3', 'FFEDEDED', 'FFFFF2CC'].map(c => `<fill><patternFill patternType="solid"><fgColor rgb="${c}"/><bgColor indexed="64"/></patternFill></fill>`).join('')
+  + `</fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>`
+  + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`
+  + `<cellXfs count="${Object.keys(XF).length}">` + Object.values(XF).map(([fm, fu, re, aj], i) => i === 0 ? '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    : `<xf numFmtId="${fm}" fontId="${fu}" fillId="${re}" borderId="0" xfId="0"${fm ? ' applyNumberFormat="1"' : ''}${fu ? ' applyFont="1"' : ''}${re ? ' applyFill="1"' : ''} applyAlignment="1"><alignment vertical="top"${aj ? ' wrapText="1"' : ''}/></xf>`).join('')
+  + `</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+const esISO = f => typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f);
+// hoja = { nombre, anchos: [..], filas: [[celda..]], fijas: { filas, cols }, filtro }. Celda: null, texto, número o { v, s } (s: nombre de estilo).
+function hojaXml(h) {
+  const filas = h.filas.map((fila, r) => `<row r="${r + 1}">${fila.map((c, i) => {
+    const o = c != null && typeof c === 'object' ? c : { v: c };
+    const vacia = o.v == null || o.v === '';
+    if (vacia && !o.s) return '';
+    const s = EST[o.s || (typeof o.v === 'number' ? 'num' : 'texto')];
+    const at = `r="${colLetra(i)}${r + 1}" s="${s}"`;
+    if (vacia) return `<c ${at}/>`;
+    if ((o.s === 'fecha' || o.s === 'fechaCab') && esISO(o.v)) return `<c ${at}><v>${(utc(o.v) - Date.UTC(1899, 11, 30)) / 864e5}</v></c>`;
+    if (typeof o.v === 'number') return `<c ${at}><v>${o.v}</v></c>`;
+    return `<c ${at} t="inlineStr"><is><t xml:space="preserve">${xEsc(o.v)}</t></is></c>`;
+  }).join('')}</row>`).join('');
+  const fy = h.fijas?.filas || 0, fx = h.fijas?.cols || 0;
+  const panel = fy || fx ? `<pane${fx ? ` xSplit="${fx}"` : ''}${fy ? ` ySplit="${fy}"` : ''} topLeftCell="${colLetra(fx)}${fy + 1}" activePane="${fx && fy ? 'bottomRight' : fy ? 'bottomLeft' : 'topRight'}" state="frozen"/>` : '';
+  const cols = h.anchos.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('');
+  return XML + `<worksheet ${NS}><sheetViews><sheetView workbookViewId="0">${panel}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>`
+    + `${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${filas}</sheetData>${h.filtro ? `<autoFilter ref="${rangoFiltro(h)}"/>` : ''}</worksheet>`;
+}
+function rangoFiltro(h) { return `A1:${colLetra(Math.max(1, ...h.filas.map(f => f.length)) - 1)}${Math.max(2, h.filas.length)}`; }
+function xlsx(hojas) {
+  const usados = [];
+  const nombres = hojas.map(h => {                // máximo 31 caracteres, sin []:*?/\ y sin repetir
+    const base = h.nombre.replace(/[[\]:*?/\\]/g, ' ').trim().slice(0, 31) || 'Hoja';
+    let n = base, i = 2; while (usados.includes(n.toLowerCase())) n = `${base.slice(0, 28)} ${i++}`;
+    usados.push(n.toLowerCase()); return n;
+  });
+  const filtros = hojas.map((h, i) => h.filtro ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xEsc(nombres[i].replace(/'/g, "''"))}'!${rangoFiltro(h).replace(/([A-Z]+)(\d+)/g, '$$$1$$$2')}</definedName>` : '').join('');
+  return zip([
+    { nombre: '[Content_Types].xml', texto: XML + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`
+      + `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>`
+      + `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>`
+      + `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>`
+      + hojas.map((h, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + '</Types>' },
+    { nombre: '_rels/.rels', texto: XML + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { nombre: 'xl/workbook.xml', texto: XML + `<workbook ${NS}><sheets>${nombres.map((n, i) => `<sheet name="${xEsc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>${filtros ? `<definedNames>${filtros}</definedNames>` : ''}</workbook>` },
+    { nombre: 'xl/_rels/workbook.xml.rels', texto: XML + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+      + hojas.map((h, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+      + `<Relationship Id="rId${hojas.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+    { nombre: 'xl/styles.xml', texto: ESTILOS },
+    ...hojas.map((h, i) => ({ nombre: `xl/worksheets/sheet${i + 1}.xml`, texto: hojaXml(h) }))]);
+}
+
+// Contenido del Excel: Resumen, Historial, Visitas, la vista clásica de cada vehículo, Caducidades y Neumáticos.
+const NOMBRE_EST = { rojo: 'Vencido', ambar: 'Pronto', verde: 'En plazo', gris: 'Sin intervalo' };
+const CORTA = { cambiado: 'SI', hecho: 'SI', revisado: 'Revisado', reparado: 'Reparado', 'no hecho': 'NO', dudoso: '¿?' };
+function hojasExcel() {
+  const vs = vehiculos(true), h = hoy();
+  const C = (v, s) => ({ v: v ?? null, s }), F = f => C(f || null, 'fecha'), E = n => C(n ?? null, 'eur'), K = n => C(n == null ? null : Math.round(n * 10) / 10, 'km');
+  const cab = ts => ts.map(t => C(t, 'cab'));
+  const taller = x => x.taller ? nombreTaller(x.taller) : '';
+  const decision = el => el.proxima?.decision ? DECISIONES.find(([k]) => k === el.proxima.decision)?.[1] || el.proxima.decision : '';
+  const resumen = [cab(['Vehículo', 'Grupo', 'Elemento', 'Estado', 'Último cambio', 'Km', 'Próximo', 'Próximo a los km', 'Intervalo', 'Próxima visita', 'Nota para la próxima visita', 'Referencia', 'Especificación'])];
+  for (const v of vs) for (const el of v.elementos) {
+    const e = estadoElemento(v, el);
+    resumen.push([v.nombre, el.grupo || '', el.nombre, C(NOMBRE_EST[e.color], e.color), F(e.ult?.visita.fecha), K(e.ult?.visita.km), F(e.vence), K(e.venceKm),
+      el.intervalo ? textoIntervalo(el.intervalo) : '', decision(el), C(el.proxima?.nota || null, el.proxima?.nota ? 'nota' : null), el.referencia || '', el.especificacion || '']);
+  }
+  const historial = [cab(['Vehículo', 'Fecha', 'Km', 'Taller', 'Tipo de visita', 'Grupo', 'Elemento o concepto', 'Qué se hizo', 'Detalle', 'Referencia', 'Cantidad', 'Unidad', 'Importe', 'IVA', 'Marca y modelo', 'DOT', 'Nota'])];
+  const visitas = [cab(['Vehículo', 'Fecha', 'Tipo', 'Taller', 'Km', 'Total (€, con IVA)', 'Mano de obra (€)', 'Horas', '€ por hora', 'Líneas', 'Importes de las líneas', 'Nº de factura', 'Fichero de la factura', 'Resultado ITV', 'Notas'])];
+  for (const v of vs) for (const x of [...v.visitas].sort((a, b) => -porFecha(a, b))) {
+    for (const l of x.lineas) {
+      const el = l.elemento ? elemento(v, l.elemento) : null;
+      historial.push([v.nombre, F(x.fecha), K(x.km), taller(x), TIPOS_VISITA[x.tipo] || x.tipo, el?.grupo || '', el ? el.nombre : l.texto || '', ACCIONES[l.accion] || l.accion,
+        el ? l.texto || '' : '', l.referencia || '', l.cantidad ?? null, l.unidad || '', E(l.importe), l.importe != null ? (x.lineasConIva ? 'Incluido' : 'Sin IVA') : '', l.marca || '', l.dot || '', l.nota || '']);
+    }
+    visitas.push([v.nombre, F(x.fecha), TIPOS_VISITA[x.tipo] || x.tipo, taller(x), K(x.km), E(x.importe), E(manoObraTotal(x)), x.manoObraHoras ?? null, E(x.manoObraPrecioHora),
+      x.lineas.length, x.lineas.some(l => l.importe != null) ? (x.lineasConIva ? 'Con IVA' : 'Sin IVA') : '', x.factura?.numero || '', x.factura?.fichero || '',
+      x.itv ? (x.itv.resultado === 'favorable' ? 'Favorable' : 'Desfavorable') + (x.itv.defectos ? ': ' + x.itv.defectos : '') : '', x.notas || '']);
+  }
+  const caducidades = [cab(['Vehículo', 'Qué', 'Periodo', 'Desde', 'Hasta o vence', 'Pagado', 'Estado', 'Entidad', 'Póliza', 'Modalidad', 'Importe (€)', 'Notas'])];
+  for (const v of vs) for (const c of [...v.caducidades].sort((a, b) => a.vence.localeCompare(b.vence))) {
+    const e = estadoCaducidad(v, c), dt = c.datos || {};
+    caducidades.push([v.nombre, c.tipo, 'Actual', null, F(c.vence), null, C({ rojo: 'Vencida', ambar: 'Vence pronto', verde: 'En plazo' }[e.color], e.color),
+      dt.entidad || '', dt.poliza || '', dt.modalidad || '', E(dt.importe), c.notas || '']);
+    for (const x of [...(c.historial || [])].reverse())
+      caducidades.push([v.nombre, c.tipo, 'Anterior', F(x.desde), F(x.hasta), F(x.pagado), '', x.entidad || '', '', '', E(x.importe), x.nota || '']);
+  }
+  const neumaticos = [cab(['Vehículo', 'Posición', 'Medida', 'Fecha', 'Km', 'Qué se hizo', 'Marca, modelo y detalle', 'DOT', 'Taller', 'Importe', 'Montados ahora', 'Km hechos (≈)', 'Años'])];
+  for (const v of vs) for (const el of v.elementos.filter(e => esNeumatico(e.id))) {
+    const hist = lineasDe(v, el.id).reverse(), actual = hist.find(x => x.linea.accion === 'cambiado');
+    for (const { visita: x, linea: l } of hist) {
+      const ahora = actual?.linea === l, km = x.km ?? kmEnFecha(v, x.fecha);
+      neumaticos.push([v.nombre, el.nombre, el.especificacion || '', F(x.fecha), K(x.km), ACCIONES[l.accion] || l.accion, [l.marca, l.texto, l.nota].filter(Boolean).join(' · '),
+        l.dot || '', taller(x), E(l.importe), ahora ? 'Sí' : '', ahora && km != null ? K(kmHoy(v).km - km) : null, ahora ? Math.round(dias(x.fecha, h) / 365.25 * 10) / 10 : null]);
+    }
+  }
+  return [
+    { nombre: 'Resumen', filas: resumen, anchos: [16, 20, 40, 13, 12, 10, 12, 12, 28, 12, 60, 18, 30], fijas: { filas: 1, cols: 3 }, filtro: true },
+    { nombre: 'Historial', filas: historial, anchos: [16, 11, 10, 22, 11, 18, 36, 12, 30, 16, 9, 8, 11, 9, 20, 8, 40], fijas: { filas: 1 }, filtro: true },
+    { nombre: 'Visitas', filas: visitas, anchos: [16, 11, 10, 22, 10, 12, 12, 7, 10, 7, 12, 16, 50, 24, 50], fijas: { filas: 1 }, filtro: true },
+    ...vs.map(hojaClasica),
+    { nombre: 'Caducidades', filas: caducidades, anchos: [16, 11, 10, 11, 12, 11, 13, 28, 14, 30, 11, 40], fijas: { filas: 1 }, filtro: true },
+    { nombre: 'Neumáticos', filas: neumaticos, anchos: [16, 22, 16, 11, 10, 11, 40, 8, 22, 11, 9, 12, 7], fijas: { filas: 1 }, filtro: true }];
+}
+// La vista de siempre: una columna por visita (fecha, taller, km, mano de obra y total) y una fila por elemento.
+function hojaClasica(v) {
+  const vis = [...v.visitas].sort(porFecha);
+  const C = (x, s) => ({ v: x ?? null, s });
+  const celda = ls => {
+    if (!ls.length) return null;
+    if (ls.every(l => REINICIAN.includes(l.accion) && l.importe != null)) return C(Math.round(ls.reduce((s, l) => s + l.importe, 0) * 100) / 100, 'eur');
+    return ls.map(l => [CORTA[l.accion] || l.accion, l.importe != null ? fEur(l.importe) : ''].filter(Boolean).join(' ')).join('; ');
+  };
+  const filas = [
+    [C('Referencia', 'grupo'), C('Fecha', 'grupo'), ...vis.map(x => C(x.fecha, 'fechaCab')), C('Próxima visita', 'cab'), C('Nota', 'cab'), C('Estado', 'cab'), C('Intervalo', 'cab')],
+    [null, C('Taller', 'cabGris'), ...vis.map(x => C([x.tipo !== 'taller' ? TIPOS_VISITA[x.tipo] : '', x.taller ? nombreTaller(x.taller) : ''].filter(Boolean).join(' · '), 'cabGris'))],
+    [null, C('Km', 'cabGris'), ...vis.map(x => C(x.km, 'kmCab'))],
+    [null, C('Mano de obra (€)', 'cabGris'), ...vis.map(x => C(manoObraTotal(x), 'eurCab'))],
+    [null, C('Total factura (€, con IVA)', 'cabGris'), ...vis.map(x => C(x.importe, 'eurCab'))]];
+  const grupos = new Map();
+  for (const el of v.elementos) { const g = el.grupo || 'Otros'; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(el); }
+  for (const [g, els] of grupos) {
+    filas.push([null, C(g, 'grupo')]);
+    for (const el of els) {
+      const e = estadoElemento(v, el);
+      filas.push([el.referencia || '', el.nombre, ...vis.map(x => celda(x.lineas.filter(l => l.elemento === el.id))),
+        el.proxima?.decision ? DECISIONES.find(([k]) => k === el.proxima.decision)?.[1] || el.proxima.decision : '',
+        C(el.proxima?.nota || null, el.proxima?.nota ? 'nota' : null), C(e.texto || NOMBRE_EST[e.color], e.color), el.intervalo ? textoIntervalo(el.intervalo) : '']);
+    }
+  }
+  const concepto = l => (l.texto || 'Otros').trim();
+  const otros = [...new Set(vis.flatMap(x => x.lineas.filter(l => !l.elemento).map(concepto)))];
+  if (otros.length) {
+    filas.push([null, C('Otros conceptos', 'grupo')]);
+    for (const k of otros) filas.push([null, k, ...vis.map(x => celda(x.lineas.filter(l => !l.elemento && concepto(l) === k)))]);
+  }
+  return { nombre: v.nombre, filas, anchos: [16, 42, ...vis.map(() => 12), 12, 50, 28, 28], fijas: { filas: 5, cols: 2 } };
+}
+function exportarExcel() {
+  descargar(xlsx(hojasExcel()), `Ruedak ${hoy()}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast('Excel descargado');
+}
 async function cerrarPendiente(vid, pid) {
   const v = veh(vid), p = v.pendientes.find(x => x.id === pid);
   const r = await dialogo({
@@ -1189,9 +1558,9 @@ async function guardarComo() {
   Object.assign(S, { origen: 'local', archivo: h, nombreArchivo: h.name, rev: null });
   await guardar('Guardado en ' + h.name);
 }
-function descargar(texto, nombre) {
+function descargar(contenido, nombre, tipo = 'application/json') {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([texto], { type: 'application/json' })); a.download = nombre;
+  a.href = URL.createObjectURL(new Blob([contenido], { type: tipo })); a.download = nombre;
   document.body.append(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
@@ -1296,6 +1665,7 @@ document.addEventListener('click', e => {
     'nuevo-elemento': () => editarElemento(vid, null), 'editar-elemento': () => editarElemento(vid, el),
     'nueva-caducidad': () => editarCaducidad(vid, null), 'editar-caducidad': () => editarCaducidad(vid, cad),
     'borrar-lectura': () => borrarLectura(vid, lec),
+    'ajustar-hoja': () => ajustarHoja(vid), imprimir: () => imprimirHoja(vid), 'exportar-excel': exportarExcel,
     conectar: conectarDropbox, desconectar: desconectarDropbox, 'abrir-local': abrirLocal, 'guardar-como': guardarComo,
     descargar: () => descargar(JSON.stringify(D(), null, 1), 'ruedak.json'), 'guardar-ajustes': guardarAjustes,
     'confirmar-import': confirmarImport, 'cancelar-import': () => { S.importacion = null; render(); },
@@ -1317,7 +1687,7 @@ window.addEventListener('beforeunload', e => { if (S.sucio) { e.preventDefault()
 
 // Para las pruebas (test-humo.html).
 window.Ruedak = {
-  version: APP_VERSION, S, comprobarCambios, numero,
+  version: APP_VERSION, S, comprobarCambios, numero, hojasExcel, excel: () => xlsx(hojasExcel()),
   estadoElemento: (vid, eid) => { const v = veh(vid), el = v && elemento(v, eid); return el ? estadoElemento(v, el) : null; },
   estadoCaducidad: (vid, cid) => { const v = veh(vid), c = v?.caducidades.find(x => x.id === cid); return c ? estadoCaducidad(v, c) : null; },
   kmHoy: vid => kmHoy(veh(vid))
