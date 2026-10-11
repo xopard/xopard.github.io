@@ -128,6 +128,12 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 0.9em; font-var
 .b-pista { background: var(--tinte); border-radius: 4px; height: 14px; overflow: hidden; }
 .b-relleno { display: block; height: 100%; background: var(--acento); border-radius: 4px; }
 .b-valor { text-align: right; font-variant-numeric: tabular-nums; }
+.b-nota { grid-column: 2 / -1; margin-top: -3px; font-size: 0.8em; color: var(--suave); }
+.barras:has(.b-nota) { gap: 8px; }
+.tabla .tarde { color: var(--rojo); font-weight: 600; }
+details.mas-detalle { margin-top: 10px; }
+details.mas-detalle > summary { color: var(--suave); font-size: 0.9em; }
+.cifra .sub { display: block; }
 .cifras { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 14px; }
 .cifra { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); padding: 8px 12px; }
 .cifra b { display: block; font-size: 1.25em; }
@@ -263,7 +269,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '004';
+const APP_VERSION = '006';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -280,7 +286,7 @@ const ACCIONES = { cambiado: 'Cambiado', hecho: 'Hecho', revisado: 'Revisado', r
 const TIPOS_VISITA = { taller: 'Taller', itv: 'ITV', compra: 'Compra', garantia: 'Garantía', 'campaña': 'Campaña', sello: 'Sello del libro' };
 const TIPOS_VEH = { coche: 'Coche', moto: 'Moto', bici: 'Bici', otro: 'Otro' };
 const TIPOS_PEND = { sintoma: 'Síntoma', revisar: 'Revisar', presupuesto: 'Presupuesto' };
-const PESTANAS = [['estado', 'Estado'], ['historial', 'Historial'], ['ficha', 'Ficha'], ['neumaticos', 'Neumáticos'],
+const PESTANAS = [['estado', 'Estado'], ['historial', 'Historial'], ['ficha', 'Ficha'], ['km', 'Km'], ['neumaticos', 'Neumáticos'],
   ['caducidades', 'Caducidades'], ['pendientes', 'Pendientes'], ['gastos', 'Gastos']];
 
 // Estado de la app. origen: 'dropbox' | 'local' | null. rev: versión de Dropbox del fichero abierto.
@@ -537,7 +543,7 @@ function vistaInicio() {
 function vistaVehiculo(v, pest) {
   if (!PESTANAS.some(([k]) => k === pest)) pest = 'estado';
   const k = kmHoy(v);
-  const cuerpo = { estado: pestEstado, historial: pestHistorial, ficha: pestFicha, neumaticos: pestNeumaticos,
+  const cuerpo = { estado: pestEstado, historial: pestHistorial, ficha: pestFicha, km: pestKm, neumaticos: pestNeumaticos,
     caducidades: pestCaducidades, pendientes: pestPendientes, gastos: pestGastos }[pest](v);
   return `<div class="cab-veh"><h1>${esc(v.nombre)}</h1><span class="sub">${esc([v.matricula, TIPOS_VEH[v.tipo]].filter(Boolean).join(' · '))}</span></div>
     <p class="km">${fKm(k.base.km)} <span class="sub">el ${fFecha(k.base.fecha)}${k.estimado ? ` · hoy ≈ ${fKm(Math.round(k.km))}` : ''}</span>
@@ -648,31 +654,109 @@ function pestFicha(v) {
   const filas = [...v.ficha.map(f => [f.campo, f.valor]), ['Alta', `${fFecha(v.alta.fecha)} · ${fKm(v.alta.km)}`]];
   if (v.baja) filas.push(['Baja', `${fFecha(v.baja.fecha)} · ${v.baja.motivo || ''}`]);
   const cf = v.carpetaFacturas;
-  const lec = v.lecturas.map((l, i) => ({ l, i })).sort((a, b) => -porFecha(a.l, b.l) || b.l.km - a.l.km);
   return `<div class="caja"><dl class="datos">${filas.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}
     ${cf ? `<dt>Facturas</dt><dd><span class="mono">${esc(cf.ruta || cf.nombre || '')}</span>${cf.enlace ? ` · <a href="${esc(cf.enlace)}" target="_blank" rel="noopener">abrir la carpeta</a>` : ''}</dd>` : ''}
   </dl></div>
-  <h3>Lecturas de km</h3>
-  ${lec.length ? `<div class="tabla-wrap"><table class="tabla"><thead><tr><th>Fecha</th><th class="num">Km</th><th>De dónde sale</th><th></th></tr></thead><tbody>
-    ${lec.map(({ l, i }) => `<tr><td>${fFecha(l.fecha)}</td><td class="num">${fKm(l.km)}</td><td>${esc(l.fuente || '')}</td>
-      <td><button class="boton peque" data-accion="borrar-lectura" data-veh="${v.id}" data-lec="${i}">Borrar</button></td></tr>`).join('')}
-  </tbody></table></div>` : '<p class="sub">No hay lecturas sueltas.</p>'}
-  <p class="sub">Además de estas, cuentan como lecturas el alta y los km de cada visita.</p>`;
+  <p class="sub">Las lecturas de km y los km de cada año están en la pestaña <a href="#/v/${v.id}/km">Km</a>.</p>`;
 }
 
+// ─── Km: todas las lecturas y los km de cada año ─────────────────────────────
+// Todas las lecturas: alta, visitas con km y lecturas sueltas. Las de la misma fecha y los mismos km van en una fila.
+function lecturasTodas(v) {
+  const L = [{ fecha: v.alta.fecha, km: v.alta.km, fuente: 'Alta' }];
+  for (const x of v.visitas) if (x.km != null) {
+    const donde = x.tipo === 'taller' ? nombreTaller(x.taller) : [TIPOS_VISITA[x.tipo] || x.tipo, x.taller ? nombreTaller(x.taller) : ''].filter(Boolean).join(' · ');
+    L.push({ fecha: x.fecha, km: x.km, fuente: donde + (x.factura?.numero ? ` (factura ${x.factura.numero})` : '') });
+  }
+  v.lecturas.forEach((l, i) => { if (l.km != null) L.push({ fecha: l.fecha, km: l.km, fuente: l.fuente || 'Lectura', indice: i }); });
+  L.sort((a, b) => porFecha(a, b) || a.km - b.km);
+  const r = [];
+  for (const l of L) {
+    const u = r[r.length - 1];
+    if (u && u.fecha === l.fecha && u.km === l.km) { u.fuentes.push(l.fuente); if (l.indice != null) u.indices.push(l.indice); }
+    else r.push({ fecha: l.fecha, km: l.km, fuentes: [l.fuente], indices: l.indice != null ? [l.indice] : [] });
+  }
+  return r;
+}
+// Km de cada año natural, interpolando entre lecturas. El primero y el último pueden ser años incompletos.
+function kmPorAno(v) {
+  const L = lecturas(v), ini = L[0].fecha, fin = L[L.length - 1].fecha, r = [];
+  for (let y = partes(ini)[0]; y <= partes(fin)[0]; y++) {
+    const a = `${y}-01-01` < ini ? ini : `${y}-01-01`, b = `${y + 1}-01-01` > fin ? fin : `${y + 1}-01-01`;
+    if (b <= a) continue;
+    const n = L.filter(l => l.fuente !== 'Alta' && partes(l.fecha)[0] === y).length;
+    r.push({ ano: y, km: Math.max(0, kmEnFecha(v, b) - kmEnFecha(v, a)), lecturas: n,
+      desde: a !== `${y}-01-01` ? a : null, hasta: b !== `${y + 1}-01-01` ? b : null });
+  }
+  return r;
+}
+function pestKm(v) {
+  const L = lecturasTodas(v), anos = kmPorAno(v), u = kmActual(v), k = kmHoy(v), r = ritmo(v);
+  const bici = v.tipo === 'bici', redondeo = bici ? 10 : 100;
+  const porAno = n => fKm(Math.round(n * 365.25 / redondeo) * redondeo);
+  const totalAnos = dias(v.alta.fecha, u.fecha) / 365.25;
+  const notaAno = a => [a.desde ? `desde el ${fFecha(a.desde).slice(0, 5)}` : '', a.hasta ? `hasta el ${fFecha(a.hasta).slice(0, 5)}` : '',
+    a.lecturas ? plural(a.lecturas, 'lectura', 'lecturas') : 'sin lecturas: repartido entre la anterior y la siguiente'].filter(Boolean).join(' · ');
+  const filas = L.map((l, i) => {
+    const ant = L[i - 1], d = ant ? dias(ant.fecha, l.fecha) : 0, dk = ant ? l.km - ant.km : null;
+    return `<tr><td class="fecha">${fFecha(l.fecha)}</td><td class="num">${fKm(l.km)}</td>
+      <td class="num${dk != null && dk < 0 ? ' tarde' : ''}">${dk == null ? '' : dk < 0 ? 'menos km que la anterior' : `+${fKm(Math.round(dk * 10) / 10)}<br><span class="sub">${plural(d, 'día', 'días')}</span>`}</td>
+      <td class="num">${dk != null && dk >= 0 && d >= 20 ? `${porAno(dk / d)}<span class="sub">/año</span>` : ''}</td>
+      <td class="det">${esc(l.fuentes.join(' · '))}</td>
+      <td>${l.indices.length ? `<button class="boton peque" data-accion="borrar-lectura" data-veh="${v.id}" data-lec="${l.indices[0]}">Borrar</button>` : ''}</td></tr>`;
+  }).reverse().join('');
+  return `<div class="cifras">
+      <div class="cifra"><span class="sub">Última lectura</span><b>${fKm(u.km)}</b><span class="sub">${fFecha(u.fecha)}</span></div>
+      ${k.estimado ? `<div class="cifra"><span class="sub">Hoy, estimado</span><b>≈ ${fKm(Math.round(k.km))}</b></div>` : ''}
+      <div class="cifra"><span class="sub">Media desde el alta</span><b>${totalAnos > 0.1 ? porAno((u.km - v.alta.km) / (totalAnos * 365.25)) : '—'}</b><span class="sub">al año</span></div>
+      <div class="cifra"><span class="sub">Ritmo del último año</span><b>${r ? porAno(r) : '—'}</b><span class="sub">al año</span></div>
+    </div>
+    <h3>Km por año</h3>
+    ${barras([...anos].reverse().map(a => ({ etq: String(a.ano), valor: Math.round(a.km), nota: notaAno(a) })), n => (n ? '≈ ' : '') + fKm(n))}
+    <p class="sub">Calculado con las lecturas: los km de cada 1 de enero se interpolan entre la lectura anterior y la siguiente.</p>
+    <h3>Lecturas de km</h3>
+    <div class="botones"><button class="boton peque" data-accion="km" data-veh="${v.id}">Apuntar km</button></div>
+    <div class="tabla-wrap"><table class="tabla" style="margin-top:8px"><thead><tr><th>Fecha</th><th class="num">Km</th><th class="num">Desde la anterior</th><th class="num">Ritmo</th><th>De dónde sale</th><th></th></tr></thead>
+      <tbody>${filas}</tbody></table></div>
+    <p class="sub">${plural(L.length, 'lectura', 'lecturas')}: el alta, los km de cada visita y las que se apuntan a mano (estas se pueden borrar).</p>`;
+}
+
+// Juegos de neumáticos de una posición: el del alta y uno por cada cambio, con lo que duró cada uno.
+// Si se cambian de eje sin apuntarlo, o hubo cambios sin factura, las cuentas no lo saben: son por posición.
+function juegosNeumaticos(v, el) {
+  const kmDe = x => x.visita.km ?? kmEnFecha(v, x.visita.fecha);
+  const juegos = [{ inicial: true, desde: v.alta.fecha, kmDesde: v.alta.km, nombre: 'Desde el alta' }];
+  for (const x of lineasDe(v, el.id).filter(y => y.linea.accion === 'cambiado'))
+    juegos.push({ desde: x.visita.fecha, kmDesde: kmDe(x), kmEstimado: x.visita.km == null, nombre: x.linea.marca || x.linea.texto || 'Nuevos',
+      dot: x.linea.dot, taller: x.visita.taller, linea: x.linea });
+  const ahora = kmHoy(v), h = hoy();
+  juegos.forEach((j, i) => {
+    const sig = juegos[i + 1];
+    Object.assign(j, sig ? { hasta: sig.desde, kmHasta: sig.kmDesde, actual: false } : { hasta: null, kmHasta: ahora.km, actual: true });
+    j.km = j.kmDesde != null && j.kmHasta != null ? Math.max(0, j.kmHasta - j.kmDesde) : null;
+    j.anos = dias(j.desde, j.hasta || h) / 365.25;
+  });
+  return juegos;
+}
 function pestNeumaticos(v) {
-  const k = kmHoy(v), h = hoy();
   const els = v.elementos.filter(e => esNeumatico(e.id));
   if (!els.length) return '<p class="sub">Este vehículo no tiene neumáticos apuntados.</p>';
+  const anos = n => fNum(Math.round(n * 10) / 10, 1).replace(',0', '') + (Math.round(n * 10) === 10 ? ' año' : ' años');
   return els.map(el => {
-    const hist = lineasDe(v, el.id).reverse();
-    const ult = hist.find(x => x.linea.accion === 'cambiado');
-    const km = ult ? ult.visita.km ?? kmEnFecha(v, ult.visita.fecha) : null;
+    const hist = lineasDe(v, el.id).reverse(), juegos = juegosNeumaticos(v, el).reverse();
+    const una = juegos.length === 1;
     return `<h3>${esc(el.nombre)}</h3><div class="caja">
       ${el.especificacion ? `<p>Medida: ${esc(el.especificacion)}</p>` : ''}
-      ${ult ? `<p><b>${esc(ult.linea.marca || ult.linea.texto || 'Montados')}</b> desde el ${fFecha(ult.visita.fecha)}${km != null ? ` (${fKm(Math.round(km))})` : ''}${ult.visita.taller ? ` en ${esc(nombreTaller(ult.visita.taller))}` : ''}:
-        ${km != null ? `llevan ≈ ${fKm(Math.round(k.km - km))}, ` : ''}${cuanto(dias(ult.visita.fecha, h)).replace('en ', '')}.${ult.linea.dot ? ` DOT ${esc(ult.linea.dot)}.` : ''}</p>` : '<p class="sub">No consta ningún cambio.</p>'}
-      ${hist.length ? tablaLineas(v, hist) : ''}</div>`;
+      <div class="tabla-wrap"><table class="tabla"><thead><tr><th>Juego</th><th class="num">Km que hicieron</th><th class="num">Tiempo</th><th>Montados</th><th>Quitados</th></tr></thead><tbody>
+        ${juegos.map(j => `<tr><td><b>${esc(j.nombre)}</b>${j.dot ? `<br><span class="sub">DOT ${esc(j.dot)}</span>` : ''}${j.taller ? `<br><span class="sub">${esc(nombreTaller(j.taller))}</span>` : ''}</td>
+          <td class="num">${j.km != null ? `${j.actual ? '≈ ' : ''}${fKm(Math.round(j.km))}${j.actual ? '<br><span class="sub">de momento</span>' : ''}` : '—'}</td>
+          <td class="num">${anos(j.anos)}</td>
+          <td class="fecha">${fFecha(j.desde)}${j.kmDesde != null ? `<br><span class="sub">${j.kmEstimado ? '≈ ' : ''}${fKm(Math.round(j.kmDesde))}</span>` : ''}</td>
+          <td class="fecha">${j.actual ? '<b>Montados ahora</b>' : `${fFecha(j.hasta)}<br><span class="sub">${fKm(Math.round(j.kmHasta))}</span>`}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="sub">${una ? 'No consta ningún cambio: son los del alta, salvo que se cambiaran sin factura apuntada.'
+        : '«Desde el alta» son los de serie, salvo que se cambiaran sin factura apuntada. Las cuentas son por posición: si se pasaron de un eje a otro, no lo saben.'}</p>
+      ${hist.length ? `<details class="mas-detalle" id="det-neum-${esc(el.id)}"><summary>Historial (${plural(hist.length, 'línea', 'líneas')})</summary>${tablaLineas(v, hist)}</details>` : ''}</div>`;
   }).join('');
 }
 
@@ -704,9 +788,9 @@ function pestPendientes(v) {
 
 // Gastos: importes de las visitas (con IVA), sin la compra del vehículo.
 function gastosDe(v) { return v.visitas.filter(x => x.importe != null && x.tipo !== 'compra'); }
-function barras(items) {
+function barras(items, formato = fEur) {
   const max = Math.max(0, ...items.map(i => i.valor));
-  return `<div class="barras">${items.map(i => `<div class="b-fila"><span>${esc(i.etq)}</span><span class="b-pista"><span class="b-relleno" style="width:${max ? (i.valor / max * 100).toFixed(1) : 0}%"></span></span><span class="b-valor">${fEur(i.valor)}</span></div>`).join('')}</div>`;
+  return `<div class="barras">${items.map(i => `<div class="b-fila"><span>${esc(i.etq)}</span><span class="b-pista"><span class="b-relleno" style="width:${max ? (i.valor / max * 100).toFixed(1) : 0}%"></span></span><span class="b-valor">${formato(i.valor)}</span>${i.nota ? `<span class="b-nota">${esc(i.nota)}</span>` : ''}</div>`).join('')}</div>`;
 }
 function porAno(visitas, desde, hasta) {
   const m = new Map(); for (let a = desde; a <= hasta; a++) m.set(a, 0);
@@ -855,7 +939,7 @@ function vistaAjustes() {
     </div>` : ''}
   </div></section>
   ${d ? `<section class="bloque"><h2>Exportar a Excel</h2><div class="caja">
-    <p class="sub">Una foto de todos los datos: el semáforo de cada elemento, el historial línea a línea, las visitas, la vista de siempre de cada vehículo (una columna por visita), las caducidades y los neumáticos. Es para consultar: no se vuelve a cargar en la app.</p>
+    <p class="sub">Una foto de todos los datos: el semáforo de cada elemento, el historial línea a línea, las visitas, la vista de siempre de cada vehículo (una columna por visita), las caducidades, los neumáticos, los km por año y las lecturas de km. Es para consultar: no se vuelve a cargar en la app.</p>
     <div class="botones"><button class="boton" data-accion="exportar-excel">Descargar el Excel</button></div>
   </div></section>` : ''}
   ${d ? `<section class="bloque"><h2>Semáforo</h2><div class="caja">
@@ -1346,14 +1430,21 @@ function hojasExcel() {
     for (const x of [...(c.historial || [])].reverse())
       caducidades.push([v.nombre, c.tipo, 'Anterior', F(x.desde), F(x.hasta), F(x.pagado), '', x.entidad || '', '', '', E(x.importe), x.nota || '']);
   }
-  const neumaticos = [cab(['Vehículo', 'Posición', 'Medida', 'Fecha', 'Km', 'Qué se hizo', 'Marca, modelo y detalle', 'DOT', 'Taller', 'Importe', 'Montados ahora', 'Km hechos (≈)', 'Años'])];
+  const neumaticos = [cab(['Vehículo', 'Posición', 'Medida', 'Fecha', 'Km', 'Qué se hizo', 'Marca, modelo y detalle', 'DOT', 'Taller', 'Importe', 'Montados ahora', 'Km que hicieron (≈)', 'Años'])];
   for (const v of vs) for (const el of v.elementos.filter(e => esNeumatico(e.id))) {
-    const hist = lineasDe(v, el.id).reverse(), actual = hist.find(x => x.linea.accion === 'cambiado');
-    for (const { visita: x, linea: l } of hist) {
-      const ahora = actual?.linea === l, km = x.km ?? kmEnFecha(v, x.fecha);
+    const juegos = juegosNeumaticos(v, el);
+    for (const { visita: x, linea: l } of lineasDe(v, el.id).reverse()) {
+      const j = juegos.find(y => y.linea === l);           // solo las líneas «cambiado» abren un juego
       neumaticos.push([v.nombre, el.nombre, el.especificacion || '', F(x.fecha), K(x.km), ACCIONES[l.accion] || l.accion, [l.marca, l.texto, l.nota].filter(Boolean).join(' · '),
-        l.dot || '', taller(x), E(l.importe), ahora ? 'Sí' : '', ahora && km != null ? K(kmHoy(v).km - km) : null, ahora ? Math.round(dias(x.fecha, h) / 365.25 * 10) / 10 : null]);
+        l.dot || '', taller(x), E(l.importe), j?.actual ? 'Sí' : '', j ? K(j.km) : null, j ? Math.round(j.anos * 10) / 10 : null]);
     }
+  }
+  const kmAnos = [cab(['Vehículo', 'Año', 'Km (≈)', 'Lecturas ese año', 'Nota'])];
+  const lecturasKm = [cab(['Vehículo', 'Fecha', 'Km', 'De dónde sale'])];
+  for (const v of vs) {
+    for (const a of [...kmPorAno(v)].reverse())
+      kmAnos.push([v.nombre, a.ano, K(a.km), a.lecturas, [a.desde ? `Desde el ${fFecha(a.desde)}` : '', a.hasta ? `Hasta el ${fFecha(a.hasta)}` : '', a.lecturas ? '' : 'Sin lecturas: repartido entre la anterior y la siguiente'].filter(Boolean).join('. ')]);
+    for (const l of [...lecturasTodas(v)].reverse()) lecturasKm.push([v.nombre, F(l.fecha), K(l.km), l.fuentes.join(' · ')]);
   }
   return [
     { nombre: 'Resumen', filas: resumen, anchos: [16, 20, 40, 13, 12, 10, 12, 12, 28, 12, 60, 18, 30], fijas: { filas: 1, cols: 3 }, filtro: true },
@@ -1361,7 +1452,9 @@ function hojasExcel() {
     { nombre: 'Visitas', filas: visitas, anchos: [16, 11, 10, 22, 10, 12, 12, 7, 10, 7, 12, 16, 50, 24, 50], fijas: { filas: 1 }, filtro: true },
     ...vs.map(hojaClasica),
     { nombre: 'Caducidades', filas: caducidades, anchos: [16, 11, 10, 11, 12, 11, 13, 28, 14, 30, 11, 40], fijas: { filas: 1 }, filtro: true },
-    { nombre: 'Neumáticos', filas: neumaticos, anchos: [16, 22, 16, 11, 10, 11, 40, 8, 22, 11, 9, 12, 7], fijas: { filas: 1 }, filtro: true }];
+    { nombre: 'Neumáticos', filas: neumaticos, anchos: [16, 22, 16, 11, 10, 11, 40, 8, 22, 11, 9, 12, 7], fijas: { filas: 1 }, filtro: true },
+    { nombre: 'Km por año', filas: kmAnos, anchos: [16, 7, 11, 10, 60], fijas: { filas: 1 }, filtro: true },
+    { nombre: 'Lecturas de km', filas: lecturasKm, anchos: [16, 11, 11, 60], fijas: { filas: 1 }, filtro: true }];
 }
 // La vista de siempre: una columna por visita (fecha, taller, km, mano de obra y total) y una fila por elemento.
 function hojaClasica(v) {
@@ -1602,6 +1695,16 @@ function aplicarOperacion(d, op) {
   switch (op.op) {
     case 'visita': {
       const x = op.visita;
+      if (op.actualizar) {                       // completar una visita que ya existe: solo los campos que trae, sin tocar sus líneas
+        const y = x?.id ? v.visitas.find(z => z.id === x.id) : null;
+        if (!y) return mal(`${nv}: no existe la visita ${x?.id || '(sin id)'} para completarla`);
+        const { id, lineas, ...campos } = x;
+        if (lineas) return mal(`${nv}: al completar la visita ${x.id} no se pueden cambiar sus líneas`);
+        if (campos.factura) campos.factura = { ...y.factura, ...campos.factura };
+        const cambiados = Object.keys(campos).filter(k => JSON.stringify(y[k]) !== JSON.stringify(campos[k]));
+        Object.assign(y, campos); v.visitas.sort(porFecha);
+        return { ok: true, texto: `${nv}: visita del ${fFecha(y.fecha)} completada (${cambiados.join(', ') || 'sin cambios'})` };
+      }
       if (!x?.id || !/^\d{4}-\d{2}-\d{2}$/.test(x.fecha || '')) return mal(`${nv}: visita sin id o sin fecha`);
       if (v.visitas.some(y => y.id === x.id)) return mal(`${nv}: la visita ${x.id} ya existe; no se duplica`);
       x.lineas = x.lineas || [];
@@ -1619,7 +1722,14 @@ function aplicarOperacion(d, op) {
     }
     case 'elemento': return porId(v.elementos, op.elemento, 'elemento');
     case 'pendiente': return porId(v.pendientes, op.pendiente, 'pendiente');
-    case 'caducidad': return porId(v.caducidades, op.caducidad, 'caducidad');
+    case 'caducidad': {
+      const c = op.caducidad, actual = c?.id ? v.caducidades.find(x => x.id === c.id) : null;
+      if (!c?.id) return mal(`${nv}: caducidad sin id`);
+      if (actual) return mezclarCaducidad(actual, c, op.historialQuitar, nv);
+      if (!c.tipo || !esFecha(c.vence)) return mal(`${nv}: caducidad nueva sin tipo o sin fecha de vencimiento`);
+      c.historial = c.historial || []; v.caducidades.push(c);
+      return { ok: true, texto: `${nv}: caducidad nueva «${c.tipo}»` };
+    }
     case 'taller': return porId(d.talleres, op.taller, 'taller');
     case 'vehiculo': {
       const n = op.vehiculo;
@@ -1631,6 +1741,31 @@ function aplicarOperacion(d, op) {
     }
     default: return mal(`Operación desconocida: ${op.op}`);
   }
+}
+// Completa una caducidad que ya existe sin perder nada de lo que hay (006):
+// - historial: añade los periodos que faltan y completa los que ya están (mismos desde, hasta y pagado).
+//   Solo quita los que vengan en historialQuitar, con esas mismas tres fechas;
+// - vence: nunca hacia atrás. Si se renovó en la app después de preparar el fichero, se queda lo de la app;
+// - datos: campo a campo.
+function mezclarCaducidad(c, nueva, quitar = [], nv) {
+  const { id, historial = [], datos, vence, ...resto } = nueva;
+  const clave = h => [h.desde || '', h.hasta || '', h.pagado || ''].join('|');
+  const notas = [];
+  Object.assign(c, resto);
+  if (datos) c.datos = { ...c.datos, ...datos };
+  if (vence && vence > c.vence) { c.vence = vence; notas.push(`vence el ${fFecha(vence)}`); }
+  else if (vence && vence < c.vence) notas.push(`se mantiene el vencimiento del ${fFecha(c.vence)}`);
+  let h = [...(c.historial || [])], nuevos = 0, completados = 0, quitados = 0;
+  for (const q of quitar) { const n = h.length; h = h.filter(x => clave(x) !== clave(q)); quitados += n - h.length; }
+  for (const x of historial) {
+    const y = h.find(z => clave(z) === clave(x));
+    if (y) { Object.assign(y, x); completados++; } else { h.push(x); nuevos++; }
+  }
+  const orden = x => x.desde || x.pagado || x.hasta || '';
+  c.historial = h.sort((a, b) => orden(a).localeCompare(orden(b)));
+  const cambios = [nuevos && plural(nuevos, 'periodo añadido', 'periodos añadidos'), completados && plural(completados, 'completado', 'completados'),
+    quitados && plural(quitados, 'quitado', 'quitados'), ...notas].filter(Boolean);
+  return { ok: true, texto: `${nv}: ${c.tipo}: ${cambios.join(', ') || 'sin cambios'}` };
 }
 async function confirmarImport() {
   const imp = S.importacion;
@@ -1688,6 +1823,8 @@ window.addEventListener('beforeunload', e => { if (S.sucio) { e.preventDefault()
 // Para las pruebas (test-humo.html).
 window.Ruedak = {
   version: APP_VERSION, S, comprobarCambios, numero, hojasExcel, excel: () => xlsx(hojasExcel()),
+  kmPorAno: vid => kmPorAno(veh(vid)), lecturasTodas: vid => lecturasTodas(veh(vid)),
+  juegosNeumaticos: (vid, eid) => juegosNeumaticos(veh(vid), elemento(veh(vid), eid)),
   estadoElemento: (vid, eid) => { const v = veh(vid), el = v && elemento(v, eid); return el ? estadoElemento(v, el) : null; },
   estadoCaducidad: (vid, cid) => { const v = veh(vid), c = v?.caducidades.find(x => x.id === cid); return c ? estadoCaducidad(v, c) : null; },
   kmHoy: vid => kmHoy(veh(vid))
