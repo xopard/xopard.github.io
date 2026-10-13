@@ -89,7 +89,7 @@ label.interruptor input { width: auto; margin: 0; }
 
 /* lista de elementos */
 .lista-el { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); }
-.fila-el { display: grid; grid-template-columns: 12px minmax(0, 1fr) 150px 220px 128px;
+.fila-el { display: grid; grid-template-columns: 12px minmax(0, 1fr) 170px 300px 128px;
   grid-template-areas: "p n u x d" ". t t t t"; gap: 4px 12px; align-items: start; padding: 9px 12px; border-top: 1px solid var(--raya); }
 .fila-el:first-child { border-top: 0; }
 .fila-el > .punto { grid-area: p; margin-top: 5px; }
@@ -99,6 +99,14 @@ label.interruptor input { width: auto; margin: 0; }
 .el-boton::before { content: "▸ "; color: var(--suave); font-weight: 400; }
 .el-boton[aria-expanded="true"]::before { content: "▾ "; }
 .el-ult, .el-prox { font-size: 0.9em; }
+.el-ult .lleva { display: block; }
+.el-prox .lim + .lim { margin-top: 2px; }
+.el-prox .lim.manda { font-weight: 600; }
+.el-prox .chip { font-size: 0.75em; padding: 0 7px; }
+.uso-fila { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.uso { flex: 1; max-width: 180px; height: 6px; background: var(--tinte); border-radius: 3px; overflow: hidden; }
+.uso > span { display: block; height: 100%; background: var(--gris); }
+.uso > .rojo { background: var(--rojo); } .uso > .ambar { background: var(--ambar); } .uso > .verde { background: var(--verde); }
 .etq { display: none; color: var(--suave); font-size: 0.85em; margin-right: 4px; }
 .cabecera-el { color: var(--suave); font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.05em; }
 details > summary { cursor: pointer; }
@@ -269,7 +277,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '006';
+const APP_VERSION = '007';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -410,26 +418,42 @@ function lineasDe(v, idEl) {
 function ultimoCambio(v, idEl) { const r = lineasDe(v, idEl).filter(x => REINICIAN.includes(x.linea.accion)); return r[r.length - 1] || null; }
 
 // Semáforo de un elemento: rojo (vencido), ámbar (pronto), verde (en plazo) o gris (sin intervalo).
+// Además del color devuelve lo que lleva desde el último cambio (kmHechos, anos) y cuál de los dos límites
+// llega antes (manda: 'km' o 'tiempo'), para que se vea si toca por km o por tiempo (007).
 function estadoElemento(v, el) {
   const iv = el.intervalo, ult = ultimoCambio(v, el.id);
+  const h = hoy(), act = kmHoy(v);
   const r = { el, ult, color: 'gris', texto: '', vence: null, venceKm: null };
-  if (!iv) return r;
   const primera = !ult;
   const base = ult ? { fecha: ult.visita.fecha, km: ult.visita.km ?? kmEnFecha(v, ult.visita.fecha) } : { fecha: v.alta.fecha, km: v.alta.km };
+  if (ult || iv) Object.assign(r, { base, primera, anos: Math.max(0, dias(base.fecha, h)) / 365.25, kmHechos: base.km != null ? Math.max(0, act.km - base.km) : null });
+  if (!iv) return r;
   const meses = primera && iv.primeraMeses ? iv.primeraMeses : iv.meses;
-  const kms = [primera && iv.primeraKm ? iv.primeraKm : iv.km, iv.horas ? iv.horas * velocidadBici() : null].filter(Boolean);
+  const kmIv = primera && iv.primeraKm ? iv.primeraKm : iv.km, kmHoras = iv.horas ? iv.horas * velocidadBici() : null;
+  const kms = [kmIv, kmHoras].filter(Boolean);
   const intKm = kms.length ? Math.min(...kms) : null;
-  const h = hoy(), act = kmHoy(v), am = ajusteAmbar(v);
+  const am = ajusteAmbar(v);
   const vFecha = meses ? sumaMeses(base.fecha, meses) : null;
   const vKm = intKm && base.km != null ? Math.round(base.km + intKm) : null;
   const fechaKm = vKm != null ? fechaEnKm(v, vKm) : null;
-  Object.assign(r, { vFecha, venceKm: vKm, fechaKm, intKm, vence: [vFecha, fechaKm].filter(Boolean).sort()[0] || null });
-  if ((vFecha && vFecha <= h) || (vKm != null && act.km >= vKm)) r.color = 'rojo';
+  Object.assign(r, { vFecha, venceKm: vKm, fechaKm, intKm, vence: [vFecha, fechaKm].filter(Boolean).sort()[0] || null,
+    faltanKm: vKm != null ? vKm - act.km : null, porHoras: !!kmHoras && intKm === kmHoras && kmHoras !== kmIv });
+  // Qué límite llega antes: el de la fecha más temprana; si los km no tienen fecha (sin ritmo), el de tiempo.
+  r.manda = vFecha && fechaKm ? (fechaKm < vFecha ? 'km' : 'tiempo') : vFecha ? 'tiempo' : vKm != null ? 'km' : null;
+  const usoKm = vKm != null && intKm ? r.kmHechos / intKm : 0, usoTiempo = vFecha ? dias(base.fecha, h) / Math.max(1, dias(base.fecha, vFecha)) : 0;
+  r.usado = Math.max(0, usoKm, usoTiempo);
+  const vencidoTiempo = vFecha && vFecha <= h, vencidoKm = vKm != null && act.km >= vKm;
+  if (vencidoTiempo || vencidoKm) {
+    r.color = 'rojo';
+    if (vencidoTiempo && vencidoKm) r.manda = fechaKm && fechaKm < vFecha ? 'km' : 'tiempo';
+    else r.manda = vencidoTiempo ? 'tiempo' : 'km';
+  }
   else if ((r.vence && r.vence <= sumaMeses(h, am.meses)) || (vKm != null && vKm - act.km <= intKm * am.pctKm / 100)) r.color = 'ambar';
   else r.color = 'verde';
-  const aprox = r.vence && r.vence === fechaKm && r.vence !== vFecha ? '≈ ' : '';
-  if (r.color === 'rojo') r.texto = r.vence && r.vence <= h ? `Vencido ${cuanto(dias(h, r.vence))}` : `Vencido: pasado de ${fKm(vKm)}`;
-  else r.texto = [r.vence ? `${aprox}${fFecha(r.vence)} (${cuanto(dias(h, r.vence))})` : '', vKm != null ? `a los ${fKm(vKm)}` : ''].filter(Boolean).join(' · ');
+  const porKm = r.porHoras ? 'por horas de uso' : 'por km';
+  if (r.color === 'rojo') r.texto = r.manda === 'tiempo' ? `Vencido por tiempo ${cuanto(dias(h, vFecha))}` : `Vencido ${porKm}: pasado de ${fKm(vKm)}`;
+  else if (r.manda === 'km') r.texto = `${fechaKm ? `≈ ${fFecha(fechaKm)} (${cuanto(dias(h, fechaKm))}), ` : ''}${porKm}: a los ${fKm(vKm)}`;
+  else r.texto = `${fFecha(vFecha)} (${cuanto(dias(h, vFecha))}), por tiempo`;
   return r;
 }
 function estadoCaducidad(v, c) {
@@ -571,15 +595,32 @@ function pestEstado(v) {
       <div class="fila-el cabecera-el"><span></span><span>Elemento</span><span>Último cambio</span><span>Próximo</span><span>Próxima visita</span></div>
       ${es.map(e => filaElemento(v, e)).join('')}</div>`).join('')}`;
 }
+// Km redondeados para «lleva» y «faltan»: a la centena en los coches, a la decena en la bici.
+function kmRedondo(v, n) { const p = v.tipo === 'bici' ? 10 : 100; return fKm(Math.round(n / p) * p); }
+// Próximo: una línea por límite (km y tiempo), con lo que falta; si hay dos, se marca el que llega primero.
+function proximoHTML(v, e) {
+  const el = e.el, h = hoy();
+  if (!el.intervalo) return 'Sin intervalo';
+  const porKm = e.porHoras ? `Por horas de uso (${fNum(el.intervalo.horas)} h ≈ ${kmRedondo(v, e.intKm)})` : 'Por km';
+  const lim = [];
+  if (e.venceKm != null) lim.push(['km', e.faltanKm <= 0 ? `${porKm}: pasado de ${fKm(e.venceKm)}, ≈ ${kmRedondo(v, -e.faltanKm)} de más`
+    : `${porKm}: a los ${fKm(e.venceKm)}, faltan ≈ ${kmRedondo(v, e.faltanKm)}${e.fechaKm ? ` (≈ ${fMes(e.fechaKm)})` : ''}`]);
+  if (e.vFecha) lim.push(['tiempo', e.vFecha <= h ? `Por tiempo: venció el ${fFecha(e.vFecha)}, ${cuanto(dias(h, e.vFecha))}` : `Por tiempo: el ${fFecha(e.vFecha)}, ${cuanto(dias(h, e.vFecha))}`]);
+  const pct = Math.min(100, Math.round(e.usado * 100));
+  return lim.map(([t, txt]) => `<div class="lim${lim.length > 1 && t === e.manda ? ' manda' : ''}">${esc(txt)}${lim.length > 1 && t === e.manda ? ` <span class="chip ${e.color}">${e.color === 'rojo' ? 'vencido' : 'primero'}</span>` : ''}</div>`).join('')
+    + `<div class="uso-fila"><span class="uso" title="Gastado el ${pct} % del intervalo"><span class="${e.color}" style="width:${pct}%"></span></span><span class="sub">${pct} %</span></div>`;
+}
 function filaElemento(v, e) {
   const el = e.el, u = e.ult;
   const ult = u ? `${fMes(u.visita.fecha)}${u.visita.km != null ? ' · ' + fKm(u.visita.km) : ''}` : el.intervalo ? 'Nunca' : '—';
+  const tiempo = e.base ? cuanto(-Math.max(0, dias(e.base.fecha, hoy()))).replace(/^(hace|en) /, '') : '';   // «11 meses», «4,4 años»
+  const lleva = e.base ? `<span class="sub lleva">${e.primera ? 'Desde el alta: ' : 'Lleva '}${tiempo}${e.kmHechos != null ? ` y ≈ ${kmRedondo(v, e.kmHechos)}` : ''}</span>` : '';
   const abierto = S.abiertos.has(v.id + '/' + el.id);
   return `<div class="fila-el">${punto(e.color)}
     <div class="el-nombre"><button class="el-boton" data-accion="ver-el" data-veh="${v.id}" data-el="${esc(el.id)}" aria-expanded="${abierto}">${esc(el.nombre)}</button></div>
     <div class="el-detalle"${abierto ? '' : ' hidden'}>${detalleElemento(v, e)}</div>
-    <div class="el-ult"><span class="etq">Último:</span>${ult}</div>
-    <div class="el-prox"><span class="etq">Próximo:</span>${esc(e.texto || (el.intervalo ? '' : 'Sin intervalo'))}</div>
+    <div class="el-ult"><span class="etq">Último:</span>${ult}${lleva}</div>
+    <div class="el-prox"><span class="etq">Próximo:</span>${proximoHTML(v, e)}</div>
     <div class="el-dec"><select data-accion="decision" data-veh="${v.id}" data-el="${esc(el.id)}" aria-label="Próxima visita: ${esc(el.nombre)}">
       ${DECISIONES.map(([val, t]) => `<option value="${val}"${(el.proxima?.decision || '') === val ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
   </div>`;
@@ -1404,10 +1445,11 @@ function hojasExcel() {
   const cab = ts => ts.map(t => C(t, 'cab'));
   const taller = x => x.taller ? nombreTaller(x.taller) : '';
   const decision = el => el.proxima?.decision ? DECISIONES.find(([k]) => k === el.proxima.decision)?.[1] || el.proxima.decision : '';
-  const resumen = [cab(['Vehículo', 'Grupo', 'Elemento', 'Estado', 'Último cambio', 'Km', 'Próximo', 'Próximo a los km', 'Intervalo', 'Próxima visita', 'Nota para la próxima visita', 'Referencia', 'Especificación'])];
+  const resumen = [cab(['Vehículo', 'Grupo', 'Elemento', 'Estado', 'Último cambio', 'Km', 'Lleva (años)', 'Lleva (km, ≈)', 'Próximo', 'Próximo a los km', 'Toca antes por', 'Intervalo', 'Próxima visita', 'Nota para la próxima visita', 'Referencia', 'Especificación'])];
   for (const v of vs) for (const el of v.elementos) {
     const e = estadoElemento(v, el);
-    resumen.push([v.nombre, el.grupo || '', el.nombre, C(NOMBRE_EST[e.color], e.color), F(e.ult?.visita.fecha), K(e.ult?.visita.km), F(e.vence), K(e.venceKm),
+    resumen.push([v.nombre, el.grupo || '', el.nombre, C(NOMBRE_EST[e.color], e.color), F(e.ult?.visita.fecha), K(e.ult?.visita.km),
+      e.base ? Math.round(e.anos * 10) / 10 : null, K(e.kmHechos), F(e.vence), K(e.venceKm), e.manda ? (e.manda === 'km' ? (e.porHoras ? 'Horas de uso' : 'Km') : 'Tiempo') : '',
       el.intervalo ? textoIntervalo(el.intervalo) : '', decision(el), C(el.proxima?.nota || null, el.proxima?.nota ? 'nota' : null), el.referencia || '', el.especificacion || '']);
   }
   const historial = [cab(['Vehículo', 'Fecha', 'Km', 'Taller', 'Tipo de visita', 'Grupo', 'Elemento o concepto', 'Qué se hizo', 'Detalle', 'Referencia', 'Cantidad', 'Unidad', 'Importe', 'IVA', 'Marca y modelo', 'DOT', 'Nota'])];
@@ -1447,7 +1489,7 @@ function hojasExcel() {
     for (const l of [...lecturasTodas(v)].reverse()) lecturasKm.push([v.nombre, F(l.fecha), K(l.km), l.fuentes.join(' · ')]);
   }
   return [
-    { nombre: 'Resumen', filas: resumen, anchos: [16, 20, 40, 13, 12, 10, 12, 12, 28, 12, 60, 18, 30], fijas: { filas: 1, cols: 3 }, filtro: true },
+    { nombre: 'Resumen', filas: resumen, anchos: [16, 20, 40, 13, 12, 10, 9, 11, 12, 12, 11, 28, 12, 60, 18, 30], fijas: { filas: 1, cols: 3 }, filtro: true },
     { nombre: 'Historial', filas: historial, anchos: [16, 11, 10, 22, 11, 18, 36, 12, 30, 16, 9, 8, 11, 9, 20, 8, 40], fijas: { filas: 1 }, filtro: true },
     { nombre: 'Visitas', filas: visitas, anchos: [16, 11, 10, 22, 10, 12, 12, 7, 10, 7, 12, 16, 50, 24, 50], fijas: { filas: 1 }, filtro: true },
     ...vs.map(hojaClasica),
