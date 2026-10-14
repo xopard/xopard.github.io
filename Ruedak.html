@@ -138,6 +138,8 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 0.9em; font-var
 /* barras de gastos */
 .barras { display: grid; gap: 5px; }
 .b-fila { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) 7.5em; gap: 8px; align-items: center; font-size: 0.9em; }
+.b-fila > span:first-child { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
+.barras.larga .b-fila { grid-template-columns: minmax(0, 14em) minmax(0, 1fr) 7.5em; }
 .b-pista { background: var(--tinte); border-radius: 4px; height: 14px; overflow: hidden; }
 .b-relleno { display: block; height: 100%; background: var(--acento); border-radius: 4px; }
 .b-valor { text-align: right; font-variant-numeric: tabular-nums; }
@@ -234,6 +236,9 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
   .fila-el { grid-template-columns: 12px minmax(0, 1fr) auto; grid-template-areas: "p n d" ". u u" ". x x" ". t t"; }
   .etq { display: inline; }
   .b-fila { grid-template-columns: 3.4em minmax(0, 1fr) 6.6em; }
+  .barras.larga .b-fila { grid-template-columns: minmax(0, 1fr) 6.6em; row-gap: 2px; }
+  .barras.larga .b-fila > span:first-child { grid-column: 1 / -1; }
+  .barras.larga { gap: 10px; }
   dl.datos { grid-template-columns: minmax(0, 1fr); }
   dl.datos dt { margin-top: 6px; font-size: 0.88em; }
   .hoja { padding: 14px; }
@@ -282,7 +287,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '008';
+const APP_VERSION = '009';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -840,9 +845,10 @@ function pestPendientes(v) {
 
 // Gastos: importes de las visitas (con IVA), sin la compra del vehículo.
 function gastosDe(v) { return v.visitas.filter(x => x.importe != null && x.tipo !== 'compra'); }
-function barras(items, formato = fEur) {
+// larga: etiquetas largas (nombres de taller); en el PC van en una columna más ancha y en el móvil, encima de la barra.
+function barras(items, formato = fEur, larga = false) {
   const max = Math.max(0, ...items.map(i => i.valor));
-  return `<div class="barras">${items.map(i => `<div class="b-fila"><span>${esc(i.etq)}</span><span class="b-pista"><span class="b-relleno" style="width:${max ? (i.valor / max * 100).toFixed(1) : 0}%"></span></span><span class="b-valor">${formato(i.valor)}</span>${i.nota ? `<span class="b-nota">${esc(i.nota)}</span>` : ''}</div>`).join('')}</div>`;
+  return `<div class="barras${larga ? ' larga' : ''}">${items.map(i => `<div class="b-fila"><span>${esc(i.etq)}</span><span class="b-pista"><span class="b-relleno" style="width:${max ? (i.valor / max * 100).toFixed(1) : 0}%"></span></span><span class="b-valor">${formato(i.valor)}</span>${i.nota ? `<span class="b-nota">${esc(i.nota)}</span>` : ''}</div>`).join('')}</div>`;
 }
 function porAno(visitas, desde, hasta) {
   const m = new Map(); for (let a = desde; a <= hasta; a++) m.set(a, 0);
@@ -864,7 +870,7 @@ function pestGastos(v) {
       ${compra ? `<div class="cifra"><span class="sub">Compra (aparte)</span><b>${fEur(compra.importe)}</b></div>` : ''}
     </div>
     <h3>Por año</h3>${barras([...m].reverse().map(([a, x]) => ({ etq: String(a), valor: x })))}
-    <h3>Por taller</h3>${barras([...t].sort((a, b) => b[1] - a[1]).map(([id, x]) => ({ etq: nombreTaller(id), valor: x })))}
+    <h3>Por taller</h3>${barras([...t].sort((a, b) => b[1] - a[1]).map(([id, x]) => ({ etq: nombreTaller(id), valor: x })), fEur, true)}
     <p class="sub">Importes con IVA de ${plural(g.length, 'visita', 'visitas')}${sinImporte ? `; ${plural(sinImporte, 'visita no tiene', 'visitas no tienen')} importe` : ''}. Por km: desde el alta.</p>`;
 }
 function vistaGastosTodos() {
