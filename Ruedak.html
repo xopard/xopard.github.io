@@ -4,10 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ruedak</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231F5F99'/%3E%3Ccircle cx='32' cy='32' r='20.5' fill='none' stroke='%23FFFFFF' stroke-width='8'/%3E%3Ccircle cx='32' cy='32' r='14' fill='none' stroke='%23FFFFFF' stroke-width='1.6'/%3E%3Cg stroke='%23FFFFFF' stroke-width='3' stroke-linecap='round'%3E%3Cline x1='32' y1='32' x2='32' y2='18.5'/%3E%3Cline x1='32' y1='32' x2='44.8' y2='27.8'/%3E%3Cline x1='32' y1='32' x2='39.9' y2='42.9'/%3E%3Cline x1='32' y1='32' x2='24.1' y2='42.9'/%3E%3Cline x1='32' y1='32' x2='19.2' y2='27.8'/%3E%3C/g%3E%3Ccircle cx='32' cy='32' r='5.5' fill='%23F08A1C'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#1F5F99">
 <style>
 :root {
   --fondo: #f5f6f8; --papel: #ffffff; --tinta: #1c232c; --suave: #5b6673; --raya: #dbe0e6; --tinte: #eef2f6;
-  --acento: #1f5f99; --acento-tinte: #e3eef8;
+  --acento: #1f5f99; --acento-tinte: #e3eef8; --naranja: #e07b0c;
   --rojo: #c63b3b; --rojo-tinte: #fbeaea; --ambar: #b9780b; --ambar-tinte: #fcf2dc; --verde: #2e8550; --verde-tinte: #e4f3e9;
   --gris: #9aa4af; --radio: 10px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -16,7 +18,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --fondo: #111418; --papel: #1a1f26; --tinta: #e6eaef; --suave: #9ba6b3; --raya: #2d353f; --tinte: #222932;
-    --acento: #7fb3e6; --acento-tinte: #1c2a38;
+    --acento: #7fb3e6; --acento-tinte: #1c2a38; --naranja: #f5a34a;
     --rojo: #ff7b72; --rojo-tinte: #3b2020; --ambar: #f0b44c; --ambar-tinte: #3a2e17; --verde: #62c98a; --verde-tinte: #183424;
     --gris: #6c7783; color-scheme: dark;
   }
@@ -35,7 +37,10 @@ p { margin: 0.4em 0; }
 /* barra superior */
 .barra { position: sticky; top: 0; z-index: 5; background: var(--papel); border-bottom: 1px solid var(--raya);
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 16px; }
-.marca { font-weight: 800; font-size: 1.15em; color: var(--tinta); text-decoration: none; letter-spacing: 0.02em; }
+.marca { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 1.15em; color: var(--acento); text-decoration: none; letter-spacing: 0.02em; }
+.marca svg { width: 22px; height: 22px; flex: none; }
+.marca .k, .marca-grande .k { color: var(--naranja); }
+.marca-grande { color: var(--acento); font-size: 2.2em; letter-spacing: 0.02em; }
 #nav { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
 #nav a { text-decoration: none; color: var(--suave); padding: 4px 10px; border-radius: 999px; font-size: 0.92em; white-space: nowrap; }
 #nav a.activa { background: var(--acento-tinte); color: var(--acento); font-weight: 600; }
@@ -265,7 +270,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 </head>
 <body>
 <header class="barra">
-  <a class="marca" href="#/">Ruedak</a>
+  <a class="marca" href="#/" aria-label="Ruedak: inicio"><svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1F5F99"/><circle cx="32" cy="32" r="20.5" fill="none" stroke="#fff" stroke-width="8"/><circle cx="32" cy="32" r="14" fill="none" stroke="#fff" stroke-width="1.6"/><g stroke="#fff" stroke-width="3" stroke-linecap="round"><line x1="32" y1="32" x2="32" y2="18.5"/><line x1="32" y1="32" x2="44.8" y2="27.8"/><line x1="32" y1="32" x2="39.9" y2="42.9"/><line x1="32" y1="32" x2="24.1" y2="42.9"/><line x1="32" y1="32" x2="19.2" y2="27.8"/></g><circle cx="32" cy="32" r="5.5" fill="#F08A1C"/></svg><span>Rueda<span class="k">k</span></span></a>
   <nav id="nav" aria-label="Secciones"></nav>
   <span id="estado-guardado" aria-live="polite"></span>
 </header>
@@ -277,7 +282,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '007';
+const APP_VERSION = '008';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -476,6 +481,12 @@ function textoIntervalo(iv) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 const esNeumatico = id => /^(neumaticos|cubierta)-/.test(id);
+// DOT de 4 cifras: semana y año de fabricación («2523» = semana 25 de 2023). Devuelve el lunes aproximado de esa semana.
+function fechaDot(dot) {
+  const m = /^(\d{2})(\d{2})$/.exec(String(dot ?? '').trim());
+  if (!m || +m[1] < 1 || +m[1] > 53) return null;
+  return sumaDias(iso(2000 + +m[2], 1, 1), (+m[1] - 1) * 7);
+}
 
 // ─── Pintado ─────────────────────────────────────────────────────────────────
 const punto = c => `<span class="punto ${c}" title="${({ rojo: 'Vencido', ambar: 'Pronto', verde: 'En plazo', gris: 'Sin intervalo' })[c]}"></span>`;
@@ -523,7 +534,7 @@ function aviso(a) { S.aviso = a; }
 
 function vistaSinDatos() {
   const conDbx = S.origen === 'dropbox';
-  return `<section class="vacio"><h1>Ruedak</h1>
+  return `<section class="vacio"><h1 class="marca-grande">Rueda<span class="k">k</span></h1>
     <p>${conDbx ? 'Dropbox está conectado, pero todavía no hay datos guardados. Importa los datos completos (ruedak.json) en Ajustes.' : 'No hay datos abiertos.'}</p>
     <div class="botones" style="justify-content:center">
       ${conDbx ? '<a class="boton primario" href="#/ajustes">Ir a Ajustes</a>' : `${clave() ? '<button class="boton primario" data-accion="conectar">Conectar Dropbox</button>' : ''}
@@ -789,11 +800,11 @@ function pestNeumaticos(v) {
     return `<h3>${esc(el.nombre)}</h3><div class="caja">
       ${el.especificacion ? `<p>Medida: ${esc(el.especificacion)}</p>` : ''}
       <div class="tabla-wrap"><table class="tabla"><thead><tr><th>Juego</th><th class="num">Km que hicieron</th><th class="num">Tiempo</th><th>Montados</th><th>Quitados</th></tr></thead><tbody>
-        ${juegos.map(j => `<tr><td><b>${esc(j.nombre)}</b>${j.dot ? `<br><span class="sub">DOT ${esc(j.dot)}</span>` : ''}${j.taller ? `<br><span class="sub">${esc(nombreTaller(j.taller))}</span>` : ''}</td>
+        ${juegos.map(j => { const fd = fechaDot(j.dot); return `<tr><td><b>${esc(j.nombre)}</b>${j.dot ? `<br><span class="sub">DOT ${esc(j.dot)}${fd ? `: fabricados ≈ ${fMes(fd)}${j.actual ? `, ${cuanto(dias(hoy(), fd))}` : ''}` : ''}</span>` : ''}${j.taller ? `<br><span class="sub">${esc(nombreTaller(j.taller))}</span>` : ''}</td>
           <td class="num">${j.km != null ? `${j.actual ? '≈ ' : ''}${fKm(Math.round(j.km))}${j.actual ? '<br><span class="sub">de momento</span>' : ''}` : '—'}</td>
           <td class="num">${anos(j.anos)}</td>
           <td class="fecha">${fFecha(j.desde)}${j.kmDesde != null ? `<br><span class="sub">${j.kmEstimado ? '≈ ' : ''}${fKm(Math.round(j.kmDesde))}</span>` : ''}</td>
-          <td class="fecha">${j.actual ? '<b>Montados ahora</b>' : `${fFecha(j.hasta)}<br><span class="sub">${fKm(Math.round(j.kmHasta))}</span>`}</td></tr>`).join('')}
+          <td class="fecha">${j.actual ? '<b>Montados ahora</b>' : `${fFecha(j.hasta)}<br><span class="sub">${fKm(Math.round(j.kmHasta))}</span>`}</td></tr>`; }).join('')}
       </tbody></table></div>
       <p class="sub">${una ? 'No consta ningún cambio: son los del alta, salvo que se cambiaran sin factura apuntada.'
         : '«Desde el alta» son los de serie, salvo que se cambiaran sin factura apuntada. Las cuentas son por posición: si se pasaron de un eje a otro, no lo saben.'}</p>
@@ -1740,11 +1751,19 @@ function aplicarOperacion(d, op) {
       if (op.actualizar) {                       // completar una visita que ya existe: solo los campos que trae, sin tocar sus líneas
         const y = x?.id ? v.visitas.find(z => z.id === x.id) : null;
         if (!y) return mal(`${nv}: no existe la visita ${x?.id || '(sin id)'} para completarla`);
-        const { id, lineas, ...campos } = x;
+        const { id, lineas, completarLineas = [], ...campos } = x;
         if (lineas) return mal(`${nv}: al completar la visita ${x.id} no se pueden cambiar sus líneas`);
+        // completarLineas (008): [{ elemento, accion?, …campos }]: completa la única línea de ese elemento (y acción) en la visita.
+        // Primero se comprueban todas, para no dejar nada a medias si una no vale.
+        const destinos = completarLineas.map(c => y.lineas.filter(l => l.elemento === c.elemento && (!c.accion || l.accion === c.accion)));
+        const fallo = completarLineas.findIndex((c, i) => destinos[i].length !== 1);
+        if (fallo >= 0) { const c = completarLineas[fallo];
+          return mal(`${nv}: en la visita del ${fFecha(y.fecha)} no hay una sola línea de «${elemento(v, c.elemento)?.nombre || c.elemento}»${c.accion ? ` (${ACCIONES[c.accion] || c.accion})` : ''} que completar`); }
         if (campos.factura) campos.factura = { ...y.factura, ...campos.factura };
         const cambiados = Object.keys(campos).filter(k => JSON.stringify(y[k]) !== JSON.stringify(campos[k]));
         Object.assign(y, campos); v.visitas.sort(porFecha);
+        completarLineas.forEach(({ elemento: e, accion, ...resto }, i) => Object.assign(destinos[i][0], resto));
+        if (completarLineas.length) cambiados.push('líneas: ' + completarLineas.map(c => elemento(v, c.elemento)?.nombre || c.elemento).join(', '));
         return { ok: true, texto: `${nv}: visita del ${fFecha(y.fecha)} completada (${cambiados.join(', ') || 'sin cambios'})` };
       }
       if (!x?.id || !/^\d{4}-\d{2}-\d{2}$/.test(x.fecha || '')) return mal(`${nv}: visita sin id o sin fecha`);
