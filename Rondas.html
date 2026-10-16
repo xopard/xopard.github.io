@@ -281,7 +281,16 @@ function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(
 function defaults(){return{
   config:{people:DEFAULT_PEOPLE.map((n,i)=>({id:"p"+(i+1),name:n,paused:false})),
           menus:[{id:"m1",name:DEFAULT_NAME,fromDefault:true,catalog:normCatalog(clone(DEFAULT_CATALOG))}],menu:"m1",assignerMode:"",pin:""},
-  current:{n:1,name:"",night:"",orders:{},delivered:{}},rounds:[]};}
+  current:{n:1,name:"",bar:"",night:"",orders:{},delivered:{}},rounds:[],bares:{}};}
+// Bares (bar/precios → {bares:{id:{name,last,prices:{productoId:precio}}}}): cada bar guarda
+// solo los precios que difieren de la carta.
+function normBares(b){
+  const out={};if(!b||typeof b!=="object")return out;
+  Object.keys(b).forEach(id=>{const x=b[id];if(!x||typeof x!=="object"||!x.name)return;
+    const pr={};Object.keys(x.prices||{}).forEach(k=>{const v=Number(x.prices[k]);if(!isNaN(v))pr[k]=v});
+    out[id]={name:String(x.name).slice(0,40),last:Number(x.last)||0,prices:pr}});
+  return out;
+}
 function normMix(m){
   if(!m)return null;
   const opts=(Array.isArray(m.options)?m.options:[]).map(o=>typeof o==="string"?{id:uid("o"),name:o,extra:0}:{id:(o&&o.id)||uid("o"),name:String(o&&o.name||""),extra:Number(o&&o.extra)||0}).filter(o=>o.name);
@@ -308,7 +317,7 @@ function normList(v){
   return[];
 }
 function normOrders(o){const r={};if(o&&typeof o==="object")Object.keys(o).forEach(k=>{const l=normList(o[k]);if(l.length)r[k]=l});return r}
-function normCurrent(c){c=c||{};return{n:Number(c.n)||1,name:typeof c.name==="string"?c.name.slice(0,40):"",night:typeof c.night==="string"?c.night:"",orders:normOrders(c.orders),delivered:(c.delivered&&typeof c.delivered==="object")?c.delivered:{}}}
+function normCurrent(c){c=c||{};return{n:Number(c.n)||1,name:typeof c.name==="string"?c.name.slice(0,40):"",bar:typeof c.bar==="string"?c.bar:"",night:typeof c.night==="string"?c.night:"",orders:normOrders(c.orders),delivered:(c.delivered&&typeof c.delivered==="object")?c.delivered:{}}}
 function normConfig(c){
   const d=defaults().config;c=c||{};
   const pin=(typeof c.pin==="string"&&c.pin.trim())?c.pin.trim().slice(0,8):"";
@@ -322,7 +331,7 @@ function normConfig(c){
 }
 function loadLocal(){
   try{const s=JSON.parse(lsGet("ronda.state."+SALA)||null);
-    if(s&&s.config&&s.current)return{config:normConfig(s.config),current:normCurrent(s.current),rounds:(s.rounds||[]).map(r=>Object.assign({},r,{orders:normOrders(r.orders)}))};
+    if(s&&s.config&&s.current)return{config:normConfig(s.config),current:normCurrent(s.current),rounds:(s.rounds||[]).map(r=>Object.assign({},r,{orders:normOrders(r.orders)})),bares:normBares(s.bares)};
   }catch(e){}
   return defaults();
 }
@@ -332,7 +341,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="006";
+const APP_VERSION="007";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -352,7 +361,7 @@ let netCache=false,netPending=false;
 let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:""};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -396,7 +405,16 @@ function extraOf(itemId,clar){
   const o=m.options.find(x=>canon(x.name)===canon(clar));
   return o?(Number(o.extra)||0):0;
 }
-function priceWith(itemId,clar){const it=IDX[itemId];return r2((it?Number(it.price)||0:0)+extraOf(itemId,clar))}
+// Precio base de un producto: el del bar si lo tiene, si no el de la carta.
+function precioBase(itemId,barId){
+  const b=S.bares&&S.bares[barId===undefined?S.current.bar:barId];
+  if(b&&b.prices[itemId]!=null)return Number(b.prices[itemId])||0;
+  const it=IDX[itemId];return it?Number(it.price)||0:0;
+}
+function priceWith(itemId,clar,barId){return r2(precioBase(itemId,barId)+extraOf(itemId,clar))}
+// Precio de una mezcla con suplemento calculado por la app (no puesto a mano): se guarda en
+// o.price, así que hay que reconocerlo para recalcularlo si cambia el bar o su precio.
+function precioAuto(o,barId){return !!(o&&o.drink&&!o.custom&&o.price!=null&&extraOf(o.drink,o.clarification)&&Math.abs(Number(o.price)-priceWith(o.drink,o.clarification,barId))<0.005)}
 function groupUsed(node,used){let hit=false;walkNodes([node],n=>{if(!n.group&&used.has(n.id))hit=true});return hit}
 function cloneMix(m){return m?normMix({def:m.def,options:(m.options||[]).map(o=>({name:o.name,extra:o.extra}))}):null}
 function cloneNode(n){
@@ -407,9 +425,8 @@ function cloneNode(n){
 const drinks=pid=>(S.current.orders&&S.current.orders[pid])||[];
 const isNada=o=>!!o&&o.drink==="nada";
 const label=o=>{if(!o)return"";if(o.custom)return o.custom;if(o.drink==="nada")return"No toma nada";return IDX[o.drink]?IDX[o.drink].name:"(bebida borrada)"};
-const priceOf=o=>{if(!o||isNada(o))return 0;if(o.price!=null&&!isNaN(o.price))return Number(o.price)||0;return Number(IDX[o.drink]&&IDX[o.drink].price)||0};
-const basePrice=o=>{if(!o||isNada(o)||o.custom)return null;return IDX[o.drink]?Number(IDX[o.drink].price):null};
-const hasOverride=o=>!!o&&!o.custom&&o.price!=null&&basePrice(o)!==null&&r2(o.price)!==r2(basePrice(o));
+const priceOf=o=>{if(!o||isNada(o))return 0;if(o.price!=null&&!isNaN(o.price))return Number(o.price)||0;return o.drink?precioBase(o.drink):0};
+const hasOverride=o=>!!o&&!o.custom&&!isNada(o)&&o.price!=null&&!!IDX[o.drink]&&r2(o.price)!==r2(precioBase(o.drink));
 const canon=x=>String(x==null?"":x).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
 const emoji=o=>{if(!o)return"";if(isNada(o))return"🚫";if(o.custom)return"🔧";const it=IDX[o.drink];return it&&it.emoji?it.emoji:""};
 const colorOf=o=>{if(!o)return"transparent";if(isNada(o))return"#7A8781";if(o.custom)return"#777";const it=IDX[o.drink];return it?it.cat.color:"transparent"};
@@ -672,6 +689,53 @@ function keysOf(pid){return drinks(pid).map((o,i)=>isNada(o)?null:pid+"_"+i).fil
 function allKeys(){return people().reduce((a,p)=>a.concat(keysOf(p.id)),[])}
 
 function setConfig(cfg){S.config=cfg;if(mode==="firebase")dbSet("bar/config",clone(cfg));else saveLocal()}
+
+/* --- bares: cada cambio se escribe como dato suelto (bares.<id>.prices.<producto>) para que
+   dos móviles corrigiendo a la vez no se pisen. Si el documento no existe aún, se crea entero. --- */
+const campoOk=k=>/^[A-Za-z_][A-Za-z0-9_]*$/.test(k);
+function barWrite(campos){
+  if(mode!=="firebase"){saveLocal();return}
+  const u={};let todoOk=true;
+  Object.keys(campos).forEach(k=>{if(!k.split(".").every(campoOk))todoOk=false;u[k]=campos[k]});
+  if(!todoOk){dbSet("bar/precios",{bares:clone(S.bares)});return}
+  dbUpdate("bar/precios",u,()=>({bares:clone(S.bares)}));
+}
+const baresRecientes=()=>Object.keys(S.bares).map(id=>Object.assign({id},S.bares[id])).sort((a,b)=>b.last-a.last||a.name.localeCompare(b.name,"es"));
+function barPorNombre(n){const c=canon(n);return c?baresRecientes().find(b=>canon(b.name)===c)||null:null}
+function crearBar(nombre){
+  const id=uid("b"),b={name:nombre.trim().slice(0,40),last:Date.now(),prices:{}};
+  S.bares[id]=b;barWrite({["bares."+id]:clone(b)});return id;
+}
+function setBarPrice(barId,itemId,v){
+  const b=S.bares[barId];if(!b)return;
+  b.prices[itemId]=r2(v);barWrite({["bares."+barId+".prices."+itemId]:r2(v)});
+}
+// Recalcula los suplementos automáticos de la ronda actual (no los precios puestos a mano)
+// cuando cambia el bar o el precio de un producto en el bar. antes = cómo se calculaba hasta ahora.
+function recalcAuto(antes,soloProducto){
+  Object.keys(S.current.orders).forEach(pid=>{
+    let cambia=false;
+    const arr=drinks(pid).map(o=>{
+      if(soloProducto&&o.drink!==soloProducto)return o;
+      if(!antes(o))return o;
+      const nuevo=priceWith(o.drink,o.clarification);
+      if(Math.abs(nuevo-o.price)<0.005)return o;
+      cambia=true;return Object.assign({},o,{price:nuevo});
+    });
+    if(cambia){S.current.orders[pid]=arr;writeOrders(pid)}
+  });
+}
+function elegirBar(barId){
+  const viejo=S.current.bar||"";
+  const eraAuto=snapshotAuto(viejo);
+  S.current.bar=barId||"";
+  S.current.name=barId&&S.bares[barId]?S.bares[barId].name:"";
+  if(barId&&S.bares[barId]){S.bares[barId].last=Date.now();barWrite({["bares."+barId+".last"]:S.bares[barId].last})}
+  if(mode==="firebase")dbUpdate("bar/current",{bar:S.current.bar,name:S.current.name},()=>clone(S.current));else saveLocal();
+  recalcAuto(eraAuto);
+}
+// Qué consumiciones tenían el suplemento calculado por la app con el bar anterior.
+function snapshotAuto(barId){const set=new Set();Object.keys(S.current.orders).forEach(pid=>drinks(pid).forEach(o=>{if(precioAuto(o,barId))set.add(o)}));return o=>set.has(o)}
 function editConfig(fn){const c=clone(S.config);fn(c);setConfig(c);render(true)}
 function editMenu(fn){editConfig(c=>{const m=c.menus.find(x=>x.id===c.menu)||c.menus[0];fn(m,c)})}
 function roundPrice(r,o){if(isNada(o))return 0;if(o.price!=null&&!isNaN(o.price))return Number(o.price)||0;if(r&&r.prices&&r.prices[o.drink]!=null)return Number(r.prices[o.drink])||0;return priceOf(o)}
@@ -717,22 +781,23 @@ function closeRound(payer){
   const orders=clone(S.current.orders),prices={};let total=0;
   Object.keys(orders).forEach(pid=>orders[pid].forEach(o=>{const pr=priceOf(o);if(o.drink&&!o.custom&&!isNada(o))prices[o.drink]=pr;total+=pr}));
   const n=S.current.n,id="r"+String(n).padStart(4,"0");
-  const round={n,name:S.current.name||"",orders,prices,payer:payer||"",total:r2(total),ts:Date.now(),log:[logLine(payer?"Cerrada, paga "+pname(payer):"Cerrada sin pagar")]};
+  const round={n,name:S.current.name||"",bar:S.current.bar||"",orders,prices,payer:payer||"",total:r2(total),ts:Date.now(),log:[logLine(payer?"Cerrada, paga "+pname(payer):"Cerrada sin pagar")]};
   S.rounds=S.rounds.filter(r=>r.id!==id).concat([Object.assign({id},round)]);
-  S.current={n:n+1,name:S.current.name||"",night,orders:{},delivered:{}};
+  S.current={n:n+1,name:S.current.name||"",bar:S.current.bar||"",night,orders:{},delivered:{}};
   if(mode==="firebase"){dbSet("rounds/"+id,round);archiveRound(night,id,round);dbSet("bar/current",clone(S.current))}else saveLocal();
 }
-function clearRound(){S.current={n:S.current.n,name:S.current.name||"",night:S.current.night||"",orders:{},delivered:{}};if(mode==="firebase")dbSet("bar/current",clone(S.current));else saveLocal()}
+function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.current.bar||"",night:S.current.night||"",orders:{},delivered:{}};if(mode==="firebase")dbSet("bar/current",clone(S.current));else saveLocal()}
 function undoLast(){
   if(!S.rounds.length)return;
   const last=sortedRounds().pop();
   S.rounds=S.rounds.filter(r=>r.id!==last.id);
-  S.current={n:last.n,name:last.name||"",orders:clone(last.orders||{}),delivered:{}};
+  // Se conserva la noche: sin ella, la siguiente ronda cerrada se archivaba como de otra noche.
+  S.current={n:last.n,name:last.name||"",bar:last.bar||"",night:S.current.night||"",orders:clone(last.orders||{}),delivered:{}};
   if(mode==="firebase"){archiveNote(last.id,"Ronda reabierta para editarla");dbDelete("rounds/"+last.id);dbSet("bar/current",clone(S.current))}else saveLocal();
 }
 function newNight(){
   const ids=S.rounds.map(r=>r.id);S.rounds=[];
-  S.current={n:1,name:"",night:"n"+Date.now().toString(36),orders:{},delivered:{}};
+  S.current={n:1,name:"",bar:"",night:"n"+Date.now().toString(36),orders:{},delivered:{}};
   if(mode==="firebase"){ids.forEach(id=>dbDelete("rounds/"+id));dbSet("bar/current",clone(S.current))}else saveLocal();
 }
 
@@ -938,13 +1003,19 @@ function vComanda(){
   const nada=people().filter(p=>drinks(p.id).length&&drinks(p.id).every(isNada)).map(p=>p.name);
   const faltan=activePeople().filter(p=>!drinks(p.id).length).map(p=>p.name);
   if(!gs.length&&!nada.length)return`<p class="hint">Nadie ha pedido todavía en la ${esc(roundLabel(S.current).toLowerCase())}.</p>`;
-  let h=`<div class="ticket"><h2>${esc(roundLabel(S.current))}</h2>`;
+  let h=S.current.bar&&S.bares[S.current.bar]
+    ? ""
+    : `<p class="status">🏠 Sin bar elegido: si cambias un precio aquí, cambia la carta para todos los bares. <button class="linkish" data-act="modal" data-id="round">Elegir el bar</button></p>`;
+  h+=`<div class="ticket"><h2>${esc(roundLabel(S.current))}</h2>`;
   h+=gs.map((g,gi)=>{
-    const o=g.o,own=o.custom||o.price!=null;
+    const o=g.o,auto=precioAuto(o),own=!auto&&(o.custom||o.price!=null);
+    // Sin precio propio, el campo es el precio base: se guarda en el bar de la ronda (o en la
+    // carta si no hay bar). Con suplemento automático, se guarda en el bar descontando el suplemento.
     const cell=own
       ? `<input class="price" type="number" step="0.05" inputmode="decimal" value="${r2(priceOf(o))}" data-gidx="${gi}"> €`
-      : `<input class="price" type="number" step="0.05" inputmode="decimal" value="${IDX[o.drink]?IDX[o.drink].price:0}" data-price="${esc(o.drink)}"> €`;
-    return `<div class="line"><span class="q">${g.count}</span><span><span class="n">${emoji(o)} ${esc(label(o))}</span>${o.clarification?`<br><span class="anot">· ${esc(o.clarification)}</span>`:""}${own?'<br><span class="note">precio propio de esta ronda</span>':""}</span><span>${cell}</span></div>`;
+      : `<input class="price" type="number" step="0.05" inputmode="decimal" value="${r2(priceOf(o))}" data-bprice="${esc(o.drink)}"${auto?` data-extra="${extraOf(o.drink,o.clarification)}"`:""}> €`;
+    const nota=own?"precio propio de esta ronda":auto?`incluye suplemento +${eur(extraOf(o.drink,o.clarification))}`:"";
+    return `<div class="line"><span class="q">${g.count}</span><span><span class="n">${emoji(o)} ${esc(label(o))}</span>${o.clarification?`<br><span class="anot">· ${esc(o.clarification)}</span>`:""}${nota?`<br><span class="note">${nota}</span>`:""}</span><span>${cell}</span></div>`;
   }).join("");
   h+=`<div class="total"><span>Total</span><span>${eur(roundTotal())}</span></div></div>`;
   if(nada.length)h+=`<p class="status">🚫 No toman nada: ${esc(nada.join(", "))}</p>`;
@@ -1034,6 +1105,20 @@ function vItemRow(it,used,sinArrastre){
   const u=used.has(it.id);
   return `<div class="set-row item2" data-key="${it.id}"><div class="l1">${sinArrastre?"":'<button class="grip" data-grip aria-label="Mover">⠿</button>'}<input type="text" class="emo" value="${esc(it.emoji)}" data-iemoji="${it.id}" aria-label="Emoji"${u?" disabled":""}><input type="text" value="${esc(it.name)}" data-iname="${it.id}" aria-label="Nombre"${u?" disabled":""}></div><div class="l2"><input class="price" type="number" step="0.05" inputmode="decimal" value="${it.price}" data-price="${it.id}" aria-label="Precio"> €<button class="x" data-act="editMix" data-id="${it.id}" title="Opciones propias">${it.mix?"🍹":"🍸"}</button><button class="x" data-act="dupItem" data-id="${it.id}" title="Duplicar">⧉</button>${u?'<span class="lock">🔒</span>':`<button class="x" data-act="rmItem" data-id="${it.id}" aria-label="Borrar">×</button>`}</div></div>`;
 }
+function vBaresAjustes(){
+  const bs=baresRecientes();
+  let h=`<section class="card"><h2>Bares</h2><p class="note">Cada bar guarda solo los precios que no coinciden con la carta. Se aprenden solos al corregir un precio en la Comanda. Toca un bar para ver sus precios y quitar alguno que se guardó por error.</p>`;
+  if(!bs.length)return h+`<p class="hint">Aún no hay bares. Se crean al elegir el bar de la ronda (botón «Ronda» de arriba).</p></section>`;
+  bs.forEach(b=>{
+    const ks=Object.keys(b.prices),open=ui.barOpen===b.id;
+    h+=`<div class="set-row"><input type="text" value="${esc(b.name)}" data-barname="${b.id}" aria-label="Nombre del bar"><button class="mini${open?" on":""}" data-act="barOpen" data-id="${b.id}">${ks.length} precio${ks.length===1?"":"s"} ${open?"▾":"▸"}</button><button class="x" data-act="rmBar" data-id="${b.id}" aria-label="Borrar bar">🗑</button></div>`;
+    if(open){
+      if(!ks.length)h+=`<p class="note" style="margin:0 0 10px 4px">Todo a precio de carta.</p>`;
+      else h+=`<div style="margin:0 0 10px 4px">${ks.map(k=>{const it=IDX[k];return `<div class="drow"><span>${esc(it?(it.emoji?it.emoji+" ":"")+it.name:"(producto borrado)")}: <b>${eur(b.prices[k])}</b> <span class="note">carta ${it?eur(it.price):"—"}</span></span><button class="linkish rm" data-act="rmBarPrice" data-id="${b.id}" data-item="${esc(k)}">Quitar</button></div>`}).join("")}</div>`;
+    }
+  });
+  return h+'</section>';
+}
 function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
   let h=`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
@@ -1063,6 +1148,7 @@ function vAjustes(){
   h+=`<p class="note">Las cartas se guardan en la base de datos compartida (bar/config → menus), así que las ve toda la cuadrilla y se editan desde cualquier móvil. "Copiar como tabla" da un texto que se pega tal cual en Excel.</p>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuRename">✏️ Renombrar</button><button class="btn small warn" data-act="menuDel"${menus().length>1?"":" disabled"}>🗑 Borrar carta</button></div>`;
   h+=`<button class="btn small warn" data-act="menuDefaults">↻ Restaurar esta carta a la de por defecto</button><p class="note">Al restaurar se guarda antes una copia de seguridad de la carta actual, así que no se pierde nada.</p></section>`;
+  h+=vBaresAjustes();
 
   h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: noche nueva, vaciar o reabrir rondas, cambiar el pagador de una ronda cerrada, borrar personas o cartas y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
   return h;
@@ -1174,6 +1260,19 @@ function vMezclas(){
 }
 const VIEWS={sala:vSala,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
+// Bares que coinciden con lo escrito (sin acentos); vacío = los 6 más recientes.
+function barCoincidencias(){
+  const q=canon(ui.barQ||""),todos=baresRecientes();
+  return q?todos.filter(b=>canon(b.name).includes(q)).slice(0,8):todos.slice(0,6);
+}
+function vBarLista(){
+  const txt=(ui.barQ||"").trim(),hits=barCoincidencias(),exacto=barPorNombre(txt);
+  let h=hits.length?`<div class="chips">${hits.map(b=>{const n=Object.keys(b.prices).length;return `<button class="chip${b.id===S.current.bar?" on":""}" data-act="pickBar" data-id="${b.id}">${esc(b.name)}${n?` <span class="note">${n} precio${n===1?"":"s"}</span>`:""}</button>`}).join("")}</div>`
+    :(txt?"":`<p class="note">Aún no hay bares guardados.</p>`);
+  // Destacado solo si no coincide ninguno: si no, es fácil crear sin querer el bar «tx» a medio escribir.
+  if(txt&&!exacto)h+=`<button class="btn small${hits.length?"":" primary"}" data-act="newBar">+ Nuevo bar: «${esc(txt.slice(0,40))}»</button>`;
+  return h;
+}
 const sheet=inner=>`<div class="modal" data-act="modalClose"><div class="sheet" data-act="noop">${inner}</div></div>`;
 function vModal(){
   if(!ui.modal)return"";
@@ -1182,7 +1281,7 @@ function vModal(){
       people().map(p=>`<button class="chip${p.id===me?" on":""}" data-act="setMe" data-id="${p.id}">${p.paused?"⏸ ":""}${esc(p.name)}</button>`).join("")+
       `</div><button class="btn small" data-act="modalClose" style="margin-top:12px">Cerrar</button>`);
   if(ui.modal==="round")
-    return sheet(`<h2>Nombre de la ronda</h2><p class="note">Suele ser el bar. Las rondas siguientes lo heredan.</p><input type="text" id="roundNameInput" value="${esc(S.current.name||"")}" placeholder="p. ej. Zazpi"><div class="row2" style="margin-top:12px"><button class="btn small primary" data-act="saveRoundName">Guardar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
+    return sheet(`<h2>¿En qué bar estáis?</h2><p class="note">La ronda usa los precios de ese bar, y las siguientes lo heredan. Si corriges un precio en la Comanda, se guarda para ese bar.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
   if(ui.modal==="estado")
     return sheet(`<h2>Estado</h2><p>${mode==="firebase"?((netCache||netPending)?"📴 Sin cobertura: apuntas igual y se envía al recuperarla.":"🟢 Compartida con toda la cuadrilla, al instante."):mode==="connecting"?"Conectando…":"⚠️ Sin conexión con la base de datos: solo se guarda en este móvil."}</p><p class="note">Sala <b>${esc(SALA)}</b> · ronda ${S.current.n}${S.current.name?" · "+esc(S.current.name):""} · ${S.rounds.length} cerrada${S.rounds.length===1?"":"s"} · versión ${APP_VERSION}</p><button class="btn small" data-act="modalClose">Cerrar</button>`);
   return"";
@@ -1318,6 +1417,7 @@ document.addEventListener("click",e=>{
             if(o.custom)d={custom:o.custom,price:o.price};
             else{const pv=inActive(o.drink);if(!pv.same)fuera++;d={drink:pv.id}}
             if(o.clarification)d.clarification=o.clarification;
+            if(d.drink&&extraOf(d.drink,d.clarification))d.price=priceWith(d.drink,d.clarification);   // el suplemento de la mezcla
             addDrink(p.id,d);
           });
           k++;
@@ -1325,16 +1425,35 @@ document.addEventListener("click",e=>{
       });
       flash(k?`Repetido a ${k} persona${k>1?"s":""}${fuera?` · ${fuera} no está${fuera>1?"n":""} en esta carta`:""}`:"No falta nadie de la última ronda");break;
     }
-    case"modal":ui.modal=id;break;
+    case"modal":ui.modal=id;if(id==="round"){ui.barQ=S.current.bar?"":(S.current.name||"");setTimeout(()=>{const el=document.getElementById("barInput");if(el)el.focus()},0)}break;
     case"modalClose":ui.modal=null;break;
     case"noop":return;
     case"setMe":{me=id;lsSet("ronda.me",me);ui.sel=me;ui.modal=null;break}
-    case"saveRoundName":{
-      const el=document.getElementById("roundNameInput");
-      S.current.name=el?el.value.trim().slice(0,40):"";
-      if(mode==="firebase")dbUpdate("bar/current",{name:S.current.name},()=>clone(S.current));else saveLocal();
-      ui.modal=null;break;
+    case"pickBar":if(S.bares[id]){elegirBar(id);ui.modal=null;ui.barQ="";flash("Precios de "+S.bares[id].name)}break;
+    case"newBar":{
+      const txt=(ui.barQ||"").trim();if(!txt)return;
+      const ya=barPorNombre(txt),bid=ya?ya.id:crearBar(txt);
+      elegirBar(bid);ui.modal=null;ui.barQ="";flash(ya?"Precios de "+S.bares[bid].name:"Bar nuevo: "+S.bares[bid].name);break;
     }
+    case"barOpen":ui.barOpen=ui.barOpen===id?null:id;break;
+    case"rmBarPrice":{
+      const bar=S.bares[id],k=b.dataset.item;if(!bar||!k)return;
+      const eraAuto=S.current.bar===id?snapshotAuto(id):null;
+      delete bar.prices[k];
+      if(mode==="firebase")barWrite({["bares."+id+".prices."+k]:DEL()});else saveLocal();
+      if(eraAuto)recalcAuto(eraAuto,k);
+      flash("Vuelve al precio de la carta");break;
+    }
+    case"rmBar":{
+      const bb=S.bares[id];if(!bb)return;
+      if(!confirm(`¿Borrar el bar «${bb.name}» y sus ${Object.keys(bb.prices).length} precios guardados? Las rondas ya cerradas no cambian.`))return;
+      if(!requirePin())return;
+      if(S.current.bar===id)elegirBar("");
+      delete S.bares[id];
+      if(mode==="firebase")barWrite({["bares."+id]:DEL()});else saveLocal();
+      flash("Bar borrado");break;
+    }
+    case"barNone":elegirBar("");ui.modal=null;ui.barQ="";flash("Ronda sin bar: precios de la carta");break;
 
     case"repView":ui.repView=id;break;
     case"deliver":toggleDelivered(b.dataset.pid,parseInt(b.dataset.idx,10));break;
@@ -1612,6 +1731,19 @@ document.addEventListener("input",e=>{
   if(e.target&&e.target.id==="impText")ui.impText=e.target.value;
   // Solo se redibuja la lista: redibujar la pantalla entera quitaría el foco y cerraría el teclado.
   if(e.target&&e.target.id==="cartaBuscar"){ui.cartaQ=e.target.value;const l=$("#cartaLista");if(l)l.innerHTML=vCartaLista()}
+  if(e.target&&e.target.id==="barInput"){ui.barQ=e.target.value;const l=$("#barLista");if(l)l.innerHTML=vBarLista()}
+});
+// Intro en el campo del bar: elige el que coincide exactamente, o el único que coincide; lo crea
+// solo si no coincide ninguno (con varios, hay que tocar uno).
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Enter"||!e.target||e.target.id!=="barInput")return;
+  e.preventDefault();
+  const txt=(ui.barQ||"").trim();if(!txt)return;
+  const ex=barPorNombre(txt),hits=barCoincidencias();
+  const btn=ex?document.querySelector(`#barLista [data-act="pickBar"][data-id="${ex.id}"]`)
+    :hits.length===1?document.querySelector(`#barLista [data-act="pickBar"][data-id="${hits[0].id}"]`)
+    :hits.length?null:document.querySelector('#barLista [data-act="newBar"]');
+  if(btn){e.target.blur();btn.click()}else flash("Toca uno de la lista");
 });
 // Tras abrir una categoría o subgrupo, que quede arriba en pantalla (si no, al cerrarse la de
 // arriba, la recién abierta puede quedar fuera de la vista).
@@ -1621,6 +1753,21 @@ document.addEventListener("change",e=>{
   const t=e.target;
   if(t.id==="selectMe"){me=t.value||null;lsSet("ronda.me",me);ui.sel=me;render(true);return}
   if(t.dataset.gidx){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;const g=GROUPS[parseInt(t.dataset.gidx,10)];if(g)setGroupPrice(g.items,v);render(true);return}
+  if(t.dataset.barname){
+    const id=t.dataset.barname,v=t.value.trim().slice(0,40),bar=S.bares[id];if(!v||!bar)return;
+    if(barPorNombre(v)&&barPorNombre(v).id!==id){flash("Ya hay un bar con ese nombre");render(true);return}
+    bar.name=v;barWrite({["bares."+id+".name"]:v});
+    if(S.current.bar===id){S.current.name=v;if(mode==="firebase")dbUpdate("bar/current",{name:v},()=>clone(S.current));else saveLocal()}
+    render(true);return;
+  }
+  if(t.dataset.bprice){                 // Comanda: precio de un producto en este bar
+    const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;
+    const id=t.dataset.bprice,base=r2(v-(Number(t.dataset.extra)||0));if(base<0)return;
+    const eraAuto=snapshotAuto(S.current.bar);
+    if(S.current.bar&&S.bares[S.current.bar]){setBarPrice(S.current.bar,id,base);flash(`Guardado para ${S.bares[S.current.bar].name}`)}
+    else{editConfig(c=>{c.menus.forEach(m=>{const f=findNode(m.catalog,id);if(f)f.node.price=base})});reindex()}
+    recalcAuto(eraAuto,id);render(true);return;
+  }
   if(t.dataset.price){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;editConfig(c=>{c.menus.forEach(m=>{const f=findNode(m.catalog,t.dataset.price);if(f)f.node.price=r2(v)})});return}
   if(t.dataset.pname){const v=t.value.trim();if(!v)return;editConfig(c=>{c.people.forEach(p=>{if(p.id===t.dataset.pname)p.name=v.slice(0,24)})});return}
   if(t.dataset.mixname){
@@ -1668,6 +1815,7 @@ async function copiarSala(code,clave){
     const destino=db.collection("salas").doc(code);
     await destino.collection("bar").doc("config").set(clone(S.config));
     await destino.collection("bar").doc("current").set(clone(S.current));
+    await destino.collection("bar").doc("precios").set({bares:clone(S.bares)});
     for(const r of S.rounds){const d=Object.assign({},r);delete d.id;await destino.collection("rounds").doc(r.id).set(clone(d))}
     irASala(code);
   }catch(e){console.error(e);alert("La sala se creó, pero no se pudieron copiar todos los datos.")}
@@ -1694,6 +1842,11 @@ async function initFirebase(){
     else{mode="firebase";dbSet("bar/current",clone(S.current))}
     render();
   },goLocal);
+  // Los precios por bar van aparte de la config (que se reescribe entera) para no pisarse.
+  colRef("bar").doc("precios").onSnapshot(snap=>{
+    S.bares=normBares(snap.exists?(snap.data()||{}).bares:{});
+    render();
+  },e=>console.warn("bares:",e));
   colRef("rounds").onSnapshot(qs=>{
     S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,{orders:normOrders(d.orders)})});
     render();
