@@ -281,7 +281,7 @@ function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(
 function defaults(){return{
   config:{people:DEFAULT_PEOPLE.map((n,i)=>({id:"p"+(i+1),name:n,paused:false})),
           menus:[{id:"m1",name:DEFAULT_NAME,fromDefault:true,catalog:normCatalog(clone(DEFAULT_CATALOG))}],menu:"m1",assignerMode:"",pin:""},
-  current:{n:1,name:"",bar:"",night:"",orders:{},delivered:{}},rounds:[],bares:{}};}
+  current:{n:1,name:"",bar:"",night:"",orders:{},delivered:{},shared:{}},rounds:[],bares:{}};}
 // Bares (bar/precios → {bares:{id:{name,last,prices:{productoId:precio}}}}): cada bar guarda
 // solo los precios que difieren de la carta.
 function normBares(b){
@@ -317,7 +317,19 @@ function normList(v){
   return[];
 }
 function normOrders(o){const r={};if(o&&typeof o==="object")Object.keys(o).forEach(k=>{const l=normList(o[k]);if(l.length)r[k]=l});return r}
-function normCurrent(c){c=c||{};return{n:Number(c.n)||1,name:typeof c.name==="string"?c.name.slice(0,40):"",bar:typeof c.bar==="string"?c.bar:"",night:typeof c.night==="string"?c.night:"",orders:normOrders(c.orders),delivered:(c.delivered&&typeof c.delivered==="object")?c.delivered:{}}}
+const ticketOk=v=>(v!=null&&v!==""&&!isNaN(Number(v)))?r2(Number(v)):null;
+// Raciones para compartir (010): shared = { id: { drink|custom, clarification?, price?, qty, who:[pid], ts, by } }.
+function normShared(m){
+  const out={};if(!m||typeof m!=="object")return out;
+  Object.keys(m).forEach(id=>{const s=m[id];if(!s||(!s.drink&&!s.custom))return;
+    const x={qty:Math.max(1,parseInt(s.qty,10)||1),who:Array.isArray(s.who)?s.who.filter(w=>typeof w==="string"):[],ts:Number(s.ts)||0,by:s.by||""};
+    if(s.drink)x.drink=s.drink;else x.custom=String(s.custom).slice(0,40);
+    if(s.clarification)x.clarification=String(s.clarification).slice(0,60);
+    if(s.price!=null&&!isNaN(s.price))x.price=Number(s.price);
+    out[id]=x});
+  return out;
+}
+function normCurrent(c){c=c||{};return{n:Number(c.n)||1,name:typeof c.name==="string"?c.name.slice(0,40):"",bar:typeof c.bar==="string"?c.bar:"",ticket:ticketOk(c.ticket),shared:normShared(c.shared),night:typeof c.night==="string"?c.night:"",orders:normOrders(c.orders),delivered:(c.delivered&&typeof c.delivered==="object")?c.delivered:{}}}
 function normConfig(c){
   const d=defaults().config;c=c||{};
   const pin=(typeof c.pin==="string"&&c.pin.trim())?c.pin.trim().slice(0,8):"";
@@ -341,7 +353,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="008";
+const APP_VERSION="011";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -361,7 +373,7 @@ let netCache=false,netPending=false;
 let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",payFor:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[]};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -433,8 +445,10 @@ const colorOf=o=>{if(!o)return"transparent";if(isNada(o))return"#7A8781";if(o.cu
 const byName=by=>by?pname(by):"—";
 const isLocked=()=>!me||(S.config.assignerMode&&S.config.assignerMode!==me);
 const roundLabel=r=>"Ronda "+r.n+(r.name?" · "+r.name:"");
-function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>(o[k]||[]).forEach(x=>{if(x&&x.drink&&x.drink!=="nada")s.add(x.drink)}));add(S.current.orders);S.rounds.forEach(r=>add(r.orders));return s}
-function personUsed(pid){if(drinks(pid).length)return true;return S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid)}
+// Las raciones para compartir también cuentan: su producto está pedido y sus participantes han participado.
+function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>(o[k]||[]).forEach(x=>{if(x&&x.drink&&x.drink!=="nada")s.add(x.drink)}));const addS=m=>Object.keys(m||{}).forEach(k=>{if(m[k]&&m[k].drink)s.add(m[k].drink)});add(S.current.orders);addS(S.current.shared);S.rounds.forEach(r=>{add(r.orders);addS(r.shared)});return s}
+const comparte=(m,pid)=>Object.keys(m||{}).some(k=>m[k]&&(m[k].who||[]).includes(pid));
+function personUsed(pid){if(drinks(pid).length||comparte(S.current.shared,pid))return true;return S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid||comparte(r.shared,pid))}
 
 function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,mix:cloneMix(c.mix),items:(c.items||[]).map(cloneNode)}))}
 function countProducts(cat){let n=0;eachCatalog(cat,x=>{if(!x.group)n++});return n}
@@ -686,7 +700,7 @@ function setDeliveredBulk(pairs,val){
 }
 function toggleDelivered(pid,idx){const k=pid+"_"+idx;setDeliveredBulk([k],!S.current.delivered[k])}
 function keysOf(pid){return drinks(pid).map((o,i)=>isNada(o)?null:pid+"_"+i).filter(Boolean)}
-function allKeys(){return people().reduce((a,p)=>a.concat(keysOf(p.id)),[])}
+function allKeys(){return people().reduce((a,p)=>a.concat(keysOf(p.id)),[]).concat(compartidos().map(s=>"s_"+s.id))}
 
 function setConfig(cfg){S.config=cfg;if(mode==="firebase")dbSet("bar/config",clone(cfg));else saveLocal()}
 
@@ -756,8 +770,34 @@ function snapshotAuto(barId){const set=new Set();Object.keys(S.current.orders).f
 function editConfig(fn){const c=clone(S.config);fn(c);setConfig(c);render(true)}
 function editMenu(fn){editConfig(c=>{const m=c.menus.find(x=>x.id===c.menu)||c.menus[0];fn(m,c)})}
 function roundPrice(r,o){if(isNada(o))return 0;if(o.price!=null&&!isNaN(o.price))return Number(o.price)||0;if(r&&r.prices&&r.prices[o.drink]!=null)return Number(r.prices[o.drink])||0;return priceOf(o)}
-function roundTotal(){return r2(people().reduce((s,p)=>s+drinks(p.id).reduce((ss,o)=>ss+priceOf(o),0),0))}
-function anyOrders(){return Object.keys(S.current.orders).some(k=>drinks(k).length)}
+function roundTotal(){return r2(people().reduce((s,p)=>s+drinks(p.id).reduce((ss,o)=>ss+priceOf(o),0),0)+compartidos().reduce((s,x)=>s+totalCompartido(x),0))}
+function anyOrders(){return Object.keys(S.current.orders).some(k=>drinks(k).length)||compartidos().length>0}
+
+/* --- raciones para compartir --- */
+// Lista de raciones de la ronda en curso (o de una ronda cerrada r), de la más antigua a la más nueva.
+const compartidos=r=>{const m=(r||S.current).shared||{};return Object.keys(m).map(id=>Object.assign({id},m[id])).sort((a,b)=>a.ts-b.ts)};
+// Precio de una unidad: el propio si lo tiene; en una ronda cerrada, el de esa ronda; si no, el del bar o la carta.
+function precioCompartido(s,r){
+  if(s.price!=null&&!isNaN(s.price))return Number(s.price)||0;
+  if(!s.drink)return 0;
+  if(r){if(r.prices&&r.prices[s.drink]!=null)return Number(r.prices[s.drink])||0;return precioBase(s.drink,r.bar||"")}
+  return precioBase(s.drink);
+}
+const totalCompartido=(s,r)=>r2(precioCompartido(s,r)*(s.qty||1));
+// A partes iguales entre quienes comparten; los céntimos que sobran, uno a uno a los primeros
+// (en el orden de la cuadrilla), para que la suma dé exacta.
+function partesCompartido(s,r){
+  const orden=people().map(p=>p.id),who=(s.who||[]).slice().sort((a,b)=>orden.indexOf(a)-orden.indexOf(b));
+  const out={};if(!who.length)return out;
+  const cts=Math.round(totalCompartido(s,r)*100),base=Math.floor(cts/who.length);let resto=cts-base*who.length;
+  who.forEach(pid=>{out[pid]=(base+(resto>0?1:0))/100;if(resto>0)resto--});
+  return out;
+}
+function writeShared(id){
+  if(mode!=="firebase"){saveLocal();return}
+  const s=S.current.shared[id];
+  dbUpdate("bar/current",{["shared."+id]:s?clone(s):DEL()},()=>clone(S.current));
+}
 
 function logLine(what){return{ts:Date.now(),by:me||"",what}}
 function requirePin(){
@@ -771,10 +811,55 @@ function setRoundPayer(rid,payer){
   const r=S.rounds.find(x=>x.id===rid);if(!r)return;
   const before=r.payer?pname(r.payer):"sin pagar";
   r.payer=payer||"";
-  r.log=(r.log||[]).concat([logLine(`Pagador: ${before} → ${payer?pname(payer):"sin pagar"}`)]);
-  const doc=Object.assign({},r);delete doc.id;
-  if(mode==="firebase"){dbSet("rounds/"+rid,clone(doc));archiveNote(rid,`Pagador: ${before} → ${payer?pname(payer):"sin pagar"}`)}else saveLocal();
+  guardarRonda(r,`Pagador: ${before} → ${payer?pname(payer):"sin pagar"}`,true);   // el pagador no cambia el total
 }
+
+/* --- Corregir rondas cerradas (009): se editan en su sitio, sin reabrirlas. Cada cambio se
+   guarda al momento en rounds/ y en el archivo, con su línea en el registro. --- */
+const sumaRonda=r=>{let t=0;Object.keys(r.orders||{}).forEach(pid=>(r.orders[pid]||[]).forEach(o=>{t+=roundPrice(r,o)}));compartidos(r).forEach(s=>{t+=totalCompartido(s,r)});return r2(t)};
+// El total guardado no cuadra con la suma de sus líneas: rondas cerradas con el fallo de la 008.
+const rondaDescuadrada=r=>Math.abs(sumaRonda(r)-(Number(r.total)||0))>=0.005;
+function guardarRonda(r,what,sinRecalcular){
+  if(!sinRecalcular)r.total=sumaRonda(r);
+  if(what)r.log=(r.log||[]).concat([logLine(what)]);
+  if(mode!=="firebase"){saveLocal();return}
+  const doc=clone(Object.assign({},r));delete doc.id;
+  dbSet("rounds/"+r.id,doc);
+  if(S.current.night)dbUpdate("archive/"+archiveKey(S.current.night,r.id),{orders:doc.orders,shared:doc.shared||{},prices:doc.prices||{},total:doc.total,payer:doc.payer||"",ticket:doc.ticket!=null?doc.ticket:DEL(),log:doc.log||[],savedTs:Date.now()});
+}
+function gruposRonda(r){
+  const gs={},order=[];
+  Object.keys(r.orders||{}).forEach(pid=>(r.orders[pid]||[]).forEach((o,i)=>{
+    if(isNada(o))return;
+    const pr=roundPrice(r,o);
+    const k=(o.custom?"c:"+canon(o.custom):"d:"+o.drink)+"|"+canon(o.clarification||"")+"|"+r2(pr)+"|"+(o.price!=null?"p":"");
+    if(!gs[k]){gs[k]={o,count:0,items:[],price:pr};order.push(k)}
+    gs[k].count++;gs[k].items.push({pid,i});
+  }));
+  return order.map(k=>gs[k]).sort((a,b)=>b.count-a.count||label(a.o).localeCompare(label(b.o),"es")||canon(a.o.clarification||"").localeCompare(canon(b.o.clarification||"")));
+}
+// Cambia el precio de una línea de una ronda cerrada. Sin precio propio, cambia el del producto
+// en esa ronda; con precio propio, el de esas consumiciones. Si la ronda tenía bar, el bar lo
+// aprende (sin el suplemento si es una mezcla), salvo los precios puestos a mano.
+function corregirPrecio(r,g,v){
+  const o=g.o,ex=o.drink?extraOf(o.drink,o.clarification):0;
+  let aprende=null;
+  if(o.price==null&&o.drink&&!o.custom){r.prices=Object.assign({},r.prices,{[o.drink]:r2(v)});aprende=r2(v)}
+  else{g.items.forEach(x=>{const a=r.orders[x.pid];if(a&&a[x.i])a[x.i]=Object.assign({},a[x.i],{price:r2(v)})});if(o.drink&&!o.custom&&ex)aprende=r2(v-ex)}
+  guardarRonda(r,`Precio de ${gLabel(o)}: ${eur(g.price)} → ${eur(v)}`);
+  if(aprende!=null&&aprende>=0&&r.bar&&S.bares[r.bar]){
+    const eraAuto=S.current.bar===r.bar?snapshotAuto(r.bar):null;
+    setBarPrice(r.bar,o.drink,aprende);
+    if(eraAuto)recalcAuto(eraAuto,o.drink);
+  }
+}
+function cuadreTicket(total,ticket){
+  if(ticket==null)return"";
+  const d=r2(ticket-total);
+  if(Math.abs(d)<0.005)return`<p class="status" style="color:var(--good)">✓ Cuadra con el ticket</p>`;
+  return`<p class="status" style="color:var(--bad)">${d>0?`Faltan ${eur(d)}: el ticket es mayor que lo apuntado`:`Sobran ${eur(-d)}: el ticket es menor que lo apuntado`}</p>`;
+}
+const campoTicket=(attr,v)=>`<div class="set-row" style="margin-top:10px"><label for="tk-${attr}" style="flex:1">Total del ticket <span class="note">(opcional)</span></label><input id="tk-${attr}" class="price" type="number" step="0.05" inputmode="decimal" value="${v!=null?v:""}" placeholder="—" data-${attr}="1"> €</div>`;
 function ensureNight(){
   if(!S.current.night){
     S.current.night="n"+Date.now().toString(36);
@@ -796,26 +881,33 @@ function archiveNote(rid,what){
 function closeRound(payer){
   const night=ensureNight();
   const orders=clone(S.current.orders),prices={};let total=0;
-  Object.keys(orders).forEach(pid=>orders[pid].forEach(o=>{const pr=priceOf(o);if(o.drink&&!o.custom&&!isNada(o))prices[o.drink]=pr;total+=pr}));
+  // prices = precio de cada producto en esta ronda, para las consumiciones SIN precio propio.
+  // (Hasta la 008 también lo apuntaban las que tenían precio propio, y una caña invitada a 0 €
+  // ponía a 0 todas las cañas de la ronda en los saldos.)
+  Object.keys(orders).forEach(pid=>orders[pid].forEach(o=>{const pr=priceOf(o);if(o.drink&&!o.custom&&!isNada(o)&&o.price==null)prices[o.drink]=pr;total+=pr}));
+  const shared=normShared(clone(S.current.shared||{}));
+  compartidos().forEach(s=>{if(s.drink&&s.price==null&&prices[s.drink]==null)prices[s.drink]=precioCompartido(s);total+=totalCompartido(s)});
   const n=S.current.n,id="r"+String(n).padStart(4,"0");
   const round={n,name:S.current.name||"",bar:S.current.bar||"",orders,prices,payer:payer||"",total:r2(total),ts:Date.now(),log:[logLine(payer?"Cerrada, paga "+pname(payer):"Cerrada sin pagar")]};
+  if(S.current.ticket!=null)round.ticket=S.current.ticket;
+  if(Object.keys(shared).length)round.shared=shared;
   S.rounds=S.rounds.filter(r=>r.id!==id).concat([Object.assign({id},round)]);
-  if(S.current.bar)aprenderPrecios(S.current.bar,orders);
-  S.current={n:n+1,name:S.current.name||"",bar:S.current.bar||"",night,orders:{},delivered:{}};
+  if(S.current.bar)aprenderPrecios(S.current.bar,Object.assign({},orders,{"(mesa)":compartidos()}));
+  S.current={n:n+1,name:S.current.name||"",bar:S.current.bar||"",ticket:null,night,orders:{},delivered:{},shared:{}};
   if(mode==="firebase"){dbSet("rounds/"+id,round);archiveRound(night,id,round);dbSet("bar/current",clone(S.current))}else saveLocal();
 }
-function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.current.bar||"",night:S.current.night||"",orders:{},delivered:{}};if(mode==="firebase")dbSet("bar/current",clone(S.current));else saveLocal()}
+function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.current.bar||"",ticket:null,night:S.current.night||"",orders:{},delivered:{},shared:{}};if(mode==="firebase")dbSet("bar/current",clone(S.current));else saveLocal()}
 function undoLast(){
   if(!S.rounds.length)return;
   const last=sortedRounds().pop();
   S.rounds=S.rounds.filter(r=>r.id!==last.id);
   // Se conserva la noche: sin ella, la siguiente ronda cerrada se archivaba como de otra noche.
-  S.current={n:last.n,name:last.name||"",bar:last.bar||"",night:S.current.night||"",orders:clone(last.orders||{}),delivered:{}};
+  S.current={n:last.n,name:last.name||"",bar:last.bar||"",ticket:ticketOk(last.ticket),night:S.current.night||"",orders:clone(last.orders||{}),delivered:{},shared:normShared(last.shared)};
   if(mode==="firebase"){archiveNote(last.id,"Ronda reabierta para editarla");dbDelete("rounds/"+last.id);dbSet("bar/current",clone(S.current))}else saveLocal();
 }
 function newNight(){
   const ids=S.rounds.map(r=>r.id);S.rounds=[];
-  S.current={n:1,name:"",bar:"",night:"n"+Date.now().toString(36),orders:{},delivered:{}};
+  S.current={n:1,name:"",bar:"",ticket:null,night:"n"+Date.now().toString(36),orders:{},delivered:{},shared:{}};
   if(mode==="firebase"){ids.forEach(id=>dbDelete("rounds/"+id));dbSet("bar/current",clone(S.current))}else saveLocal();
 }
 
@@ -858,6 +950,7 @@ function balances(){
   people().forEach(p=>{b[p.id]=0;drank[p.id]=0;paid[p.id]=0;times[p.id]=0});
   S.rounds.forEach(r=>{
     Object.keys(r.orders||{}).forEach(pid=>{if(pid in drank)(r.orders[pid]||[]).forEach(o=>{drank[pid]+=roundPrice(r,o)})});
+    compartidos(r).forEach(s=>{const pt=partesCompartido(s,r);Object.keys(pt).forEach(pid=>{if(pid in drank)drank[pid]+=pt[pid]})});
     if(r.payer in paid){paid[r.payer]+=Number(r.total)||0;times[r.payer]++}
   });
   people().forEach(p=>{b[p.id]=r2(paid[p.id]-drank[p.id])});
@@ -927,7 +1020,7 @@ function vKeys(){
   const at=ui.path.length?nodeAt():null;
   let h="";
   if(!at){
-    const single=!ui.multi&&ui.flow!=="bebida"&&ui.sel;
+    const single=!ui.multi&&!ui.share&&ui.flow!=="bebida"&&ui.sel;
     if(single){
       const sc=shortcuts(ui.sel,4);
       if(sc.length)h+=`<section class="favs"><h3>⭐ Lo de siempre de ${esc(pname(ui.sel))}</h3><div class="keys">`+
@@ -938,8 +1031,12 @@ function vKeys(){
       const n=(c.items||[]).reduce((a,x)=>a+(x.group?x.items.length:1),0);
       return `<button class="key" style="--c:${c.color}" data-act="cat" data-id="${c.id}">${esc(c.name)}<small>${n} productos</small></button>`;
     }).join("");
-    h+=`<button class="key ghost" data-act="pickOther">🔧 Otra bebida<small>Fuera de la carta</small></button>`;
-    h+=`<button class="key ghost" data-act="pick" data-id="nada">🚫 No toma nada<small>Queda apuntado, paga 0 €</small></button></div>`;
+    h+=`<button class="key ghost" data-act="pickOther">🔧 ${ui.share?"Otra cosa":"Otra bebida"}<small>Fuera de la carta</small></button>`;
+    if(!ui.share){
+      h+=`<button class="key ghost" data-act="pick" data-id="nada">🚫 No toma nada<small>Queda apuntado, paga 0 €</small></button>`;
+      h+=`<button class="key ghost" data-act="shareStart">🍽️ Para compartir<small>Raciones a medias</small></button>`;
+    }
+    h+='</div>';
   }else{
     const ruta=esc(at.cat.name)+(at.group?" › "+esc(at.group.name):"");
     h+=`<p class="note" style="margin:0 2px 6px">${ruta}${at.group&&at.group.mix&&at.group.mix.def?` · por defecto ${esc(at.group.mix.def)}`:""}</p>`;
@@ -966,7 +1063,8 @@ function vPedir(){
   if(am)h+=`<p class="status">🔐 Modo asignador: ${am===me?"lo tienes tú":esc(pname(am))+" apunta por todos. Solo puedes mirar."}</p>`;
   if(!ui.sel||!findP(ui.sel)||(findP(ui.sel).paused&&ui.sel!==me))ui.sel=(ps[0]||people()[0]).id;
   ui.group=ui.group.filter(id=>findP(id)&&!findP(id).paused);
-  if(locked){ui.multi=false;ui.flow="personas";ui.pending=null;ui.lastAdd=null}
+  if(locked){ui.multi=false;ui.flow="personas";ui.pending=null;ui.lastAdd=null;ui.share=false;ui.sharePending=null;ui.shareEdit=null}
+  if(ui.share||ui.sharePending||ui.shareEdit){const paso=vCompartirPaso(ps,paused);if(paso)return h+paso}
 
   if(!locked)h+=`<div class="row2" style="margin-bottom:10px"><button class="mini${ui.flow==="personas"?" on":""}" data-act="flow" data-id="personas">1º persona</button><button class="mini${ui.flow==="bebida"?" on":""}" data-act="flow" data-id="bebida">1º bebida</button></div>`;
 
@@ -1010,17 +1108,45 @@ function vPedir(){
         h+=vMixChips(`${esc(IDX[ui.lastAdd.itemId]?IDX[ui.lastAdd.itemId].name:"")} · ¿con qué? (${ui.lastAdd.items.length} personas)`);
     }
   }
+  h+=vCompartidosCard(locked);
   if(locked)return h;
   h+=vKeys();
   if(S.rounds.length&&!ui.multi)h+=`<button class="btn" data-act="repeatLast">Repetir última ronda a quien falte</button>`;
   return h;
+}
+// Pasos de "para compartir": elegir la ración (ui.share), quién la comparte al apuntarla
+// (ui.sharePending) o al cambiarlo después (ui.shareEdit = id). Quién = ui.group, como en "varios a la vez".
+function vCompartirPaso(ps,paused){
+  if(ui.share)return`<div class="pad-head"><h2>🍽️ ¿Qué es para compartir?</h2><button class="mini on" data-act="shareCancel">✕</button></div><p class="note" style="margin:0 2px 10px">Elige la ración y después marcas quién la comparte.</p>`+vKeys();
+  const editando=!!(ui.shareEdit&&S.current.shared&&S.current.shared[ui.shareEdit]);
+  const s=editando?Object.assign({id:ui.shareEdit},S.current.shared[ui.shareEdit]):ui.sharePending;
+  if(!s){ui.shareEdit=null;ui.sharePending=null;return""}
+  const n=ui.group.length,tot=totalCompartido(s);
+  let h=`<div class="pad-head"><h2>🍽️ ${emoji(s)} ${esc(label(s))}${s.clarification?" · "+esc(s.clarification):""}</h2><button class="mini on" data-act="shareCancel">✕</button></div>`;
+  if(!editando)h+=`<div class="set-row" style="margin:0 2px 10px"><span style="flex:1">¿Cuántas?</span><button class="mini" data-act="shareQty" data-id="-1" aria-label="Una menos">−</button><b style="min-width:2.5ch;text-align:center;font-size:1.2rem">${s.qty}</b><button class="mini" data-act="shareQty" data-id="1" aria-label="Una más">+</button></div>`;
+  h+=`<p class="note" style="margin:0 2px 8px">¿Quién la comparte? Toca para quitar o añadir.</p>`+vGrid(ps,true);
+  if(paused.length)h+=`<p class="note" style="margin:-4px 2px 12px">⏸ En pausa: ${esc(paused.map(p=>p.name).join(", "))}</p>`;
+  h+=`<div class="chips" style="margin-bottom:10px"><button class="chip" data-act="groupAll">Todos</button><button class="chip" data-act="groupNone">Ninguno</button></div>`;
+  h+=`<p class="status">${n?`Entre ${n}: ${eur(tot)} en total, unos ${eur(tot/n)} cada uno`:"Marca al menos a una persona"}</p>`;
+  h+=`<button class="btn primary" data-act="${editando?"shareSaveWho":"shareAdd"}"${n?"":" disabled"}>${editando?"Guardar quién la comparte":`Apuntar para ${n} persona${n===1?"":"s"}`}</button>`;
+  return h;
+}
+function vCompartidosCard(locked){
+  const ss=compartidos();if(!ss.length)return"";
+  let h=`<h3 class="keys-title" style="margin-top:4px">🍽️ Para compartir en esta ronda</h3><div class="mine">`;
+  ss.forEach(s=>{
+    const who=s.who||[];
+    h+=`<div class="drow"><div><div>${s.qty>1?s.qty+"× ":""}${emoji(s)} ${esc(label(s))}${s.clarification?` <span class="sub">· ${esc(s.clarification)}</span>`:""} <span class="note">· ${eur(totalCompartido(s))}</span></div><div class="note">Entre ${who.length}: ${esc(who.map(pname).join(", "))}</div></div>${locked?"":`<div class="acts"><button class="linkish" data-act="shareQtyOf" data-id="${s.id}" data-n="-1" aria-label="Una menos">−</button><button class="linkish" data-act="shareQtyOf" data-id="${s.id}" data-n="1" aria-label="Una más">+</button><button class="linkish" data-act="shareWho" data-id="${s.id}" aria-label="Quién la comparte">👥</button><button class="linkish" data-act="sharePrice" data-id="${s.id}" aria-label="Precio">€</button><button class="linkish rm" data-act="shareDel" data-id="${s.id}" aria-label="Quitar">✕</button></div>`}</div>`;
+  });
+  return h+'</div>';
 }
 
 function vComanda(){
   const gs=comandaGroups();
   const nada=people().filter(p=>drinks(p.id).length&&drinks(p.id).every(isNada)).map(p=>p.name);
   const faltan=activePeople().filter(p=>!drinks(p.id).length).map(p=>p.name);
-  if(!gs.length&&!nada.length)return`<p class="hint">Nadie ha pedido todavía en la ${esc(roundLabel(S.current).toLowerCase())}.</p>`;
+  const ss=compartidos();
+  if(!gs.length&&!nada.length&&!ss.length)return`<p class="hint">Nadie ha pedido todavía en la ${esc(roundLabel(S.current).toLowerCase())}.</p>`;
   let h=S.current.bar&&S.bares[S.current.bar]
     ? ""
     : `<p class="status">🏠 Sin bar elegido: si cambias un precio aquí, cambia la carta para todos los bares. <button class="linkish" data-act="modal" data-id="round">Elegir el bar</button></p>`;
@@ -1035,7 +1161,16 @@ function vComanda(){
     const nota=own?"precio propio de esta ronda":auto?`incluye suplemento +${eur(extraOf(o.drink,o.clarification))}`:"";
     return `<div class="line"><span class="q">${g.count}</span><span><span class="n">${emoji(o)} ${esc(label(o))}</span>${o.clarification?`<br><span class="anot">· ${esc(o.clarification)}</span>`:""}${nota?`<br><span class="note">${nota}</span>`:""}</span><span>${cell}</span></div>`;
   }).join("");
-  h+=`<div class="total"><span>Total</span><span>${eur(roundTotal())}</span></div></div>`;
+  // Raciones para compartir: una línea cada una. El precio es el de una unidad.
+  h+=ss.map(s=>{
+    const own=s.custom||s.price!=null,n=(s.who||[]).length;
+    const cell=own
+      ? `<input class="price" type="number" step="0.05" inputmode="decimal" value="${r2(precioCompartido(s))}" data-sprice="${s.id}"> €`
+      : `<input class="price" type="number" step="0.05" inputmode="decimal" value="${r2(precioCompartido(s))}" data-bprice="${esc(s.drink)}"> €`;
+    return `<div class="line"><span class="q">${s.qty}</span><span><span class="n">${emoji(s)} ${esc(label(s))}</span>${s.clarification?`<br><span class="anot">· ${esc(s.clarification)}</span>`:""}<br><span class="note">🍽️ para compartir entre ${n}${n?` · ${eur(totalCompartido(s)/n)} cada uno`:""}${s.qty>1?" · precio por unidad":""}</span></span><span>${cell}</span></div>`;
+  }).join("");
+  h+=`<div class="total"><span>Total</span><span>${eur(roundTotal())}</span></div>`;
+  h+=campoTicket("ticket",S.current.ticket)+cuadreTicket(roundTotal(),S.current.ticket)+`</div>`;
   if(nada.length)h+=`<p class="status">🚫 No toman nada: ${esc(nada.join(", "))}</p>`;
   if(faltan.length)h+=`<p class="status">Sin pedir: ${esc(faltan.join(", "))}</p>`;
   h+=`<button class="btn" data-act="copy">📋 Copiar comanda</button>`;
@@ -1046,9 +1181,13 @@ function vComanda(){
 function vReparto(){
   const del=S.current.delivered;
   const rows=people().map(p=>({p,ds:drinks(p.id).map((o,i)=>({o,i})).filter(x=>!isNada(x.o))})).filter(x=>x.ds.length);
-  if(!rows.length)return`<p class="hint">No hay nada que repartir en la ronda ${S.current.n}.</p>`;
+  const ss=compartidos();
+  if(!rows.length&&!ss.length)return`<p class="hint">No hay nada que repartir en la ronda ${S.current.n}.</p>`;
   let total=0,done=0;
   rows.forEach(r=>r.ds.forEach(x=>{total++;if(del[r.p.id+"_"+x.i])done++}));
+  ss.forEach(s=>{total++;if(del["s_"+s.id])done++});
+  // Las raciones para compartir son una sola entrega, para la mesa.
+  const grupoMesa=ss.length?`<div class="group" style="margin-top:10px"><h3><span>🍽️ Para compartir</span></h3><div class="chips">${ss.map(s=>`<button class="chip drink${del["s_"+s.id]?" done":""}" style="--c:${colorOf(s)}" data-act="deliverShared" data-id="${s.id}">${s.qty>1?s.qty+"× ":""}${emoji(s)} ${esc(label(s))}${s.clarification?" · "+esc(s.clarification):""}</button>`).join("")}</div></div>`:"";
   let h=`<p class="status">${total-done} de ${total} por entregar.</p>`;
   h+=`<div class="row2"><button class="mini${ui.repView==="persona"?" on":""}" data-act="repView" data-id="persona">Por persona</button><button class="mini${ui.repView==="bebida"?" on":""}" data-act="repView" data-id="bebida">Por bebida</button></div>`;
   h+=`<div class="row2"><button class="btn small" data-act="deliverAll">✓ Marcar todo</button><button class="btn small" data-act="deliverNone">↺ Desmarcar todo</button></div>`;
@@ -1073,6 +1212,7 @@ function vReparto(){
       h+='</div></div>';
     });
   }
+  h+=grupoMesa;
   if(total&&done===total)h+=`<button class="btn primary" data-act="tab" data-id="cuentas">Todo entregado → Cerrar ronda</button>`;
   return h;
 }
@@ -1099,8 +1239,10 @@ function vCuentas(){
     const last=sortedRounds()[S.rounds.length-1];
     h+=`<section class="card"><h2>Historial</h2>`;
     sortedRounds().slice().reverse().forEach(r=>{
-      h+=`<div class="drow"><div><div>${esc(roundLabel(r))} · ${hhmm(r.ts)} · <b>${eur(r.total)}</b></div><div class="note">${r.payer?"pagó "+esc(pname(r.payer)):"⚠️ sin pagar"}</div></div><div class="acts"><button class="linkish" data-act="payFor" data-id="${r.id}">✏️ pagador</button>${r.id===last.id?`<button class="linkish" data-act="undo">↶ reabrir</button>`:""}</div></div>`;
-      if(ui.payFor===r.id)h+=`<div class="chips" style="margin:6px 0 10px"><button class="chip${r.payer?"":" on"}" data-act="setPayer" data-id="${r.id}" data-pid="">Nadie</button>${people().map(p=>`<button class="chip${r.payer===p.id?" on":""}" data-act="setPayer" data-id="${r.id}" data-pid="${p.id}">${esc(p.name)}</button>`).join("")}</div>`;
+      const tk=ticketOk(r.ticket),avisos=[];
+      if(tk!=null)avisos.push(Math.abs(tk-r.total)<0.005?"✓ cuadra con el ticket":`⚠️ no cuadra con el ticket (${eur(tk)})`);
+      if(rondaDescuadrada(r))avisos.push("⚠️ revisar precios");
+      h+=`<div class="drow"><div><div>${esc(roundLabel(r))} · ${hhmm(r.ts)} · <b>${eur(r.total)}</b></div><div class="note">${r.payer?"pagó "+esc(pname(r.payer)):"⚠️ sin pagar"}${avisos.length?" · "+avisos.join(" · "):""}</div></div><div class="acts"><button class="linkish" data-act="editRound" data-id="${r.id}">✏️ corregir</button>${r.id===last.id?`<button class="linkish" data-act="undo">↶ reabrir</button>`:""}</div></div>`;
       if((r.log||[]).length)h+=`<div class="note" style="margin:-2px 0 8px">${r.log.slice(-4).map(l=>`${hhmm(l.ts)} · ${esc(byName(l.by))}: ${esc(l.what)}`).join("<br>")}</div>`;
     });
     h+=`</section>`;
@@ -1199,6 +1341,46 @@ function vImport(){
   h+=`<section class="card" style="margin-top:14px"><h2>📷 Desde una foto de la carta</h2><p class="note">La app no lee fotos por sí sola. Lo práctico: haz la foto, mándasela a Claude (u otro asistente) pidiéndole que la transcriba a tabla, y pega aquí el resultado. El botón copia la petición ya redactada.</p><button class="btn small" data-act="copyPrompt">📋 Copiar la petición para el asistente</button></section>`;
   return h;
 }
+function vRonda(){
+  const r=S.rounds.find(x=>x.id===ui.editRound);
+  if(!r)return`<p class="hint">Esa ronda ya no está.</p><button class="btn" data-act="tab" data-id="cuentas">← Volver a Cuentas</button>`;
+  const gs=gruposRonda(r),bar=r.bar&&S.bares[r.bar];
+  let h=`<div class="pad-head"><h2>Corregir ${esc(roundLabel(r))}</h2><button class="mini" data-act="tab" data-id="cuentas">← Volver</button></div>`;
+  h+=`<p class="note">Cada cambio se guarda al momento, queda en el registro y recalcula los saldos. La ronda en curso no se toca.${bar?` Los precios que corrijas se guardan también para ${esc(bar.name)}.`:""}</p>`;
+  // Quién compartió una ración (ui.rsWho = id, ui.rsGroup = marcados). Salen todas las personas,
+  // también las que ahora están en pausa: pudieron compartirla antes de irse.
+  const sw=ui.rsWho&&r.shared&&r.shared[ui.rsWho];
+  if(ui.rsWho&&!sw){ui.rsWho=null;ui.rsGroup=[]}
+  if(sw){
+    const n=ui.rsGroup.length,tot=totalCompartido(sw,r);
+    h+=`<section class="card" style="border-color:var(--ink)"><h2>🍽️ ¿Quién compartió ${esc(label(sw))}?</h2><div class="chips">${people().map(p=>{const on=ui.rsGroup.includes(p.id);return `<button class="chip${on?" on":""}" data-act="rsToggle" data-pid="${p.id}">${on?"☑":"☐"} ${p.paused?"⏸ ":""}${esc(p.name)}</button>`}).join("")}</div>`;
+    h+=`<div class="chips" style="margin-top:8px"><button class="chip" data-act="rsAll">Todos</button><button class="chip" data-act="rsNone">Ninguno</button></div>`;
+    h+=`<p class="status">${n?`Entre ${n}: ${eur(tot)} en total, unos ${eur(tot/n)} cada uno`:"Marca al menos a una persona"}</p>`;
+    h+=`<div class="row2"><button class="btn small primary" data-act="rsSaveWho"${n?"":" disabled"}>Guardar</button><button class="btn small" data-act="rsWhoCancel">Cancelar</button></div></section>`;
+  }
+  if(rondaDescuadrada(r))h+=`<p class="status" style="color:var(--bad)">⚠️ El total guardado (${eur(r.total)}) no coincide con la suma de las líneas (${eur(sumaRonda(r))}). Pasa en rondas cerradas antes de la 009 que tenían algún precio puesto a mano. Revisa los precios con el ticket: al corregir uno, el total se recalcula.</p>`;
+  h+=`<div class="ticket"><h2>Precios</h2>`;
+  h+=gs.length?gs.map((g,gi)=>{
+    const o=g.o,mix=o.drink&&!o.custom&&o.price!=null&&extraOf(o.drink,o.clarification);
+    const nota=o.custom?"fuera de carta":o.price!=null?(mix?`incluye suplemento +${eur(extraOf(o.drink,o.clarification))}`:"precio propio"):"";
+    return `<div class="line"><span class="q">${g.count}</span><span><span class="n">${emoji(o)} ${esc(label(o))}</span>${o.clarification?`<br><span class="anot">· ${esc(o.clarification)}</span>`:""}${nota?`<br><span class="note">${nota}</span>`:""}</span><span><input class="price" type="number" step="0.05" inputmode="decimal" value="${r2(g.price)}" data-rprice="${gi}"> €</span></div>`;
+  }).join(""):(compartidos(r).length?"":`<p class="hint">Esta ronda se ha quedado vacía.</p>`);
+  h+=compartidos(r).map(s=>{
+    const n=(s.who||[]).length;
+    return `<div class="line"><span class="q">${s.qty}</span><span><span class="n">${emoji(s)} ${esc(label(s))}</span>${s.clarification?`<br><span class="anot">· ${esc(s.clarification)}</span>`:""}<br><span class="note">🍽️ entre ${n}: ${esc((s.who||[]).map(pname).join(", "))}</span> <button class="linkish" data-act="rsWho" data-id="${s.id}" aria-label="Quién la compartió">👥</button><button class="linkish rm" data-act="rsDel" data-id="${s.id}" aria-label="Quitar">✕</button></span><span><input class="price" type="number" step="0.05" inputmode="decimal" value="${r2(precioCompartido(s,r))}" data-rsprice="${s.id}"> €</span></div>`;
+  }).join("");
+  h+=`<div class="total"><span>Total</span><span>${eur(sumaRonda(r))}</span></div>`;
+  h+=campoTicket("rticket",r.ticket)+cuadreTicket(sumaRonda(r),ticketOk(r.ticket))+`</div>`;
+  h+=`<section class="card" style="margin-top:12px"><h2>Quién pagó</h2><div class="chips"><button class="chip${r.payer?"":" on"}" data-act="rPayer" data-pid="">Nadie</button>${people().map(p=>`<button class="chip${r.payer===p.id?" on":""}" data-act="rPayer" data-pid="${p.id}">${esc(p.name)}</button>`).join("")}</div></section>`;
+  h+=`<section class="card"><h2>Por persona</h2><p class="note">Para quitar algo que no se tomó o añadir algo que se os olvidó apuntar.</p>`;
+  people().filter(p=>(r.orders[p.id]||[]).length||!p.paused).forEach(p=>{
+    const ds=r.orders[p.id]||[];
+    h+=`<div class="drow"><div><div><b>${esc(p.name)}</b></div>${ds.length?ds.map((o,i)=>`<div class="note" style="display:flex;align-items:center;gap:6px">${emoji(o)} ${esc(gLabel(o))} · ${eur(roundPrice(r,o))}<button class="linkish rm" data-act="rDel" data-pid="${p.id}" data-idx="${i}" aria-label="Quitar">✕</button></div>`).join(""):'<div class="note">Nada</div>'}</div><div class="acts"><button class="linkish" data-act="rAdd" data-pid="${p.id}">+ añadir</button></div></div>`;
+  });
+  h+='</section>';
+  if((r.log||[]).length)h+=`<section class="card"><h2>Registro</h2><div class="note">${r.log.slice().reverse().map(l=>`${hhmm(l.ts)} · ${esc(byName(l.by))}: ${esc(l.what)}`).join("<br>")}</div></section>`;
+  return h;
+}
 /* Editor de la carta activa: pantalla propia, categorías y subgrupos plegables (solo uno
    abierto a la vez) y buscador. ui.cartaCat / ui.cartaGrp = lo abierto; ui.cartaQ = búsqueda. */
 function vCarta(){
@@ -1282,7 +1464,7 @@ function vMezclas(){
   h+=`<p class="note">Por defecto ahora: <b>${m&&m.def?esc(m.def):"ninguna"}</b></p>`;
   return h;
 }
-const VIEWS={sala:vSala,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
+const VIEWS={sala:vSala,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 // Bares que coinciden con lo escrito (sin acentos); vacío = los 6 más recientes.
 function barCoincidencias(){
@@ -1338,18 +1520,18 @@ document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0)
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
-    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;if(id!=="carta"&&id!=="mezclas")ui.cartaQ="";window.scrollTo(0,0);break;
+    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;if(ui.share||ui.sharePending||ui.shareEdit){ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.group=[]}ui.rsWho=null;ui.rsGroup=[];if(id!=="carta"&&id!=="mezclas")ui.cartaQ="";window.scrollTo(0,0);break;
     case"cartaCat":ui.cartaCat=ui.cartaCat===id?null:id;ui.cartaGrp=null;alTope(id);break;
     case"cartaGrp":ui.cartaGrp=ui.cartaGrp===id?null:id;alTope(id);break;
-    case"sel":if(ui.multi||ui.pending){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.path=[];ui.lastAdd=null;ui.editMix=null}break;
+    case"sel":if(ui.multi||ui.pending||ui.sharePending||ui.shareEdit){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.path=[];ui.lastAdd=null;ui.editMix=null}break;
     case"cat":ui.path=ui.path.length?[ui.path[0],id]:[id];ui.lastAdd=null;ui.editMix=null;break;
     case"back":ui.path=ui.path.slice(0,-1);ui.lastAdd=null;break;
 
     case"pick":case"pickOther":{
       if(isLocked())return;
-      const first=ui.flow==="bebida"&&!ui.pending;
-      const pids=first?[]:(ui.multi?ui.group.slice():[ui.sel]);
-      if(!first&&!pids.length){flash("Elige al menos una persona");return}
+      const share=!!ui.share,first=!share&&ui.flow==="bebida"&&!ui.pending;
+      const pids=(share||first)?[]:(ui.multi?ui.group.slice():[ui.sel]);
+      if(!share&&!first&&!pids.length){flash("Elige al menos una persona");return}
       const who=pids.length>1?pids.length+" personas":(pids.length?pname(pids[0]):"");
       let d;
       if(b.dataset.act==="pickOther"){
@@ -1364,6 +1546,8 @@ document.addEventListener("click",e=>{
         const ex=extraOf(id,mix);if(ex)d.price=priceWith(id,mix);
         if(askNote&&!mix){const c=prompt(`${who}: ${IDX[id]?IDX[id].name:""}\nAclaración (opcional):`,"");if(c&&c.trim())d.clarification=c.trim().slice(0,60)}
       }
+      // Para compartir: por defecto la comparten todos los activos; se desmarca a quien no.
+      if(share){ui.sharePending=Object.assign(tidy(d),{qty:1});ui.share=false;ui.group=activePeople().map(p=>p.id);ui.path=[];break}
       if(first){ui.pending=tidy(d);ui.path=[];ui.group=[];break}
       addDrinks(pids,d);
       ui.editMix=null;
@@ -1399,6 +1583,41 @@ document.addEventListener("click",e=>{
       addDrinks(ui.group.slice(),d);
       ui.pending=null;ui.group=[];ui.path=[];
       flash(`${label(d)} → ${n} persona${n===1?"":"s"}`);break;
+    }
+    /* --- raciones para compartir --- */
+    case"shareStart":if(isLocked())return;ui.share=true;ui.sharePending=null;ui.shareEdit=null;ui.multi=false;ui.pending=null;ui.path=[];ui.lastAdd=null;ui.editMix=null;window.scrollTo(0,0);break;
+    case"shareCancel":ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.group=[];ui.path=[];break;
+    case"shareQty":if(ui.sharePending)ui.sharePending.qty=Math.max(1,(ui.sharePending.qty||1)+parseInt(id,10));break;
+    case"shareAdd":{
+      if(isLocked()||!ui.sharePending||!ui.group.length)return;
+      const sid=uid("s"),s=Object.assign({},ui.sharePending,{who:ui.group.slice(),ts:Date.now(),by:me||""});
+      S.current.shared=S.current.shared||{};S.current.shared[sid]=s;writeShared(sid);
+      flash(`${s.qty>1?s.qty+" ":""}${label(s)} para compartir entre ${s.who.length}`);
+      ui.sharePending=null;ui.group=[];ui.path=[];break;
+    }
+    case"shareWho":{const s=(S.current.shared||{})[id];if(!s||isLocked())return;ui.shareEdit=id;ui.group=(s.who||[]).filter(p=>findP(p)&&!findP(p).paused);window.scrollTo(0,0);break}
+    case"shareSaveWho":{
+      const s=(S.current.shared||{})[ui.shareEdit];if(!s||isLocked())return;
+      if(!ui.group.length){flash("Marca al menos a una persona");return}
+      // Se conservan los que están en pausa (no salen en la rejilla para tocarlos).
+      const pausados=(s.who||[]).filter(p=>findP(p)&&findP(p).paused);
+      s.who=pausados.concat(ui.group.filter(p=>!pausados.includes(p)));writeShared(ui.shareEdit);
+      flash(`Entre ${s.who.length}`);ui.shareEdit=null;ui.group=[];break;
+    }
+    case"shareQtyOf":{const s=(S.current.shared||{})[id];if(!s||isLocked())return;const q=Math.max(1,(s.qty||1)+parseInt(b.dataset.n,10));if(q===s.qty)return;s.qty=q;writeShared(id);break}
+    case"sharePrice":{
+      const s=(S.current.shared||{})[id];if(!s||isLocked())return;
+      const v=prompt(`Precio de cada ${label(s)}${s.drink?" (vacío = el del bar o la carta)":""}:`,String(r2(precioCompartido(s))));if(v===null)return;
+      const t=String(v).trim().replace(",",".");
+      if(t===""){if(s.custom)return;delete s.price}else{const n=parseFloat(t);if(isNaN(n)||n<0)return;s.price=r2(n)}
+      writeShared(id);break;
+    }
+    case"shareDel":{
+      const s=(S.current.shared||{})[id];if(!s||isLocked())return;
+      if(!confirm(`¿Quitar ${label(s)} para compartir?`))return;
+      delete S.current.shared[id];writeShared(id);
+      if(S.current.delivered["s_"+id])setDeliveredBulk(["s_"+id],false);
+      flash("Quitada");break;
     }
     case"multiOn":ui.multi=true;ui.group=ui.sel?[ui.sel]:[];ui.path=[];ui.lastAdd=null;break;
     case"multiOff":ui.multi=false;ui.group=[];break;
@@ -1487,6 +1706,7 @@ document.addEventListener("click",e=>{
       setDeliveredBulk(ks,ks.some(k=>!S.current.delivered[k]));break;
     }
     case"deliverPerson":{const ks=keysOf(b.dataset.pid);setDeliveredBulk(ks,ks.some(k=>!S.current.delivered[k]));break}
+    case"deliverShared":setDeliveredBulk(["s_"+id],!S.current.delivered["s_"+id]);break;
     case"deliverAll":setDeliveredBulk(allKeys(),true);break;
     case"deliverNone":setDeliveredBulk(allKeys(),false);break;
 
@@ -1497,16 +1717,61 @@ document.addEventListener("click",e=>{
       if(!confirm("¿Cerrar la ronda sin pagador? Quedará marcada como 'sin pagar' y podrás asignarlo después en el historial."))return;
       const n=S.current.n;closeRound("");ui.payer=null;ui.tab="pedir";flash(`Ronda ${n} cerrada sin pagar`);break;
     }
-    case"payFor":ui.payFor=ui.payFor===id?null:id;break;
-    case"setPayer":{
-      if(!requirePin())return;
-      setRoundPayer(id,b.dataset.pid||"");ui.payFor=null;flash("Pagador actualizado");break;
+    // Corregir una ronda cerrada: el PIN se pide una vez, al entrar.
+    case"editRound":if(!S.rounds.some(r=>r.id===id))return;if(!requirePin())return;ui.editRound=id;ui.rsWho=null;ui.rsGroup=[];ui.tab="ronda";window.scrollTo(0,0);break;
+    case"rPayer":{const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;if((r.payer||"")===(b.dataset.pid||""))return;setRoundPayer(r.id,b.dataset.pid||"");flash("Pagador actualizado");break}
+    case"rDel":{
+      const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;
+      const pid=b.dataset.pid,i=parseInt(b.dataset.idx,10),a=(r.orders[pid]||[]).slice(),o=a[i];if(!o)return;
+      if(!confirm(`¿Quitar ${gLabel(o)} de ${pname(pid)} en la ${roundLabel(r)}?`))return;
+      a.splice(i,1);r.orders=Object.assign({},r.orders);if(a.length)r.orders[pid]=a;else delete r.orders[pid];
+      guardarRonda(r,`Quitado: ${gLabel(o)} de ${pname(pid)}`);flash("Quitado");break;
+    }
+    case"rsWho":{const r=S.rounds.find(x=>x.id===ui.editRound);const s=r&&r.shared&&r.shared[id];if(!s)return;ui.rsWho=id;ui.rsGroup=(s.who||[]).slice();window.scrollTo(0,0);break}
+    case"rsToggle":{const p=b.dataset.pid,k=ui.rsGroup.indexOf(p);k<0?ui.rsGroup.push(p):ui.rsGroup.splice(k,1);break}
+    case"rsAll":ui.rsGroup=people().map(p=>p.id);break;
+    case"rsNone":ui.rsGroup=[];break;
+    case"rsWhoCancel":ui.rsWho=null;ui.rsGroup=[];break;
+    case"rsSaveWho":{
+      const r=S.rounds.find(x=>x.id===ui.editRound);const s=r&&r.shared&&r.shared[ui.rsWho];if(!s)return;
+      if(!ui.rsGroup.length){flash("Marca al menos a una persona");return}
+      const orden=people().map(p=>p.id),nuevo=ui.rsGroup.slice().sort((a,b)=>orden.indexOf(a)-orden.indexOf(b));
+      const antes=(s.who||[]).slice(),entran=nuevo.filter(p=>!antes.includes(p)),salen=antes.filter(p=>!nuevo.includes(p));
+      if(!entran.length&&!salen.length){ui.rsWho=null;ui.rsGroup=[];break}
+      r.shared=Object.assign({},r.shared,{[ui.rsWho]:Object.assign({},s,{who:nuevo})});
+      const cambios=[entran.length?"entra "+entran.map(pname).join(", "):"",salen.length?"sale "+salen.map(pname).join(", "):""].filter(Boolean).join("; ");
+      // El total no cambia: solo cómo se reparte.
+      guardarRonda(r,`Comparten ${label(s)}: ${cambios} (entre ${nuevo.length})`,true);
+      flash(`Entre ${nuevo.length}`);ui.rsWho=null;ui.rsGroup=[];break;
+    }
+    case"rsDel":{
+      const r=S.rounds.find(x=>x.id===ui.editRound);if(!r||!r.shared||!r.shared[id])return;
+      const s=r.shared[id];if(!confirm(`¿Quitar ${label(s)} (para compartir) de la ${roundLabel(r)}?`))return;
+      r.shared=Object.assign({},r.shared);delete r.shared[id];
+      guardarRonda(r,`Quitado: ${label(s)} (para compartir)`);flash("Quitada");break;
+    }
+    case"rAdd":{
+      const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;
+      const pid=b.dataset.pid,txt=(prompt(`¿Qué añadir a ${pname(pid)} en la ${roundLabel(r)}?`)||"").trim();if(!txt)return;
+      const hit=findItemByName(txt);let o;
+      if(hit){
+        o={drink:hit.id,ts:r.ts,by:me||""};const def=defMix(hit.id);if(def)o.clarification=def;
+        // El precio sale del bar de esa ronda (o de la carta), no del de la ronda en curso.
+        if(!r.prices||r.prices[hit.id]==null)r.prices=Object.assign({},r.prices,{[hit.id]:precioBase(hit.id,r.bar||"")});
+        if(def&&extraOf(hit.id,def))o.price=r2(Number(r.prices[hit.id])+extraOf(hit.id,def));
+      }else{
+        const pr=parseFloat(String(prompt(`«${txt}» no está en la carta. ¿Precio en €?`,"2")||"").replace(",","."));if(isNaN(pr))return;
+        o={custom:txt.slice(0,40),price:r2(pr),ts:r.ts,by:me||""};
+      }
+      r.orders=Object.assign({},r.orders,{[pid]:(r.orders[pid]||[]).concat([o])});
+      guardarRonda(r,`Añadido: ${gLabel(o)} a ${pname(pid)}`);flash("Añadido: "+gLabel(o));break;
     }
     case"clearRound":if(!ui.confirmClear){ui.confirmClear=true;setTimeout(()=>{ui.confirmClear=false;render()},3000)}else{ui.confirmClear=false;if(!requirePin())return;clearRound();flash("Ronda vaciada")}break;
     case"undo":if(confirm("¿Reabrir la última ronda cerrada? Se deshace su pago y vuelve a estar editable.")){if(!requirePin())return;undoLast();ui.tab="pedir";flash("Ronda reabierta")}break;
     case"newNight":if(!ui.confirmReset){ui.confirmReset=true;setTimeout(()=>{ui.confirmReset=false;render()},3000)}else{ui.confirmReset=false;if(!requirePin())return;newNight();flash("Noche nueva")}break;
     case"copy":{
-      const txt=roundLabel(S.current)+"\n"+comandaGroups().map(g=>`${g.count} ${label(g.o)}${g.o.clarification?" ("+g.o.clarification+")":""}`).join("\n");
+      const txt=roundLabel(S.current)+"\n"+comandaGroups().map(g=>`${g.count} ${label(g.o)}${g.o.clarification?" ("+g.o.clarification+")":""}`)
+        .concat(compartidos().map(s=>`${s.qty} ${label(s)}${s.clarification?" ("+s.clarification+")":""} (para compartir)`)).join("\n");
       (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>flash("Comanda copiada")).catch(()=>prompt("Copia la comanda:",txt));return;
     }
     case"toggleAsk":askNote=!askNote;lsSet("ronda.ask",askNote?"1":null);break;
@@ -1777,6 +2042,36 @@ document.addEventListener("change",e=>{
   const t=e.target;
   if(t.id==="selectMe"){me=t.value||null;lsSet("ronda.me",me);ui.sel=me;render(true);return}
   if(t.dataset.gidx){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;const g=GROUPS[parseInt(t.dataset.gidx,10)];if(g)setGroupPrice(g.items,v);render(true);return}
+  if(t.dataset.sprice){                 // Comanda: precio propio de una ración para compartir
+    const s=(S.current.shared||{})[t.dataset.sprice];if(!s)return;
+    const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;
+    s.price=r2(v);writeShared(t.dataset.sprice);render(true);return;
+  }
+  if(t.dataset.ticket){                 // Comanda: total del ticket de la ronda en curso (opcional)
+    S.current.ticket=ticketOk(String(t.value).replace(",","."));
+    if(mode==="firebase")dbUpdate("bar/current",{ticket:S.current.ticket!=null?S.current.ticket:DEL()},()=>clone(S.current));else saveLocal();
+    render(true);return;
+  }
+  if(t.dataset.rticket||t.dataset.rprice||t.dataset.rsprice){   // Corregir ronda cerrada
+    const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;
+    if(t.dataset.rsprice){
+      const s=(r.shared||{})[t.dataset.rsprice];if(!s)return;
+      const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;
+      const antes=precioCompartido(s,r);if(Math.abs(antes-v)<0.005)return;
+      r.shared=Object.assign({},r.shared,{[t.dataset.rsprice]:Object.assign({},s,{price:r2(v)})});
+      guardarRonda(r,`Precio de ${label(s)} (para compartir): ${eur(antes)} → ${eur(v)}`);
+      if(s.drink&&!extraOf(s.drink,s.clarification)&&r.bar&&S.bares[r.bar])setBarPrice(r.bar,s.drink,r2(v));
+      render(true);return;
+    }
+    if(t.dataset.rticket){
+      const v=ticketOk(String(t.value).replace(",","."));if(v===ticketOk(r.ticket))return;
+      if(v==null)delete r.ticket;else r.ticket=v;
+      guardarRonda(r,v==null?"Ticket: quitado":`Ticket: ${eur(v)}`,true);render(true);return;
+    }
+    const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;
+    const g=gruposRonda(r)[parseInt(t.dataset.rprice,10)];if(!g||Math.abs(g.price-v)<0.005)return;
+    corregirPrecio(r,g,v);render(true);return;
+  }
   if(t.dataset.barname){
     const id=t.dataset.barname,v=t.value.trim().slice(0,40),bar=S.bares[id];if(!v||!bar)return;
     if(barPorNombre(v)&&barPorNombre(v).id!==id){flash("Ya hay un bar con ese nombre");render(true);return}
