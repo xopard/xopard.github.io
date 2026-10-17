@@ -175,6 +175,7 @@ ul.importacion li.mal { color: var(--rojo); }
 .tabla .boton.peque { white-space: nowrap; }
 .tabla td.det { min-width: 13em; }                /* en el móvil la tabla se desplaza de lado en vez de partir el detalle palabra a palabra */
 .tabla td.fecha { white-space: nowrap; }
+.tabla td.desde { white-space: nowrap; }
 
 /* diálogos de edición */
 dialog { max-height: calc(100vh - 32px); overflow: auto; }
@@ -185,6 +186,9 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 .dlg legend { font-size: 0.85em; color: var(--suave); padding: 0 4px; }
 .dlg label.interruptor { margin-top: 12px; }
 .dlg fieldset label.interruptor { margin-right: 14px; }
+.propuesta { display: grid; gap: 8px; margin-top: 10px; }
+.prop-fila { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding-bottom: 8px; border-bottom: 1px solid var(--raya); }
+.prop-fila > .punto { margin-top: 5px; }
 
 /* hoja para el taller (en pantalla; al imprimir, ver @media print al final) */
 .hoja { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); padding: 20px 22px; max-width: 840px; margin: 0 auto; }
@@ -214,6 +218,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 .casilla { display: inline-block; width: 1.1em; height: 1.1em; border: 2px solid var(--tinta); border-radius: 2px; }
 .h-tarea { font-weight: 600; }
 .h-nota { color: var(--suave); font-size: 0.9em; margin-top: 0.15em; }
+.h-nota.h-libre { font-style: italic; }
 .h-lista { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--tinta); }
 .h-lista li { display: grid; grid-template-columns: 2.2em minmax(0, 1fr); padding: 0.5em 0 0.5em 0.5em; border-bottom: 1px solid var(--raya); }
 .h-hecho { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45em 1.4em; background: var(--tinte); padding: 0.7em 0.85em; }
@@ -253,13 +258,15 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 @media print {
   :root { --fondo: #fff; --papel: #fff; --tinta: #000; --suave: #444b55; --raya: #a3adb8; --tinte: #eef2f6; --acento: #1d5a8c;
     --rojo: #a3271f; --ambar: #8a5a00; --ambar-tinte: #f7efdc; color-scheme: light; }
-  body { background: #fff; font-size: 9.5pt; line-height: 1.32; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff; font-size: 9pt; line-height: 1.28; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .hoja h1 { font-size: 1.6em; }
+  .h-nota { margin-top: 0.05em; }
   .barra, #toast, .no-imprimir, .aviso { display: none !important; }
   main { padding: 0; max-width: none; }
   .hoja { border: 0; border-radius: 0; padding: 0; max-width: none; }
-  .hoja > * + * { margin-top: 0.8em; }
-  .hoja h2 { margin-bottom: 0.3em; }
-  .hoja td { padding: 0.35em 0.5em; }
+  .hoja > * + * { margin-top: 0.7em; }
+  .hoja h2 { margin-bottom: 0.25em; }
+  .hoja td { padding: 0.3em 0.5em; }
   .hoja table { min-width: 0; }
   .h-lista li { padding-block: 0.3em; }
   /* el A4 mide menos de 760 px: hay que deshacer aquí las reglas del móvil */
@@ -287,7 +294,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '009';
+const APP_VERSION = '012';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -426,6 +433,26 @@ function lineasDe(v, idEl) {
   return r.sort((a, b) => porFecha(a.visita, b.visita));
 }
 function ultimoCambio(v, idEl) { const r = lineasDe(v, idEl).filter(x => REINICIAN.includes(x.linea.accion)); return r[r.length - 1] || null; }
+// Al apuntar o importar lo que se hizo en la visita, la decisión de «Próxima visita» vuelve a «—», porque ya está atendido:
+// - «Sí» (011): con un «Cambiado» o «Hecho»;
+// - «Revisar» (012): con un «Revisado», «Reparado», «Cambiado» o «Hecho».
+// Solo si esa línea es la última de ese tipo del elemento y la visita es reciente (90 días), para que meter una factura antigua
+// no cambie lo que hay marcado. «No hecho» y «Dudoso» no cuentan. La nota se queda. Devuelve los nombres de los elementos liberados.
+const ATIENDEN = { SI: REINICIAN, Revisar: ['revisado', 'reparado', ...REINICIAN] };
+function liberarDecisiones(v, x) {
+  if (x.fecha < sumaDias(hoy(), -90)) return [];
+  const libres = [];
+  for (const l of x.lineas) {
+    const el = l.elemento ? elemento(v, l.elemento) : null, acciones = ATIENDEN[el?.proxima?.decision];
+    if (!acciones?.includes(l.accion)) continue;
+    const ultima = lineasDe(v, el.id).filter(y => acciones.includes(y.linea.accion)).pop();
+    if (ultima?.linea !== l) continue;
+    el.proxima = { ...el.proxima, decision: '' };
+    libres.push(el.nombre);
+  }
+  return libres;
+}
+const textoLibres = libres => libres.length ? ` · «Próxima visita» vuelve a «—»: ${libres.join(', ')}` : '';
 
 // Semáforo de un elemento: rojo (vencido), ámbar (pronto), verde (en plazo) o gris (sin intervalo).
 // Además del color devuelve lo que lleva desde el último cambio (kmHechos, anos) y cuál de los dos límites
@@ -605,6 +632,7 @@ function pestEstado(v) {
       <span class="resumen"><span class="chip rojo">${plural(cuenta('rojo'), 'vencido', 'vencidos')}</span><span class="chip ambar">${fNum(cuenta('ambar'))} pronto</span><span class="chip verde">${fNum(cuenta('verde'))} en plazo</span></span>
       <label class="interruptor"><input type="checkbox" data-accion="ver-todos" ${todos ? 'checked' : ''}> Ver todos los elementos (${v.elementos.length})</label>
       <button class="boton peque" data-accion="nuevo-elemento" data-veh="${v.id}">Añadir elemento</button>
+      <button class="boton peque" data-accion="proponer" data-veh="${v.id}">Proponer la próxima visita</button>
     </div>
     ${Object.keys(dec).length ? `<p class="sub">Para la próxima visita: ${DECISIONES.filter(([k]) => dec[k]).map(([k, t]) => `${t} ${dec[k]}`).join(' · ')}</p>` : ''}
     ${[...grupos].map(([g, es]) => `<h3>${esc(g)}</h3><div class="lista-el">
@@ -629,7 +657,7 @@ function proximoHTML(v, e) {
 function filaElemento(v, e) {
   const el = e.el, u = e.ult;
   const ult = u ? `${fMes(u.visita.fecha)}${u.visita.km != null ? ' · ' + fKm(u.visita.km) : ''}` : el.intervalo ? 'Nunca' : '—';
-  const tiempo = e.base ? cuanto(-Math.max(0, dias(e.base.fecha, hoy()))).replace(/^(hace|en) /, '') : '';   // «11 meses», «4,4 años»
+  const tiempo = e.base ? duracion(dias(e.base.fecha, hoy())) : '';   // «11 meses», «4,4 años»
   const lleva = e.base ? `<span class="sub lleva">${e.primera ? 'Desde el alta: ' : 'Lleva '}${tiempo}${e.kmHechos != null ? ` y ≈ ${kmRedondo(v, e.kmHechos)}` : ''}</span>` : '';
   const abierto = S.abiertos.has(v.id + '/' + el.id);
   return `<div class="fila-el">${punto(e.color)}
@@ -650,13 +678,36 @@ function detalleElemento(v, e) {
     ${hist.length ? tablaLineas(v, hist) : '<p class="sub">Sin registros en el historial.</p>'}
     <div class="botones"><button class="boton peque" data-accion="editar-elemento" data-veh="${v.id}" data-el="${esc(el.id)}">Editar el elemento</button></div></div>`;
 }
-// Historial de un elemento: cuándo, dónde (con el total de la factura), qué, detalle e importe de la línea.
+// Duración en palabras, como en el resto de la app: «16 días», «23 meses», «4,4 años».
+function duracion(d) { return cuanto(-Math.max(0, d)).replace(/^(hace|en) /, ''); }
+// Para cada cambio de un elemento (líneas «Cambiado» o «Hecho»): tiempo y km desde el cambio anterior, o desde el alta (010).
+// Es lo que en los neumáticos se ve como «km que hicieron», para todos los elementos.
+function desdeAnterior(v, el) {
+  const m = new Map();
+  let prev = { fecha: v.alta.fecha, km: v.alta.km, alta: true, aprox: false };
+  for (const x of lineasDe(v, el.id).filter(y => REINICIAN.includes(y.linea.accion))) {
+    const km = x.visita.km ?? kmEnFecha(v, x.visita.fecha), aprox = x.visita.km == null;
+    m.set(x.linea, { dias: dias(prev.fecha, x.visita.fecha), km: km != null && prev.km != null ? Math.max(0, km - prev.km) : null,
+      desdeAlta: prev.alta, aprox: aprox || prev.aprox });
+    prev = { fecha: x.visita.fecha, km, alta: false, aprox };
+  }
+  return m;
+}
+function textoDesdeAnterior(v, d) {
+  if (!d) return '';
+  if (!d.dias && !d.km) return '<span class="sub">el mismo día</span>';
+  const km = d.km == null ? '' : ` · ${d.aprox ? '≈ ' + kmRedondo(v, d.km) : fKm(Math.round(d.km * 10) / 10)}`;
+  return `${duracion(d.dias)}${km}${d.desdeAlta ? '<br><span class="sub">desde el alta</span>' : ''}`;
+}
+// Historial de un elemento: cuándo, dónde (con el total de la factura), qué, desde el cambio anterior, detalle e importe de la línea.
 function tablaLineas(v, hist) {
   const cant = l => l.cantidad != null ? fNum(l.cantidad, Number.isInteger(l.cantidad) ? 0 : 1) + (l.unidad ? ' ' + l.unidad : '') : '';
-  return `<div class="tabla-wrap"><table class="tabla" style="margin-top:8px"><thead><tr><th>Fecha</th><th>Dónde</th><th>Qué</th><th>Detalle</th><th class="num">Importe</th><th></th></tr></thead><tbody>
+  const idEl = hist[0]?.linea.elemento, el = idEl ? elemento(v, idEl) : null, desde = el ? desdeAnterior(v, el) : new Map();
+  return `<div class="tabla-wrap"><table class="tabla" style="margin-top:8px"><thead><tr><th>Fecha</th><th>Dónde</th><th>Qué</th><th>Desde el cambio anterior</th><th>Detalle</th><th class="num">Importe</th><th></th></tr></thead><tbody>
     ${hist.map(({ visita: x, linea: l }) => `<tr><td class="fecha">${fFecha(x.fecha)}${x.km != null ? `<br><span class="sub">${fKm(x.km)}</span>` : ''}</td>
       <td>${esc(nombreTaller(x.taller))}${x.importe != null ? `<br><span class="sub">Factura ${fEur(x.importe)}</span>` : ''}</td>
       <td>${ACCIONES[l.accion] || esc(l.accion)}</td>
+      <td class="desde">${textoDesdeAnterior(v, desde.get(l))}</td>
       <td class="det">${esc([l.marca, l.texto, cant(l), l.dot ? 'DOT ' + l.dot : '', l.nota].filter(Boolean).join(' · '))}</td>
       <td class="num">${l.importe != null ? fEur(l.importe) + (x.lineasConIva ? '' : '<br><span class="sub">sin IVA</span>') : ''}</td>
       <td><button class="boton peque" data-accion="editar-linea" data-veh="${v.id}" data-vis="${esc(x.id)}" data-lin="${x.lineas.indexOf(l)}">Editar</button></td></tr>`).join('')}
@@ -907,10 +958,11 @@ function vistaHoja(v) {
   const itvCerca = itv && itv.vence <= sumaMeses(f, 3);
   // Ficha: los campos «Fuente…» van al pie; el resto, salvo los que se ocultan en «Ajustar la hoja».
   const fuentes = v.ficha.filter(x => /^fuente/i.test(x.campo));
+  // Matrícula, km e ITV también se pueden ocultar (010), igual que los campos de la ficha.
   const campos = [...(v.matricula ? [['Matrícula', v.matricula]] : []),
     ['Kilómetros', `${fKm(u.km)} (${fFecha(u.fecha)})`],
     ...(itv ? [['ITV', `Caduca el ${fFecha(itv.vence)}`, itvCerca]] : []),
-    ...v.ficha.filter(x => !/^fuente/i.test(x.campo) && !(h.ocultar || []).includes(x.campo)).map(x => [x.campo, x.valor])];
+    ...v.ficha.filter(x => !/^fuente/i.test(x.campo)).map(x => [x.campo, x.valor])].filter(([k]) => !(h.ocultar || []).includes(k));
   // Tres columnas: cada dato ocupa 1, 2 o 3 según lo largo que sea, y la última casilla de cada fila se estira hasta el borde.
   const anchos = campos.map(([, x]) => x.length > 90 ? 3 : x.length > 38 ? 2 : 1);
   for (let i = 0, usado = 0; i < anchos.length; i++) {
@@ -923,12 +975,24 @@ function vistaHoja(v) {
     const [t, ...resto] = b.split('\n');
     return `<div class="h-aviso"><strong>${esc(t)}</strong>${resto.length ? `<p>${esc(resto.join(' '))}</p>` : ''}</div>`;
   });
+  // Mismos datos para todos los elementos (010), sacados del semáforo: intervalo, lo que lleva desde el último cambio y cuándo toca
+  // (por km o por tiempo). Después, la nota libre de «Próxima visita» y los pendientes de ese elemento.
+  const ultimoTxt = e => e.ult ? `Último cambio: ${fMes(e.ult.visita.fecha)}${e.ult.visita.km != null ? ` (${fKm(e.ult.visita.km)})` : ''}` : '';
+  const lleva = e => !e.base ? '' : e.primera ? `Nunca cambiado: ${duracion(dias(e.base.fecha, f))}${e.kmHechos != null ? ` y ≈ ${kmRedondo(v, e.kmHechos)}` : ''} desde el alta`
+    : `Lleva ${duracion(dias(e.base.fecha, f))}${e.kmHechos != null ? ` y ≈ ${kmRedondo(v, e.kmHechos)}` : ''}`;
+  const toca = e => !e.el.intervalo || !e.texto ? '' : e.color === 'rojo' ? e.texto : `Toca: ${e.texto}`;
+  const datos = (e, conUltimo) => {
+    const p = [conUltimo ? ultimoTxt(e) : '', e.el.intervalo ? textoIntervalo(e.el.intervalo) : '', lleva(e), toca(e)].filter(Boolean);
+    return p.length ? `<div class="h-nota">${esc(p.join('. '))}.</div>` : '';
+  };
   const notas = e => [e.el.proxima?.nota, ...abiertos.filter(p => p.elemento === e.el.id).map(p => `${TIPOS_PEND[p.tipo] || p.tipo}: ${p.texto}`)]
-    .filter(Boolean).map(t => `<div class="h-nota">${esc(t)}</div>`).join('');
+    .filter(Boolean).map(t => `<div class="h-nota h-libre">${esc(t)}</div>`).join('');
   const ultimo = e => e.ult ? `${fMes(e.ult.visita.fecha)}${e.ult.visita.km != null ? `<div class="h-nota">${fKm(e.ult.visita.km)}</div>` : ''}`
     : e.el.intervalo ? 'Nunca' : '—';
   const item = (titulo, notasHtml) => `<li><span class="casilla"></span><div><span class="h-tarea">${esc(titulo)}</span>${notasHtml}</div></li>`;
-  const itemsEl = es => es.map(e => item(e.el.nombre, notas(e))).join('');
+  const itemsEl = es => es.map(e => item(e.el.nombre, datos(e, true) + notas(e))).join('');
+  const proximoCorto = e => !e.el.intervalo || !e.manda ? '' : e.color === 'rojo' ? e.texto.toLowerCase()
+    : `próximo ${e.manda === 'km' ? `a los ${fKm(e.venceKm)}${e.fechaKm ? ` (≈ ${fMes(e.fechaKm)})` : ''}, por km` : `${fMes(e.vFecha)}, por tiempo`}`;
   const itemsPend = ps => ps.map(p => item(p.texto, `<div class="h-nota">${esc(TIPOS_PEND[p.tipo] || p.tipo)} desde ${fMes(p.desde)}</div>`)).join('');
   const pedir = [`Detallar cada aceite, líquido y recambio con su referencia y cantidad, y los kilómetros ${DEL_VEHICULO[v.tipo] || DEL_VEHICULO.otro}.`,
     ...String(h.pedir || '').split('\n').map(s => s.trim()).filter(Boolean),
@@ -939,7 +1003,7 @@ function vistaHoja(v) {
     cambiar.length ? `<section>${titulo('Cambiar', 'marcar al terminar')}<div class="tabla-wrap"><table>
       <thead><tr><th>Hecho</th><th>Trabajo</th><th>Aceite / recambio</th><th>Último cambio</th></tr></thead><tbody>
       ${cambiar.map(e => `<tr><td class="c-casilla"><span class="casilla"></span></td>
-        <td><span class="h-tarea">${esc(e.el.nombre)}</span>${notas(e)}</td>
+        <td><span class="h-tarea">${esc(e.el.nombre)}</span>${datos(e, false)}${notas(e)}</td>
         <td class="c-recambio">${esc(e.el.especificacion || '')}${e.el.referencia ? `<div class="h-nota">Ref. ${esc(e.el.referencia)}</div>` : ''}</td>
         <td class="c-ultimo${e.color === 'rojo' ? ' tarde' : ''}">${ultimo(e)}${e.color === 'rojo' ? '<div>vencido</div>' : ''}</td></tr>`).join('')}
       </tbody></table></div></section>` : '',
@@ -948,7 +1012,8 @@ function vistaHoja(v) {
     presupuesto.length || pendPresupuesto.length ? `<section class="h-junto">${titulo('Opcional', 'solo presupuesto')}
       <ul class="h-lista">${itemsEl(presupuesto)}${itemsPend(pendPresupuesto)}</ul></section>` : '',
     no.length ? `<section class="h-junto">${titulo('No hace falta ahora', 'hecho recientemente o sin desgaste')}<div class="h-hecho">
-      ${no.map(e => `<div><b>${esc(e.el.nombre)}</b><span>${e.ult ? `${fMes(e.ult.visita.fecha)}${e.ult.visita.km != null ? ' · ' + fKm(e.ult.visita.km) : ''}` : 'Sin cambios apuntados'}${e.vence && e.color !== 'rojo' ? ` · próximo hacia ${fMes(e.vence)}` : ''}</span></div>`).join('')}
+      ${no.map(e => `<div><b>${esc(e.el.nombre)}</b><span>${esc([e.ult ? `${fMes(e.ult.visita.fecha)}${e.ult.visita.km != null ? ' · ' + fKm(e.ult.visita.km) : ''}` : 'Sin cambios apuntados',
+        e.base && !e.primera ? lleva(e).toLowerCase() : '', proximoCorto(e)].filter(Boolean).join(' · '))}</span></div>`).join('')}
       </div></section>` : '',
     `<section class="h-junto">${titulo('En la factura, por favor')}<ul class="h-pedir">${pedir.map(t => `<li>${esc(t)}</li>`).join('')}</ul></section>`];
   const vacia = !cambiar.length && !revisar.length && !presupuesto.length && !abiertos.length;
@@ -1110,6 +1175,29 @@ async function cambiarDecision(vid, eid, valor) {
   el.proxima = { ...(el.proxima || { nota: '' }), decision: valor };
   await guardar('Próxima visita: ' + (DECISIONES.find(([k]) => k === valor)?.[1] || valor));
 }
+// (011) «Proponer la próxima visita»: «Sí» para lo vencido y «Revisar» para lo que vence pronto (ámbar).
+// Si el elemento estaba sin decidir («—»), sale ya con la propuesta; si ya se había elegido otra cosa, sale con lo elegido.
+// Lo que ya está en «Sí» no se toca. Antes de guardar se enseña todo en un diálogo.
+async function proponerProxima(vid) {
+  const v = veh(vid);
+  const filas = v.elementos.map(e => estadoElemento(v, e)).filter(e => e.color === 'rojo' || e.color === 'ambar')
+    .map(e => ({ e, actual: e.el.proxima?.decision || '', propuesta: e.color === 'rojo' ? 'SI' : 'Revisar' }))
+    .filter(f => f.actual !== 'SI' && f.actual !== f.propuesta)
+    .sort((a, b) => porUrgencia(a.e, b.e));
+  if (!filas.length) return dialogo({ titulo: 'Proponer la próxima visita', ok: 'Cerrar', cancelar: null,
+    cuerpo: '<p>No hay nada vencido ni que venza pronto que no esté ya marcado.</p>' });
+  const r = await dialogo({
+    titulo: `Próxima visita · ${v.nombre}`, ancho: 620,
+    cuerpo: `<p class="sub">«Sí» para lo vencido y «Revisar» para lo que vence pronto. Lo que ya habías decidido tú sale con tu decisión: cámbiala si quieres.</p>
+      <div class="propuesta">${filas.map((f, i) => `<div class="prop-fila">${punto(f.e.color)}<div><b>${esc(f.e.el.nombre)}</b><br><span class="sub">${esc(f.e.texto)}${f.actual ? ` · ahora: ${esc(DECISIONES.find(([k]) => k === f.actual)?.[1] || f.actual)}` : ''}</span></div>
+        <select name="d${i}" aria-label="${esc(f.e.el.nombre)}">${DECISIONES.map(([k, t]) => `<option value="${k}"${(f.actual || f.propuesta) === k ? ' selected' : ''}>${t}</option>`).join('')}</select></div>`).join('')}</div>`,
+    ok: 'Guardar'
+  });
+  if (!r) return;
+  let n = 0;
+  filas.forEach((f, i) => { if (r['d' + i] !== f.actual) { f.e.el.proxima = { ...(f.e.el.proxima || { nota: '' }), decision: r['d' + i] }; n++; } });
+  if (n) await guardar(`Próxima visita: ${plural(n, 'cambio', 'cambios')}`);
+}
 async function editarNotaProxima(vid, eid) {
   const el = elemento(veh(vid), eid);
   const r = await dialogo({ titulo: el.nombre, cuerpo: `<label>Nota para la próxima visita<textarea name="nota" rows="5">${esc(el.proxima?.nota || '')}</textarea></label>` });
@@ -1261,7 +1349,8 @@ async function editarLinea(vid, xid, i) {
     cantidad: numero(r.cantidad) ?? undefined, unidad: limpio(r.unidad), importe: numero(r.importe) ?? undefined,
     marca: limpio(r.marca), dot: limpio(r.dot), nota: limpio(r.nota) };
   if (nueva) x.lineas.push(datos); else Object.assign(l, datos);
-  await guardar(nueva ? 'Línea añadida' : `Línea guardada: ${ACCIONES[r.accion]}`);
+  const libres = liberarDecisiones(v, x);
+  await guardar((nueva ? 'Línea añadida' : `Línea guardada: ${ACCIONES[r.accion]}`) + textoLibres(libres));
 }
 
 // Elemento nuevo (eid vacío) o editar uno: nombre, grupo, referencia e intervalo.
@@ -1340,7 +1429,9 @@ async function borrarLectura(vid, i) {
 // Lo que la hoja para el taller no saca de los datos. Se guarda con el vehículo (v.hoja) para la próxima vez.
 async function ajustarHoja(vid) {
   const v = veh(vid), h = v.hoja || {}, ocultos = h.ocultar || [];
-  const campos = v.ficha.filter(x => !/^fuente/i.test(x.campo));
+  // Primero los datos fijos de la cabecera (matrícula, km, ITV) y después los de la ficha; se ocultan por su nombre.
+  const campos = [...(v.matricula ? ['Matrícula'] : []), 'Kilómetros', ...(v.caducidades.some(c => /^itv$/i.test(c.tipo)) ? ['ITV'] : []),
+    ...v.ficha.filter(x => !/^fuente/i.test(x.campo)).map(x => x.campo)].map(campo => ({ campo }));
   const r = await dialogo({
     titulo: `Hoja para el taller · ${v.nombre}`, ancho: 560,
     cuerpo: `${cTexto('Motivo de la visita', 'motivo', h.motivo, 'placeholder="Revisión antes de la ITV"')}
@@ -1349,7 +1440,7 @@ async function ajustarHoja(vid) {
       <p class="sub">Un aviso por párrafo, con una línea en blanco entre dos. La primera línea es el título.</p>
       ${cArea('En la factura, por favor (una petición por línea)', 'pedir', h.pedir, 3)}
       <p class="sub">Ya salen siempre: detallar aceites y recambios con referencia, cantidad y km, y llamar antes de reparar algo que no esté en la hoja.</p>
-      ${campos.length ? `<fieldset><legend>Datos de la ficha que salen en la hoja</legend>${campos.map((x, i) => cCasilla(esc(x.campo), 'ficha' + i, !ocultos.includes(x.campo))).join('')}</fieldset>` : ''}`
+      ${campos.length ? `<fieldset><legend>Datos que salen arriba en la hoja</legend>${campos.map((x, i) => cCasilla(esc(x.campo), 'ficha' + i, !ocultos.includes(x.campo))).join('')}</fieldset>` : ''}`
   });
   if (!r) return;
   const ocultar = campos.filter((x, i) => !r['ficha' + i]).map(x => x.campo);
@@ -1770,7 +1861,7 @@ function aplicarOperacion(d, op) {
         Object.assign(y, campos); v.visitas.sort(porFecha);
         completarLineas.forEach(({ elemento: e, accion, ...resto }, i) => Object.assign(destinos[i][0], resto));
         if (completarLineas.length) cambiados.push('líneas: ' + completarLineas.map(c => elemento(v, c.elemento)?.nombre || c.elemento).join(', '));
-        return { ok: true, texto: `${nv}: visita del ${fFecha(y.fecha)} completada (${cambiados.join(', ') || 'sin cambios'})` };
+        return { ok: true, texto: `${nv}: visita del ${fFecha(y.fecha)} completada (${cambiados.join(', ') || 'sin cambios'})${textoLibres(liberarDecisiones(v, y))}` };
       }
       if (!x?.id || !/^\d{4}-\d{2}-\d{2}$/.test(x.fecha || '')) return mal(`${nv}: visita sin id o sin fecha`);
       if (v.visitas.some(y => y.id === x.id)) return mal(`${nv}: la visita ${x.id} ya existe; no se duplica`);
@@ -1778,7 +1869,7 @@ function aplicarOperacion(d, op) {
       const malos = x.lineas.filter(l => l.elemento && !v.elementos.some(e => e.id === l.elemento)).map(l => l.elemento);
       if (malos.length) return mal(`${nv}: la visita ${x.id} usa elementos que no existen (${malos.join(', ')})`);
       v.visitas.push(x); v.visitas.sort(porFecha);
-      return { ok: true, texto: `${nv}: visita del ${fFecha(x.fecha)} · ${nombreTaller(x.taller, d)}${x.km != null ? ' · ' + fKm(x.km) : ''}${x.importe != null ? ' · ' + fEur(x.importe) : ''} · ${plural(x.lineas.length, 'línea', 'líneas')}` };
+      return { ok: true, texto: `${nv}: visita del ${fFecha(x.fecha)} · ${nombreTaller(x.taller, d)}${x.km != null ? ' · ' + fKm(x.km) : ''}${x.importe != null ? ' · ' + fEur(x.importe) : ''} · ${plural(x.lineas.length, 'línea', 'líneas')}${textoLibres(liberarDecisiones(v, x))}` };
     }
     case 'lectura': {
       const l = op.lectura;
@@ -1787,7 +1878,11 @@ function aplicarOperacion(d, op) {
       v.lecturas.push(l);
       return { ok: true, texto: `${nv}: ${fKm(l.km)} el ${fFecha(l.fecha)}` };
     }
-    case 'elemento': return porId(v.elementos, op.elemento, 'elemento');
+    case 'elemento': {                           // (011) «proxima» se mezcla campo a campo: una nota nueva no cambia la decisión
+      const ob = op.elemento, actual = ob?.id ? v.elementos.find(e => e.id === ob.id) : null;
+      if (actual && ob.proxima) ob.proxima = { ...actual.proxima, ...ob.proxima };
+      return porId(v.elementos, ob, 'elemento');
+    }
     case 'pendiente': return porId(v.pendientes, op.pendiente, 'pendiente');
     case 'caducidad': {
       const c = op.caducidad, actual = c?.id ? v.caducidades.find(x => x.id === c.id) : null;
@@ -1868,6 +1963,7 @@ document.addEventListener('click', e => {
     'nueva-caducidad': () => editarCaducidad(vid, null), 'editar-caducidad': () => editarCaducidad(vid, cad),
     'borrar-lectura': () => borrarLectura(vid, lec),
     'ajustar-hoja': () => ajustarHoja(vid), imprimir: () => imprimirHoja(vid), 'exportar-excel': exportarExcel,
+    proponer: () => proponerProxima(vid),
     conectar: conectarDropbox, desconectar: desconectarDropbox, 'abrir-local': abrirLocal, 'guardar-como': guardarComo,
     descargar: () => descargar(JSON.stringify(D(), null, 1), 'ruedak.json'), 'guardar-ajustes': guardarAjustes,
     'confirmar-import': confirmarImport, 'cancelar-import': () => { S.importacion = null; render(); },
@@ -1891,6 +1987,7 @@ window.addEventListener('beforeunload', e => { if (S.sucio) { e.preventDefault()
 window.Ruedak = {
   version: APP_VERSION, S, comprobarCambios, numero, hojasExcel, excel: () => xlsx(hojasExcel()),
   kmPorAno: vid => kmPorAno(veh(vid)), lecturasTodas: vid => lecturasTodas(veh(vid)),
+  desdeAnterior: (vid, eid) => { const v = veh(vid); return [...desdeAnterior(v, elemento(v, eid))].map(([l, d]) => ({ ...d, visita: v.visitas.find(x => x.lineas.includes(l))?.id })); },
   juegosNeumaticos: (vid, eid) => juegosNeumaticos(veh(vid), elemento(veh(vid), eid)),
   estadoElemento: (vid, eid) => { const v = veh(vid), el = v && elemento(v, eid); return el ? estadoElemento(v, el) : null; },
   estadoCaducidad: (vid, cid) => { const v = veh(vid), c = v?.caducidades.find(x => x.id === cid); return c ? estadoCaducidad(v, c) : null; },
