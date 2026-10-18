@@ -376,7 +376,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="017";
+const APP_VERSION="018";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -431,7 +431,12 @@ const people=()=>S.config.people;
 const partsNoche=id=>{const m=S.noches[id||NOCHE];return m&&m.participantes?m.participantes:null};
 function estadoEn(pid){
   const ps=partsNoche();
-  if(!ps){const p=findP(pid);return p&&!p.paused?"aqui":"no"}
+  if(!ps){
+    // Noche de antes de la 017 sin lista guardada todavía: con sus rondas ya leídas, la lista sale de
+    // ellas (aunque solo se guarda cuando el servidor las confirma); si no, de la pausa antigua.
+    if(rondasCargadas&&rondasDe===NOCHE)return derivarParticipantes()[pid]?"aqui":"no";
+    const p=findP(pid);return p&&!p.paused?"aqui":"no";
+  }
   const x=ps[pid];return !x?"no":x.ido?"ido":"aqui";
 }
 const activePeople=()=>people().filter(p=>estadoEn(p.id)==="aqui");   // los que están aquí
@@ -2561,7 +2566,7 @@ async function initFirebase(){
   prepararNoches();
   setTimeout(()=>{if(mode==="connecting")goLocal()},10000);
 }
-let nochesDelServidor=false,unsubRondas=null,rondasDe="",avisoReglas="";
+let nochesDelServidor=false,unsubRondas=null,rondasDe="",avisoReglas="",rondasCargadas=false;
 // Si se publica la app antes de pegar las reglas de la 014, Firebase no deja leer las noches:
 // decirlo claro en vez de «ese código de sala no vale».
 function errorNoches(e){
@@ -2575,9 +2580,13 @@ function escucharRondas(){
   escucharPagos();
   if(!db||!SALA||!NOCHE||rondasDe===NOCHE)return;
   if(typeof unsubRondas==="function")unsubRondas();
-  const id=NOCHE;rondasDe=id;S.rounds=[];
-  unsubRondas=colRef("noches").doc(id).collection("rounds").onSnapshot(qs=>{
+  const id=NOCHE;rondasDe=id;S.rounds=[];rondasCargadas=false;
+  // includeMetadataChanges: si las rondas ya estaban guardadas en el móvil y no han cambiado,
+  // Firebase solo avisa de que el servidor las confirma si se le pide (hasta la 017 no se pedía, y
+  // las noches de antes nunca llegaban a guardar sus participantes).
+  unsubRondas=colRef("noches").doc(id).collection("rounds").onSnapshot({includeMetadataChanges:true},qs=>{
     if(id!==NOCHE)return;
+    rondasCargadas=true;
     S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,{orders:normOrders(d.orders)})});
     actualizarResumen();
     if(!(qs.metadata&&qs.metadata.fromCache))asegurarListaParticipantes();
