@@ -376,7 +376,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="019";
+const APP_VERSION="020";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -419,7 +419,7 @@ function curSet(){
 }
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -470,6 +470,9 @@ function ponEstado(pid,e){
 }
 // Quien recibe algo (una bebida, una ración, paga…) pasa a estar aquí, aunque no viniera o se hubiera ido.
 function asegurarParticipantes(pids){(pids||[]).forEach(pid=>{if(pid&&findP(pid)&&estadoEn(pid)!=="aqui"&&S.noches[NOCHE])ponEstado(pid,"aqui")})}
+// Al corregir una ronda cerrada (020): quien no vino y recibe algo pasa a estar en la noche, pero
+// quien se ha ido sigue ido (lo que se corrige es de antes de irse).
+function asegurarEnNoche(pids){(pids||[]).forEach(pid=>{if(pid&&findP(pid)&&estadoEn(pid)==="no"&&S.noches[NOCHE])ponEstado(pid,"aqui")})}
 // Las noches de antes de la 017 reciben sus participantes la primera vez que se abren, a partir de
 // sus rondas (solo con la lista de rondas leída del servidor, no a medias desde el móvil).
 function asegurarListaParticipantes(){
@@ -913,7 +916,7 @@ function requirePin(){
   return true;
 }
 function setRoundPayer(rid,payer){
-  const r=S.rounds.find(x=>x.id===rid);if(!r)return;if(payer)asegurarParticipantes([payer]);
+  const r=S.rounds.find(x=>x.id===rid);if(!r)return;if(payer)asegurarEnNoche([payer]);
   const before=r.payer?pname(r.payer):"sin pagar";
   r.payer=payer||"";
   guardarRonda(r,`Pagador: ${before} → ${payer?pname(payer):"sin pagar"}`,true);   // el pagador no cambia el total
@@ -931,7 +934,7 @@ function guardarRonda(r,what,sinRecalcular){
   if(mode!=="firebase"){saveLocal();return}
   const doc=clone(Object.assign({},r));delete doc.id;
   dbSet(roundPath(r.id),doc);
-  if(S.current.night)dbUpdate("archive/"+archiveKey(S.current.night,r.id),{orders:doc.orders,shared:doc.shared||{},prices:doc.prices||{},total:doc.total,payer:doc.payer||"",ticket:doc.ticket!=null?doc.ticket:DEL(),log:doc.log||[],savedTs:Date.now()});
+  if(S.current.night)dbUpdate("archive/"+archiveKey(S.current.night,r.id),{bar:doc.bar||"",name:doc.name||"",orders:doc.orders,shared:doc.shared||{},prices:doc.prices||{},total:doc.total,payer:doc.payer||"",ticket:doc.ticket!=null?doc.ticket:DEL(),log:doc.log||[],savedTs:Date.now()});
 }
 function gruposRonda(r){
   const gs={},order=[];
@@ -958,6 +961,44 @@ function corregirPrecio(r,g,v){
     setBarPrice(r.bar,o.drink,aprende);
     if(eraAuto)recalcAuto(eraAuto,o.drink);
   }
+}
+// Quién sale para elegir al corregir una ronda cerrada: los de la noche (también los que se han
+// ido) y quien ya tenga algo en esa ronda, aunque ahora figure como que no vino.
+function genteRonda(r){
+  const en=pid=>((r.orders||{})[pid]||[]).length||r.payer===pid||compartidos(r).some(s=>(s.who||[]).includes(pid));
+  return people().filter(p=>estadoEn(p.id)!=="no"||en(p.id));
+}
+// Precio de un producto en una ronda cerrada: el de esa ronda, o el de su bar (o la carta).
+function precioEnRonda(r,id){return r.prices&&r.prices[id]!=null?Number(r.prices[id])||0:precioBase(id,r.bar||"")}
+const precioAnadir=(r,d)=>d.price!=null?Number(d.price)||0:d.drink?r2(precioEnRonda(r,d.drink)+extraOf(d.drink,d.clarification)):0;
+// Cambiar el bar de una ronda cerrada (020). Sus precios pasan a ser los de ese bar (o los de la
+// carta si el bar no tiene el producto), también los suplementos que calculó la app; los puestos
+// a mano se quedan. No se le enseña nada al bar: lo aprende al corregir cada precio con el ticket.
+function cambiarBarRonda(r,barId){
+  barId=barId&&S.bares[barId]?barId:"";
+  if(barId===(r.bar||""))return false;
+  const viejo=r.bar&&S.bares[r.bar]?r.bar:"",antes=viejo?S.bares[viejo].name:"sin bar",b=barId?S.bares[barId]:null;
+  // null = ni el bar ni la carta lo tienen (producto borrado): se queda el precio que tenía.
+  const base=d=>(b&&b.prices[d]!=null)||IDX[d]?precioBase(d,barId):(r.prices&&r.prices[d]!=null?Number(r.prices[d]):null);
+  const auto=o=>{const ex=o&&o.drink&&!o.custom&&o.price!=null?extraOf(o.drink,o.clarification):0;return !!ex&&Math.abs(Number(o.price)-(precioEnRonda(Object.assign({},r,{bar:viejo}),o.drink)+ex))<0.005};
+  const ids=new Set(Object.keys(r.prices||{}));
+  const nuevo=o=>{
+    if(!o||!o.drink||o.custom||isNada(o))return o;
+    if(o.price==null){ids.add(o.drink);return o}
+    const v=auto(o)?base(o.drink):null;if(v==null)return o;
+    ids.add(o.drink);return Object.assign({},o,{price:r2(v+extraOf(o.drink,o.clarification))});
+  };
+  const orders={};Object.keys(r.orders||{}).forEach(pid=>{orders[pid]=(r.orders[pid]||[]).map(nuevo)});
+  const shared={};Object.keys(r.shared||{}).forEach(k=>{shared[k]=nuevo(r.shared[k])});
+  const prices={};ids.forEach(d=>{const v=base(d);if(v!=null)prices[d]=r2(v)});
+  r.orders=orders;if(r.shared)r.shared=shared;r.prices=prices;r.bar=barId;r.name=b?b.name:"";
+  guardarRonda(r,`Bar: ${antes} → ${b?b.name:"sin bar"}`);
+  return true;
+}
+// La ventana del bar abierta desde Corregir (ui.modal "rbar") elige el de esa ronda, no el de la ronda en curso.
+function barDeRonda(barId){
+  const r=S.rounds.find(x=>x.id===ui.editRound);ui.modal=null;ui.barQ="";if(!r)return;
+  if(cambiarBarRonda(r,barId))flash(barId?"Precios de "+S.bares[barId].name:"Ronda sin bar: precios de la carta");
 }
 function cuadreTicket(total,ticket){
   if(ticket==null)return"";
@@ -1003,18 +1044,6 @@ function closeRound(payer){
   actualizarResumen();
 }
 function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.current.bar||"",ticket:null,night:S.current.night||"",orders:{},delivered:{},shared:{}};if(mode==="firebase")curSet();else saveLocal()}
-function undoLast(){
-  if(!S.rounds.length)return;
-  const last=sortedRounds().pop();
-  // La nota al archivo, ANTES de quitar la ronda: archiveNote() la busca en S.rounds para conservar
-  // su pagador y su registro (hasta la 014 se escribía después y el archivo los perdía).
-  if(mode==="firebase")archiveNote(last.id,"Ronda reabierta para editarla");
-  S.rounds=S.rounds.filter(r=>r.id!==last.id);
-  // Se conserva la noche: sin ella, la siguiente ronda cerrada se archivaba como de otra noche.
-  S.current={n:last.n,name:last.name||"",bar:last.bar||"",ticket:ticketOk(last.ticket),night:S.current.night||"",orders:clone(last.orders||{}),delivered:{},shared:normShared(last.shared)};
-  if(mode==="firebase"){dbDelete(roundPath(last.id));curSet()}else saveLocal();
-  actualizarResumen();
-}
 
 /* --- Noches y carpetas --- */
 const nochesLista=()=>Object.keys(S.noches).map(id=>Object.assign({id},S.noches[id])).sort((a,b)=>(b.fecha||0)-(a.fecha||0)||(b.creada||0)-(a.creada||0));
@@ -1059,7 +1088,7 @@ function cambiarNoche(id){
   NOCHE=id;lsSet("ronda.noche."+SALA,id);
   S.current=Object.assign(normCurrent(NOCHES_DATA[id]||{}),{night:id});S.rounds=[];
   ui.sel=null;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.multi=false;ui.group=[];ui.pending=null;ui.payer=null;
-  ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.editRound=null;ui.pagoForm=null;ui.partsEdit=false;
+  ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.editRound=null;ui.pagoForm=null;ui.partsEdit=false;ui.rAdd=null;
   escucharRondas();
 }
 
@@ -1243,11 +1272,11 @@ function nodeAt(){
   const g=(cat.items||[]).find(n=>n.id===ui.path[1]&&n.group);
   return g?{items:g.items,cat,group:g}:{items:cat.items,cat,group:null};
 }
-function keyFor(id,clar,color,fav){
-  const it=IDX[id];if(!it)return"";
+function keyFor(id,clar,color,fav,pf){
+  const it=IDX[id];if(!it)return"";const mx=clar!=null?clar:defMix(id);
   const txt=(it.emoji?it.emoji+" ":"")+esc(it.name);
   const tag=fav&&fav.ultima?'<span class="tag">↻ la última</span> · ':"";
-  return `<button class="key${fav?" fav":""}" style="--c:${color||(it.cat?it.cat.color:"#555")}" data-act="pick" data-id="${id}"${clar!=null?` data-mix="${esc(clar)}"`:""}>${txt}<small>${tag}${clar?esc(clar)+" · ":""}${eur(priceWith(id,clar!=null?clar:defMix(id)))}</small></button>`;
+  return `<button class="key${fav?" fav":""}" style="--c:${color||(it.cat?it.cat.color:"#555")}" data-act="pick" data-id="${id}"${clar!=null?` data-mix="${esc(clar)}"`:""}>${txt}<small>${tag}${clar?esc(clar)+" · ":""}${eur(pf?pf(id,mx):priceWith(id,mx))}</small></button>`;
 }
 function mixTargets(){
   if(ui.editMix)return[ui.editMix];
@@ -1264,11 +1293,14 @@ function vMixChips(title){
     `<button class="chip" data-act="setMix" data-name="">sin nota</button>`+
     `<button class="chip" data-act="freeNote">✏️ otra nota</button></div></div>`;
 }
-function vKeys(){
+// o.ronda: para añadir a una ronda cerrada (020), con sus precios y sin atajos, «No toma nada» ni
+// «Para compartir» (eso se elige después).
+function vKeys(o){
+  const r=(o||{}).ronda,pf=r?(id,clar)=>r2(precioEnRonda(r,id)+extraOf(id,clar)):null;
   const at=ui.path.length?nodeAt():null;
   let h="";
   if(!at){
-    const single=!ui.multi&&!ui.share&&ui.flow!=="bebida"&&ui.sel;
+    const single=!r&&!ui.multi&&!ui.share&&ui.flow!=="bebida"&&ui.sel;
     if(single){
       const sc=shortcuts(ui.sel,4);
       if(sc.length)h+=`<section class="favs"><h3>⭐ Lo de siempre de ${esc(pname(ui.sel))}</h3><div class="keys">`+
@@ -1279,8 +1311,8 @@ function vKeys(){
       const n=(c.items||[]).reduce((a,x)=>a+(x.group?x.items.length:1),0);
       return `<button class="key" style="--c:${c.color}" data-act="cat" data-id="${c.id}">${esc(c.name)}<small>${n} productos</small></button>`;
     }).join("");
-    h+=`<button class="key ghost" data-act="pickOther">🔧 ${ui.share?"Otra cosa":"Otra bebida"}<small>Fuera de la carta</small></button>`;
-    if(!ui.share){
+    h+=`<button class="key ghost" data-act="pickOther">🔧 ${ui.share||r?"Otra cosa":"Otra bebida"}<small>Fuera de la carta</small></button>`;
+    if(!ui.share&&!r){
       h+=`<button class="key ghost" data-act="pick" data-id="nada">🚫 No toma nada<small>Queda apuntado, paga 0 €</small></button>`;
       h+=`<button class="key ghost" data-act="shareStart">🍽️ Para compartir<small>Raciones a medias</small></button>`;
     }
@@ -1291,7 +1323,7 @@ function vKeys(){
     h+=`<div class="keys"><button class="key ghost" data-act="back">← Atrás<small>${at.group?esc(at.cat.name):"Categorías"}</small></button>`;
     h+=(at.items||[]).map(n=>n.group
       ? `<button class="key" style="--c:${at.cat.color}" data-act="cat" data-id="${n.id}">${n.emoji?n.emoji+" ":""}${esc(n.name)} ▸<small>${n.items.length} opciones${n.mix&&n.mix.def?" · "+esc(n.mix.def):(n.mix?" · con opciones":"")}</small></button>`
-      : keyFor(n.id,null,at.cat.color)).join("");
+      : keyFor(n.id,null,at.cat.color,null,pf)).join("");
     h+='</div>';
   }
   return h;
@@ -1524,13 +1556,12 @@ function vCuentas(){
     h+=`</section>`;
   }
   if(S.rounds.length){
-    const last=sortedRounds()[S.rounds.length-1];
     h+=`<section class="card"><h2>Historial</h2>`;
     sortedRounds().slice().reverse().forEach(r=>{
       const tk=ticketOk(r.ticket),avisos=[];
       if(tk!=null)avisos.push(Math.abs(tk-r.total)<0.005?"✓ cuadra con el ticket":`⚠️ no cuadra con el ticket (${eur(tk)})`);
       if(rondaDescuadrada(r))avisos.push("⚠️ revisar precios");
-      h+=`<div class="drow"><div><div>${esc(roundLabel(r))} · ${hhmm(r.ts)} · <b>${eur(r.total)}</b></div><div class="note">${r.payer?"pagó "+esc(pname(r.payer)):"⚠️ sin pagar"}${avisos.length?" · "+avisos.join(" · "):""}</div></div><div class="acts"><button class="linkish" data-act="editRound" data-id="${r.id}">✏️ corregir</button>${r.id===last.id?`<button class="linkish" data-act="undo">↶ reabrir</button>`:""}</div></div>`;
+      h+=`<div class="drow"><div><div>${esc(roundLabel(r))} · ${hhmm(r.ts)} · <b>${eur(r.total)}</b></div><div class="note">${r.payer?"pagó "+esc(pname(r.payer)):"⚠️ sin pagar"}${avisos.length?" · "+avisos.join(" · "):""}</div></div><div class="acts"><button class="linkish" data-act="editRound" data-id="${r.id}">✏️ corregir</button></div></div>`;
       if((r.log||[]).length)h+=`<div class="note" style="margin:-2px 0 8px">${r.log.slice(-4).map(l=>`${hhmm(l.ts)} · ${esc(byName(l.by))}: ${esc(l.what)}`).join("<br>")}</div>`;
     });
     h+=`</section>`;
@@ -1607,7 +1638,7 @@ function vAjustes(){
   h+=`<button class="btn small warn" data-act="menuDefaults">↻ Restaurar esta carta a la de por defecto</button><p class="note">Al restaurar se guarda antes una copia de seguridad de la carta actual, así que no se pierde nada.</p></section>`;
   h+=vBaresAjustes();
 
-  h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: noche nueva, vaciar o reabrir rondas, cambiar el pagador de una ronda cerrada, borrar personas o cartas y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
+  h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: noche nueva, vaciar la ronda en curso, corregir una ronda cerrada, borrar personas o cartas y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
   return h;
 }
 
@@ -1666,20 +1697,23 @@ function vNocheFila(n){
 function vRonda(){
   const r=S.rounds.find(x=>x.id===ui.editRound);
   if(!r)return`<p class="hint">Esa ronda ya no está.</p><button class="btn" data-act="tab" data-id="cuentas">← Volver a Cuentas</button>`;
-  const gs=gruposRonda(r),bar=r.bar&&S.bares[r.bar];
+  if(ui.rAdd&&ui.rAdd.rid===r.id)return vRondaAnadir(r);
+  const gs=gruposRonda(r),bar=r.bar&&S.bares[r.bar],gente=genteRonda(r);
   let h=`<div class="pad-head"><h2>Corregir ${esc(roundLabel(r))}</h2><button class="mini" data-act="tab" data-id="cuentas">← Volver</button></div>`;
   h+=`<p class="note">Cada cambio se guarda al momento, queda en el registro y recalcula los saldos. La ronda en curso no se toca.${bar?` Los precios que corrijas se guardan también para ${esc(bar.name)}.`:""}</p>`;
-  // Quién compartió una ración (ui.rsWho = id, ui.rsGroup = marcados). Salen todas las personas,
-  // también las que ahora están en pausa: pudieron compartirla antes de irse.
+  // Quién compartió una ración (ui.rsWho = id, ui.rsGroup = marcados). Salen los de la noche,
+  // también los que se han ido: pudieron compartirla antes de irse.
   const sw=ui.rsWho&&r.shared&&r.shared[ui.rsWho];
   if(ui.rsWho&&!sw){ui.rsWho=null;ui.rsGroup=[]}
   if(sw){
     const n=ui.rsGroup.length,tot=totalCompartido(sw,r);
-    h+=`<section class="card" style="border-color:var(--ink)"><h2>🍽️ ¿Quién compartió ${esc(label(sw))}?</h2><div class="chips">${people().map(p=>{const on=ui.rsGroup.includes(p.id);return `<button class="chip${on?" on":""}" data-act="rsToggle" data-pid="${p.id}">${on?"☑":"☐"} ${estadoEn(p.id)==="ido"?"🚶 ":""}${esc(p.name)}</button>`}).join("")}</div>`;
+    h+=`<section class="card" style="border-color:var(--ink)"><h2>🍽️ ¿Quién compartió ${esc(label(sw))}?</h2><div class="chips">${gente.map(p=>{const on=ui.rsGroup.includes(p.id);return `<button class="chip${on?" on":""}" data-act="rsToggle" data-pid="${p.id}">${on?"☑":"☐"} ${estadoEn(p.id)==="ido"?"🚶 ":""}${esc(p.name)}</button>`}).join("")}</div>`;
     h+=`<div class="chips" style="margin-top:8px"><button class="chip" data-act="rsAll">Todos</button><button class="chip" data-act="rsNone">Ninguno</button></div>`;
     h+=`<p class="status">${n?`Entre ${n}: ${eur(tot)} en total, unos ${eur(tot/n)} cada uno`:"Marca al menos a una persona"}</p>`;
     h+=`<div class="row2"><button class="btn small primary" data-act="rsSaveWho"${n?"":" disabled"}>Guardar</button><button class="btn small" data-act="rsWhoCancel">Cancelar</button></div></section>`;
   }
+  // El bar, antes que los precios: al cambiarlo, los precios pasan a ser los suyos.
+  h+=`<section class="card"><div class="set-row"><span style="flex:1">${bar?"📍 <b>"+esc(bar.name)+"</b>":"🏠 Sin bar: precios de la carta"}</span><button class="mini" data-act="rBar">${bar?"Cambiar el bar":"Elegir el bar"}</button></div></section>`;
   if(rondaDescuadrada(r))h+=`<p class="status" style="color:var(--bad)">⚠️ El total guardado (${eur(r.total)}) no coincide con la suma de las líneas (${eur(sumaRonda(r))}). Pasa en rondas cerradas antes de la 009 que tenían algún precio puesto a mano. Revisa los precios con el ticket: al corregir uno, el total se recalcula.</p>`;
   h+=`<div class="ticket"><h2>Precios</h2>`;
   h+=gs.length?gs.map((g,gi)=>{
@@ -1693,14 +1727,32 @@ function vRonda(){
   }).join("");
   h+=`<div class="total"><span>Total</span><span>${eur(sumaRonda(r))}</span></div>`;
   h+=campoTicket("rticket",r.ticket)+cuadreTicket(sumaRonda(r),ticketOk(r.ticket))+`</div>`;
-  h+=`<section class="card" style="margin-top:12px"><h2>Quién pagó</h2><div class="chips"><button class="chip${r.payer?"":" on"}" data-act="rPayer" data-pid="">Nadie</button>${people().map(p=>`<button class="chip${r.payer===p.id?" on":""}" data-act="rPayer" data-pid="${p.id}">${esc(p.name)}</button>`).join("")}</div></section>`;
+  h+=`<button class="btn" data-act="rAddStart" style="margin-top:10px">＋ Añadir algo a esta ronda</button>`;
+  h+=`<section class="card" style="margin-top:12px"><h2>Quién pagó</h2><div class="chips"><button class="chip${r.payer?"":" on"}" data-act="rPayer" data-pid="">Nadie</button>${gente.map(p=>`<button class="chip${r.payer===p.id?" on":""}" data-act="rPayer" data-pid="${p.id}">${estadoEn(p.id)==="ido"?"🚶 ":""}${esc(p.name)}</button>`).join("")}</div></section>`;
   h+=`<section class="card"><h2>Por persona</h2><p class="note">Para quitar algo que no se tomó o añadir algo que se os olvidó apuntar.</p>`;
-  people().filter(p=>(r.orders[p.id]||[]).length||estadoEn(p.id)!=="no").forEach(p=>{
+  gente.forEach(p=>{
     const ds=r.orders[p.id]||[];
-    h+=`<div class="drow"><div><div><b>${esc(p.name)}</b></div>${ds.length?ds.map((o,i)=>`<div class="note" style="display:flex;align-items:center;gap:6px">${emoji(o)} ${esc(gLabel(o))} · ${eur(roundPrice(r,o))}<button class="linkish rm" data-act="rDel" data-pid="${p.id}" data-idx="${i}" aria-label="Quitar">✕</button></div>`).join(""):'<div class="note">Nada</div>'}</div><div class="acts"><button class="linkish" data-act="rAdd" data-pid="${p.id}">+ añadir</button></div></div>`;
+    h+=`<div class="drow"><div><div><b>${esc(p.name)}</b></div>${ds.length?ds.map((o,i)=>`<div class="note" style="display:flex;align-items:center;gap:6px">${emoji(o)} ${esc(gLabel(o))} · ${eur(roundPrice(r,o))}<button class="linkish rm" data-act="rDel" data-pid="${p.id}" data-idx="${i}" aria-label="Quitar">✕</button></div>`).join(""):'<div class="note">Nada</div>'}</div><div class="acts"><button class="linkish" data-act="rAddStart" data-pid="${p.id}">+ añadir</button></div></div>`;
   });
   h+='</section>';
   if((r.log||[]).length)h+=`<section class="card"><h2>Registro</h2><div class="note">${r.log.slice().reverse().map(l=>`${hhmm(l.ts)} · ${esc(byName(l.by))}: ${esc(l.what)}`).join("<br>")}</div></section>`;
+  return h;
+}
+// Añadir a una ronda cerrada (020), como en Pedir: primero qué (la carta), después para quién, una
+// para cada uno o para compartir entre ellos. ui.rAdd = {rid, pids, d (lo elegido), compartir, qty}.
+function vRondaAnadir(r){
+  const a=ui.rAdd;
+  let h=`<div class="pad-head"><h2>＋ Añadir a la ${esc(roundLabel(r))}</h2><button class="mini on" data-act="rAddCancel">✕</button></div>`;
+  if(!a.d)return h+`<p class="note" style="margin:0 2px 10px">Elige qué se tomó${a.pids.length?` (${esc(a.pids.map(pname).join(", "))})`:""}; después, para quién.</p>`+vKeys({ronda:r});
+  const d=a.d,m=d.drink&&mixOf(d.drink),n=a.pids.length,ud=precioAnadir(r,d),tot=r2(ud*(a.compartir?a.qty:n));
+  h+=`<h3 class="keys-title">${emoji(d)} ${esc(label(d))}${d.clarification?" · "+esc(d.clarification):""} · ${eur(ud)}</h3>`;
+  if(m)h+=`<div class="chips" style="margin-bottom:10px">${m.options.map(x=>`<button class="chip${canon(x.name)===canon(d.clarification||"")?" on":""}" data-act="rAddMix" data-name="${esc(x.name)}">${esc(x.name)}${x.extra?` <span class="note">+${eur(x.extra)}</span>`:""}</button>`).join("")}<button class="chip${d.clarification?"":" on"}" data-act="rAddMix" data-name="">sin nota</button></div>`;
+  h+=`<p class="note" style="margin:0 2px 6px">¿Para quién?</p><div class="chips">${genteRonda(r).map(p=>{const on=a.pids.includes(p.id);return `<button class="chip${on?" on":""}" data-act="rAddToggle" data-pid="${p.id}">${on?"☑":"☐"} ${estadoEn(p.id)==="ido"?"🚶 ":""}${esc(p.name)}</button>`}).join("")}</div>`;
+  h+=`<div class="chips" style="margin-top:8px"><button class="chip" data-act="rAddAll">Todos</button><button class="chip" data-act="rAddNone">Ninguno</button></div>`;
+  h+=`<div class="row2" style="margin-top:10px"><button class="mini${a.compartir?"":" on"}" data-act="rAddModo" data-id="cada">Uno para cada uno</button><button class="mini${a.compartir?" on":""}" data-act="rAddModo" data-id="compartir">🍽️ Para compartir</button></div>`;
+  if(a.compartir)h+=`<div class="set-row" style="margin:10px 2px"><span style="flex:1">¿Cuántas?</span><button class="mini" data-act="rAddQty" data-id="-1" aria-label="Una menos">−</button><b style="min-width:2.5ch;text-align:center;font-size:1.2rem">${a.qty}</b><button class="mini" data-act="rAddQty" data-id="1" aria-label="Una más">+</button></div>`;
+  h+=`<p class="status">${n?(a.compartir?`Entre ${n}: ${eur(tot)} en total, unos ${eur(tot/n)} cada uno`:`${n} × ${eur(ud)} = ${eur(tot)}`):"Marca al menos a una persona"}</p>`;
+  h+=`<button class="btn primary" data-act="rAddSave"${n?"":" disabled"}>${n?`Añadir a la ${esc(roundLabel(r))}`:"Marca al menos a una persona"}</button>`;
   return h;
 }
 /* Editor de la carta activa: pantalla propia, categorías y subgrupos plegables (solo uno
@@ -1795,7 +1847,8 @@ function barCoincidencias(){
 }
 function vBarLista(){
   const txt=(ui.barQ||"").trim(),hits=barCoincidencias(),exacto=barPorNombre(txt);
-  let h=hits.length?`<div class="chips">${hits.map(b=>{const n=Object.keys(b.prices).length;return `<button class="chip${b.id===S.current.bar?" on":""}" data-act="pickBar" data-id="${b.id}">${esc(b.name)}${n?` <span class="note">${n} precio${n===1?"":"s"}</span>`:""}</button>`}).join("")}</div>`
+  const actual=ui.modal==="rbar"?((S.rounds.find(x=>x.id===ui.editRound)||{}).bar||""):S.current.bar;
+  let h=hits.length?`<div class="chips">${hits.map(b=>{const n=Object.keys(b.prices).length;return `<button class="chip${b.id===actual?" on":""}" data-act="pickBar" data-id="${b.id}">${esc(b.name)}${n?` <span class="note">${n} precio${n===1?"":"s"}</span>`:""}</button>`}).join("")}</div>`
     :(txt?"":`<p class="note">Aún no hay bares guardados.</p>`);
   // Destacado solo si no coincide ninguno: si no, es fácil crear sin querer el bar «tx» a medio escribir.
   if(txt&&!exacto)h+=`<button class="btn small${hits.length?"":" primary"}" data-act="newBar">+ Nuevo bar: «${esc(txt.slice(0,40))}»</button>`;
@@ -1810,6 +1863,8 @@ function vModal(){
       `</div><button class="btn small" data-act="modalClose" style="margin-top:12px">Cerrar</button>`);
   if(ui.modal==="round")
     return sheet(`<h2>¿En qué bar estáis?</h2><p class="note">La ronda usa los precios de ese bar, y las siguientes lo heredan. El bar recuerda lo que os ha cobrado: lo corregido en la Comanda y, al cerrar cada ronda, todo lo pedido.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
+  if(ui.modal==="rbar")
+    return sheet(`<h2>¿En qué bar fue esta ronda?</h2><p class="note">Sus precios pasan a ser los de ese bar (lo que no tenga, el de la carta); los puestos a mano se quedan. Después corrige con el ticket lo que no cuadre: el bar lo aprende. La ronda en curso no cambia.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
   if(ui.modal==="estado")
     return sheet(`<h2>Estado</h2><p>${mode==="firebase"?((netCache||netPending)?"📴 Sin cobertura: apuntas igual y se envía al recuperarla.":"🟢 Compartida con toda la cuadrilla, al instante."):mode==="connecting"?"Conectando…":"⚠️ Sin conexión con la base de datos: solo se guarda en este móvil."}</p><p class="note">Sala <b>${esc(SALA)}</b> · ronda ${S.current.n}${S.current.name?" · "+esc(S.current.name):""} · ${S.rounds.length} cerrada${S.rounds.length===1?"":"s"} · versión ${APP_VERSION}</p><button class="btn small" data-act="modalClose">Cerrar</button>`);
   return"";
@@ -1849,7 +1904,7 @@ document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0)
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
-    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.partsEdit=false;if(ui.share||ui.sharePending||ui.shareEdit){ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.group=[]}ui.rsWho=null;ui.rsGroup=[];if(id!=="carta"&&id!=="mezclas")ui.cartaQ="";window.scrollTo(0,0);break;
+    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.partsEdit=false;ui.rAdd=null;if(ui.share||ui.sharePending||ui.shareEdit){ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.group=[]}ui.rsWho=null;ui.rsGroup=[];if(id!=="carta"&&id!=="mezclas")ui.cartaQ="";window.scrollTo(0,0);break;
     case"cartaCat":ui.cartaCat=ui.cartaCat===id?null:id;ui.cartaGrp=null;alTope(id);break;
     case"cartaGrp":ui.cartaGrp=ui.cartaGrp===id?null:id;alTope(id);break;
     case"sel":if(ui.multi||ui.pending||ui.sharePending||ui.shareEdit){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.path=[];ui.lastAdd=null;ui.editMix=null}break;
@@ -1857,6 +1912,16 @@ document.addEventListener("click",e=>{
     case"back":ui.path=ui.path.slice(0,-1);ui.lastAdd=null;break;
 
     case"pick":case"pickOther":{
+      if(ui.tab==="ronda"&&ui.rAdd){                    // añadir a una ronda cerrada: solo se elige qué
+        let d;
+        if(b.dataset.act==="pickOther"){
+          const n=prompt("¿Qué fue? (fuera de la carta)");if(!n||!n.trim())return;
+          const pr=parseFloat(String(prompt("¿Precio en € (por unidad)?","2")||"").replace(",","."));if(isNaN(pr))return;
+          d=tidy({custom:n.trim().slice(0,40),price:r2(pr)});
+        }else if(IDX[id]){d={drink:id};const mix=b.dataset.mix!==undefined?b.dataset.mix:defMix(id);if(mix)d.clarification=mix}
+        else return;
+        ui.rAdd.d=d;ui.path=[];window.scrollTo(0,0);break;
+      }
       if(isLocked())return;
       const share=!!ui.share,first=!share&&ui.flow==="bebida"&&!ui.pending;
       const pids=(share||first)?[]:(ui.multi?ui.group.slice():[ui.sel]);
@@ -2001,10 +2066,11 @@ document.addEventListener("click",e=>{
     case"modalClose":ui.modal=null;break;
     case"noop":return;
     case"setMe":{me=id;lsSet("ronda.me",me);ui.sel=me;ui.modal=null;break}
-    case"pickBar":if(S.bares[id]){elegirBar(id);ui.modal=null;ui.barQ="";flash("Precios de "+S.bares[id].name)}break;
+    case"pickBar":if(S.bares[id]){if(ui.modal==="rbar"){barDeRonda(id);break}elegirBar(id);ui.modal=null;ui.barQ="";flash("Precios de "+S.bares[id].name)}break;
     case"newBar":{
       const txt=(ui.barQ||"").trim();if(!txt)return;
       const ya=barPorNombre(txt),bid=ya?ya.id:crearBar(txt);
+      if(ui.modal==="rbar"){barDeRonda(bid);break}
       elegirBar(bid);ui.modal=null;ui.barQ="";flash(ya?"Precios de "+S.bares[bid].name:"Bar nuevo: "+S.bares[bid].name);break;
     }
     case"barOpen":ui.barOpen=ui.barOpen===id?null:id;break;
@@ -2025,7 +2091,7 @@ document.addEventListener("click",e=>{
       if(mode==="firebase")barWrite({["bares."+id]:DEL()});else saveLocal();
       flash("Bar borrado");break;
     }
-    case"barNone":elegirBar("");ui.modal=null;ui.barQ="";flash("Ronda sin bar: precios de la carta");break;
+    case"barNone":if(ui.modal==="rbar"){barDeRonda("");break}elegirBar("");ui.modal=null;ui.barQ="";flash("Ronda sin bar: precios de la carta");break;
 
     case"repView":ui.repView=id;break;
     case"deliver":toggleDelivered(b.dataset.pid,parseInt(b.dataset.idx,10));break;
@@ -2047,7 +2113,8 @@ document.addEventListener("click",e=>{
       const n=S.current.n;closeRound("");ui.payer=null;ui.tab="pedir";flash(`Ronda ${n} cerrada sin pagar`);break;
     }
     // Corregir una ronda cerrada: el PIN se pide una vez, al entrar.
-    case"editRound":if(!S.rounds.some(r=>r.id===id))return;if(!requirePin())return;ui.editRound=id;ui.rsWho=null;ui.rsGroup=[];ui.tab="ronda";window.scrollTo(0,0);break;
+    case"editRound":if(!S.rounds.some(r=>r.id===id))return;if(!requirePin())return;ui.editRound=id;ui.rsWho=null;ui.rsGroup=[];ui.rAdd=null;ui.tab="ronda";window.scrollTo(0,0);break;
+    case"rBar":{const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;ui.modal="rbar";ui.barQ=r.bar&&S.bares[r.bar]?"":(r.name||"");setTimeout(()=>{const el=document.getElementById("barInput");if(el)el.focus()},0);break}
     case"rPayer":{const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;if((r.payer||"")===(b.dataset.pid||""))return;setRoundPayer(r.id,b.dataset.pid||"");flash("Pagador actualizado");break}
     case"rDel":{
       const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;
@@ -2058,7 +2125,7 @@ document.addEventListener("click",e=>{
     }
     case"rsWho":{const r=S.rounds.find(x=>x.id===ui.editRound);const s=r&&r.shared&&r.shared[id];if(!s)return;ui.rsWho=id;ui.rsGroup=(s.who||[]).slice();window.scrollTo(0,0);break}
     case"rsToggle":{const p=b.dataset.pid,k=ui.rsGroup.indexOf(p);k<0?ui.rsGroup.push(p):ui.rsGroup.splice(k,1);break}
-    case"rsAll":ui.rsGroup=people().map(p=>p.id);break;
+    case"rsAll":{const r=S.rounds.find(x=>x.id===ui.editRound);if(r)ui.rsGroup=genteRonda(r).map(p=>p.id);break}
     case"rsNone":ui.rsGroup=[];break;
     case"rsWhoCancel":ui.rsWho=null;ui.rsGroup=[];break;
     case"rsSaveWho":{
@@ -2067,7 +2134,7 @@ document.addEventListener("click",e=>{
       const orden=people().map(p=>p.id),nuevo=ui.rsGroup.slice().sort((a,b)=>orden.indexOf(a)-orden.indexOf(b));
       const antes=(s.who||[]).slice(),entran=nuevo.filter(p=>!antes.includes(p)),salen=antes.filter(p=>!nuevo.includes(p));
       if(!entran.length&&!salen.length){ui.rsWho=null;ui.rsGroup=[];break}
-      asegurarParticipantes(nuevo);r.shared=Object.assign({},r.shared,{[ui.rsWho]:Object.assign({},s,{who:nuevo})});
+      asegurarEnNoche(nuevo);r.shared=Object.assign({},r.shared,{[ui.rsWho]:Object.assign({},s,{who:nuevo})});
       const cambios=[entran.length?"entra "+entran.map(pname).join(", "):"",salen.length?"sale "+salen.map(pname).join(", "):""].filter(Boolean).join("; ");
       // El total no cambia: solo cómo se reparte.
       guardarRonda(r,`Comparten ${label(s)}: ${cambios} (entre ${nuevo.length})`,true);
@@ -2079,24 +2146,36 @@ document.addEventListener("click",e=>{
       r.shared=Object.assign({},r.shared);delete r.shared[id];
       guardarRonda(r,`Quitado: ${label(s)} (para compartir)`);flash("Quitada");break;
     }
-    case"rAdd":{
-      const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;
-      const pid=b.dataset.pid,txt=(prompt(`¿Qué añadir a ${pname(pid)} en la ${roundLabel(r)}?`)||"").trim();if(!txt)return;
-      const hit=findItemByName(txt);let o;
-      if(hit){
-        o={drink:hit.id,ts:r.ts,by:me||""};const def=defMix(hit.id);if(def)o.clarification=def;
+    /* --- añadir a una ronda cerrada (020): ui.rAdd, ver vRondaAnadir() --- */
+    case"rAddStart":{const r=S.rounds.find(x=>x.id===ui.editRound);if(!r)return;ui.rAdd={rid:r.id,pids:b.dataset.pid?[b.dataset.pid]:[],d:null,compartir:false,qty:1};ui.path=[];ui.rsWho=null;ui.rsGroup=[];window.scrollTo(0,0);break}
+    case"rAddCancel":ui.rAdd=null;ui.path=[];break;
+    case"rAddToggle":{if(!ui.rAdd)return;const p=b.dataset.pid,a=ui.rAdd.pids,k=a.indexOf(p);k<0?a.push(p):a.splice(k,1);break}
+    case"rAddAll":{const r=ui.rAdd&&S.rounds.find(x=>x.id===ui.rAdd.rid);if(r)ui.rAdd.pids=genteRonda(r).map(p=>p.id);break}
+    case"rAddNone":if(ui.rAdd)ui.rAdd.pids=[];break;
+    case"rAddModo":if(ui.rAdd)ui.rAdd.compartir=id==="compartir";break;
+    case"rAddQty":if(ui.rAdd)ui.rAdd.qty=Math.max(1,(ui.rAdd.qty||1)+parseInt(id,10));break;
+    case"rAddMix":{const d=ui.rAdd&&ui.rAdd.d;if(!d)return;if(b.dataset.name)d.clarification=b.dataset.name;else delete d.clarification;break}
+    case"rAddSave":{
+      const a=ui.rAdd,r=a&&S.rounds.find(x=>x.id===a.rid);if(!r||!a.d||!a.pids.length)return;
+      const orden=people().map(p=>p.id),pids=a.pids.filter(findP).sort((x,y)=>orden.indexOf(x)-orden.indexOf(y));
+      const o=Object.assign({},a.d,{ts:r.ts,by:me||""});
+      if(o.drink){
         // El precio sale del bar de esa ronda (o de la carta), no del de la ronda en curso.
-        if(!r.prices||r.prices[hit.id]==null)r.prices=Object.assign({},r.prices,{[hit.id]:precioBase(hit.id,r.bar||"")});
-        if(def&&extraOf(hit.id,def))o.price=r2(Number(r.prices[hit.id])+extraOf(hit.id,def));
-      }else{
-        const pr=parseFloat(String(prompt(`«${txt}» no está en la carta. ¿Precio en €?`,"2")||"").replace(",","."));if(isNaN(pr))return;
-        o={custom:txt.slice(0,40),price:r2(pr),ts:r.ts,by:me||""};
+        if(!r.prices||r.prices[o.drink]==null)r.prices=Object.assign({},r.prices,{[o.drink]:precioBase(o.drink,r.bar||"")});
+        const ex=extraOf(o.drink,o.clarification);if(ex)o.price=r2(Number(r.prices[o.drink])+ex);
       }
-      asegurarParticipantes([pid]);r.orders=Object.assign({},r.orders,{[pid]:(r.orders[pid]||[]).concat([o])});
-      guardarRonda(r,`Añadido: ${gLabel(o)} a ${pname(pid)}`);flash("Añadido: "+gLabel(o));break;
+      asegurarEnNoche(pids);
+      let what;
+      if(a.compartir){
+        r.shared=Object.assign({},r.shared,{[uid("s")]:Object.assign(o,{qty:a.qty,who:pids})});
+        what=`Añadido: ${a.qty>1?a.qty+" × ":""}${gLabel(o)} para compartir entre ${pids.length}`;
+      }else{
+        r.orders=Object.assign({},r.orders);pids.forEach(pid=>{r.orders[pid]=(r.orders[pid]||[]).concat([Object.assign({},o)])});
+        what=`Añadido: ${gLabel(o)} a ${pids.map(pname).join(", ")}`;
+      }
+      guardarRonda(r,what);ui.rAdd=null;ui.path=[];flash(what);break;
     }
     case"clearRound":if(!ui.confirmClear){ui.confirmClear=true;setTimeout(()=>{ui.confirmClear=false;render()},3000)}else{ui.confirmClear=false;if(!requirePin())return;clearRound();flash("Ronda vaciada")}break;
-    case"undo":if(confirm("¿Reabrir la última ronda cerrada? Se deshace su pago y vuelve a estar editable.")){if(!requirePin())return;undoLast();ui.tab="pedir";flash("Ronda reabierta")}break;
     /* --- participantes de la noche (017) --- */
     case"partsEdit":if(isLocked())return;ui.partsEdit=true;ui.multi=false;ui.pending=null;ui.path=[];window.scrollTo(0,0);break;
     case"partsCerrar":ui.partsEdit=false;break;
