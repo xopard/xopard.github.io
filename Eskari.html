@@ -376,7 +376,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="020";
+const APP_VERSION="021";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -419,7 +419,7 @@ function curSet(){
 }
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null,rbarPlan:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -971,34 +971,53 @@ function genteRonda(r){
 // Precio de un producto en una ronda cerrada: el de esa ronda, o el de su bar (o la carta).
 function precioEnRonda(r,id){return r.prices&&r.prices[id]!=null?Number(r.prices[id])||0:precioBase(id,r.bar||"")}
 const precioAnadir=(r,d)=>d.price!=null?Number(d.price)||0:d.drink?r2(precioEnRonda(r,d.drink)+extraOf(d.drink,d.clarification)):0;
-// Cambiar el bar de una ronda cerrada (020). Sus precios pasan a ser los de ese bar (o los de la
-// carta si el bar no tiene el producto), también los suplementos que calculó la app; los puestos
-// a mano se quedan. No se le enseña nada al bar: lo aprende al corregir cada precio con el ticket.
-function cambiarBarRonda(r,barId){
-  barId=barId&&S.bares[barId]?barId:"";
-  if(barId===(r.bar||""))return false;
-  const viejo=r.bar&&S.bares[r.bar]?r.bar:"",antes=viejo?S.bares[viejo].name:"sin bar",b=barId?S.bares[barId]:null;
-  // null = ni el bar ni la carta lo tienen (producto borrado): se queda el precio que tenía.
-  const base=d=>(b&&b.prices[d]!=null)||IDX[d]?precioBase(d,barId):(r.prices&&r.prices[d]!=null?Number(r.prices[d]):null);
-  const auto=o=>{const ex=o&&o.drink&&!o.custom&&o.price!=null?extraOf(o.drink,o.clarification):0;return !!ex&&Math.abs(Number(o.price)-(precioEnRonda(Object.assign({},r,{bar:viejo}),o.drink)+ex))<0.005};
-  const ids=new Set(Object.keys(r.prices||{}));
-  const nuevo=o=>{
-    if(!o||!o.drink||o.custom||isNada(o))return o;
-    if(o.price==null){ids.add(o.drink);return o}
-    const v=auto(o)?base(o.drink):null;if(v==null)return o;
-    ids.add(o.drink);return Object.assign({},o,{price:r2(v+extraOf(o.drink,o.clarification))});
-  };
-  const orders={};Object.keys(r.orders||{}).forEach(pid=>{orders[pid]=(r.orders[pid]||[]).map(nuevo)});
-  const shared={};Object.keys(r.shared||{}).forEach(k=>{shared[k]=nuevo(r.shared[k])});
-  const prices={};ids.forEach(d=>{const v=base(d);if(v!=null)prices[d]=r2(v)});
-  r.orders=orders;if(r.shared)r.shared=shared;r.prices=prices;r.bar=barId;r.name=b?b.name:"";
-  guardarRonda(r,`Bar: ${antes} → ${b?b.name:"sin bar"}`);
-  return true;
+/* --- Cambiar el bar de una ronda cerrada (020; desde la 021 se pregunta por los precios) ---
+   rondaConBar(r, bar, conPrecios) = cómo quedaría la ronda, sin tocarla. Sin conPrecios, solo
+   cambia el bar: los precios se quedan como están. Con conPrecios, los que el bar sabe pasan a ser
+   los suyos (sin bar, los de la carta), también los suplementos que calculó la app; lo que el bar
+   no tenga y lo puesto a mano se quedan (hasta la 020, lo que el bar no tenía iba al de la carta,
+   y en rondas antiguas estropeaba precios que estaban bien). Al bar no se le enseña nada: lo
+   aprende al corregir cada precio con el ticket. */
+function rondaConBar(r,barId,conPrecios){
+  const b=barId&&S.bares[barId]?S.bares[barId]:null,ex=o=>extraOf(o.drink,o.clarification);
+  // Primero se fijan en la ronda los precios que saca de fuera (del bar o la carta de ahora), para
+  // que cambiarle el bar no los mueva.
+  const antes=Object.assign({},r.prices);
+  Object.keys(r.orders||{}).forEach(pid=>(r.orders[pid]||[]).forEach(o=>{if(o&&o.drink&&!o.custom&&!isNada(o)&&o.price==null&&antes[o.drink]==null)antes[o.drink]=r2(roundPrice(r,o))}));
+  compartidos(r).forEach(s=>{if(s.drink&&!s.custom&&s.price==null&&antes[s.drink]==null)antes[s.drink]=r2(precioCompartido(s,r))});
+  const n=Object.assign({},r,{bar:b?barId:"",name:b?b.name:"",prices:Object.assign({},antes)});
+  if(!conPrecios)return n;
+  const sabe=d=>b?b.prices[d]!=null:!!IDX[d],base=d=>r2(b?Number(b.prices[d])||0:Number(IDX[d].price)||0);
+  Object.keys(n.prices).forEach(d=>{if(sabe(d))n.prices[d]=base(d)});
+  const auto=o=>{const e=o&&o.drink&&!o.custom&&o.price!=null?ex(o):0;return !!e&&Math.abs(Number(o.price)-((antes[o.drink]!=null?antes[o.drink]:precioBase(o.drink,r.bar||""))+e))<0.005};
+  const nuevo=o=>auto(o)&&sabe(o.drink)?Object.assign({},o,{price:r2(base(o.drink)+ex(o))}):o;
+  n.orders={};Object.keys(r.orders||{}).forEach(pid=>{n.orders[pid]=(r.orders[pid]||[]).map(nuevo)});
+  if(r.shared){n.shared={};Object.keys(r.shared).forEach(k=>{n.shared[k]=nuevo(r.shared[k])})}
+  return n;
 }
-// La ventana del bar abierta desde Corregir (ui.modal "rbar") elige el de esa ronda, no el de la ronda en curso.
+// Qué precios cambiarían de r a n (una línea por producto y precio).
+function cambiosDePrecio(r,n){
+  const m=new Map(),add=(o,a,b)=>{if(!o||isNada(o)||Math.abs(a-b)<0.005)return;const k=gLabel(o)+"|"+r2(a)+"|"+r2(b);if(!m.has(k))m.set(k,{txt:gLabel(o),a:r2(a),b:r2(b)})};
+  Object.keys(r.orders||{}).forEach(pid=>(r.orders[pid]||[]).forEach((o,i)=>add(o,roundPrice(r,o),roundPrice(n,n.orders[pid][i]))));
+  Object.keys(r.shared||{}).forEach(k=>{const s=r.shared[k];if(s)add(s,precioCompartido(s,r),precioCompartido(n.shared[k],n))});
+  return [...m.values()];
+}
+function ponerBarRonda(r,barId,conPrecios){
+  const n=rondaConBar(r,barId,conPrecios),antes=r.bar&&S.bares[r.bar]?S.bares[r.bar].name:"sin bar";
+  const cambia=conPrecios&&cambiosDePrecio(r,n).length>0;
+  r.bar=n.bar;r.name=n.name;r.prices=n.prices;r.orders=n.orders;if(n.shared)r.shared=n.shared;
+  // Si no cambia ningún precio, el total no se recalcula (en las rondas descuadradas de antes de la 009 cambiaría).
+  guardarRonda(r,`Bar: ${antes} → ${n.bar?n.name:"sin bar"}${cambia?(n.bar?", con sus precios":", con los precios de la carta"):""}`,!cambia);
+}
+// La ventana del bar abierta desde Corregir (ui.modal "rbar") elige el de esa ronda, no el de la
+// ronda en curso. Si con el bar nuevo cambiaría algún precio, se pregunta antes (ui.rbarPlan).
 function barDeRonda(barId){
-  const r=S.rounds.find(x=>x.id===ui.editRound);ui.modal=null;ui.barQ="";if(!r)return;
-  if(cambiarBarRonda(r,barId))flash(barId?"Precios de "+S.bares[barId].name:"Ronda sin bar: precios de la carta");
+  const r=S.rounds.find(x=>x.id===ui.editRound);ui.barQ="";
+  barId=barId&&S.bares[barId]?barId:"";
+  if(!r||barId===(r.bar||"")){ui.modal=null;ui.rbarPlan=null;return}
+  if(cambiosDePrecio(r,rondaConBar(r,barId,true)).length){ui.rbarPlan={barId};return}
+  ponerBarRonda(r,barId,true);ui.modal=null;ui.rbarPlan=null;
+  flash(barId?"Bar: "+S.bares[barId].name:"Ronda sin bar");
 }
 function cuadreTicket(total,ticket){
   if(ticket==null)return"";
@@ -1863,8 +1882,16 @@ function vModal(){
       `</div><button class="btn small" data-act="modalClose" style="margin-top:12px">Cerrar</button>`);
   if(ui.modal==="round")
     return sheet(`<h2>¿En qué bar estáis?</h2><p class="note">La ronda usa los precios de ese bar, y las siguientes lo heredan. El bar recuerda lo que os ha cobrado: lo corregido en la Comanda y, al cerrar cada ronda, todo lo pedido.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
+  if(ui.modal==="rbar"&&ui.rbarPlan){
+    const r=S.rounds.find(x=>x.id===ui.editRound),bid=ui.rbarPlan.barId;
+    if(r&&(!bid||S.bares[bid])){
+      const n=rondaConBar(r,bid,true),cs=cambiosDePrecio(r,n),de=bid?"de "+esc(S.bares[bid].name):"de la carta";
+      return sheet(`<h2>${bid?"📍 "+esc(S.bares[bid].name):"🏠 Sin bar"}</h2><p class="note">Con los precios ${de}, en la ${esc(roundLabel(r))} cambiaría:</p><p class="note" style="margin:6px 2px">${cs.map(c=>`${esc(c.txt)}: ${eur(c.a)} → <b>${eur(c.b)}</b>`).join("<br>")}</p><p class="status">Total: ${eur(sumaRonda(r))} → <b>${eur(sumaRonda(n))}</b></p><p class="note">Lo que ${bid?"el bar":"la carta"} no tenga y lo puesto a mano se quedan como están.</p><button class="btn primary" data-act="rbarCon">Usar los precios ${de}</button><button class="btn" data-act="rbarSin">${bid?"Solo poner el bar":"Solo quitar el bar"}: los precios se quedan</button><button class="btn small" data-act="modalClose">Cancelar</button>`);
+    }
+    ui.rbarPlan=null;
+  }
   if(ui.modal==="rbar")
-    return sheet(`<h2>¿En qué bar fue esta ronda?</h2><p class="note">Sus precios pasan a ser los de ese bar (lo que no tenga, el de la carta); los puestos a mano se quedan. Después corrige con el ticket lo que no cuadre: el bar lo aprende. La ronda en curso no cambia.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
+    return sheet(`<h2>¿En qué bar fue esta ronda?</h2><p class="note">Si con ese bar cambiaría algún precio, verás cuáles y decides si usar los suyos o dejar los de la ronda. Después corrige con el ticket lo que no cuadre: el bar lo aprende. La ronda en curso no cambia.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
   if(ui.modal==="estado")
     return sheet(`<h2>Estado</h2><p>${mode==="firebase"?((netCache||netPending)?"📴 Sin cobertura: apuntas igual y se envía al recuperarla.":"🟢 Compartida con toda la cuadrilla, al instante."):mode==="connecting"?"Conectando…":"⚠️ Sin conexión con la base de datos: solo se guarda en este móvil."}</p><p class="note">Sala <b>${esc(SALA)}</b> · ronda ${S.current.n}${S.current.name?" · "+esc(S.current.name):""} · ${S.rounds.length} cerrada${S.rounds.length===1?"":"s"} · versión ${APP_VERSION}</p><button class="btn small" data-act="modalClose">Cerrar</button>`);
   return"";
@@ -2063,7 +2090,12 @@ document.addEventListener("click",e=>{
       flash(k?`Repetido a ${k} persona${k>1?"s":""}${fuera?` · ${fuera} no está${fuera>1?"n":""} en esta carta`:""}`:"No falta nadie de la última ronda");break;
     }
     case"modal":ui.modal=id;if(id==="round"){ui.barQ=S.current.bar?"":(S.current.name||"");setTimeout(()=>{const el=document.getElementById("barInput");if(el)el.focus()},0)}break;
-    case"modalClose":ui.modal=null;break;
+    case"modalClose":ui.modal=null;ui.rbarPlan=null;break;
+    case"rbarCon":case"rbarSin":{
+      const r=S.rounds.find(x=>x.id===ui.editRound),p=ui.rbarPlan;ui.modal=null;ui.rbarPlan=null;
+      if(r&&p&&(!p.barId||S.bares[p.barId])){const con=b.dataset.act==="rbarCon";ponerBarRonda(r,p.barId,con);flash((p.barId?"Bar: "+S.bares[p.barId].name:"Ronda sin bar")+(con?" · precios cambiados":" · precios sin tocar"))}
+      break;
+    }
     case"noop":return;
     case"setMe":{me=id;lsSet("ronda.me",me);ui.sel=me;ui.modal=null;break}
     case"pickBar":if(S.bares[id]){if(ui.modal==="rbar"){barDeRonda(id);break}elegirBar(id);ui.modal=null;ui.barQ="";flash("Precios de "+S.bares[id].name)}break;
