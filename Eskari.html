@@ -36,6 +36,13 @@ header{display:flex;align-items:center;justify-content:flex-start;padding:8px 2p
 h1{font:700 1.45rem/1 var(--cond);margin:0;flex-shrink:0;display:flex;align-items:center;gap:7px}
 h1 img{width:28px;height:28px;display:block}
 h1 .i{color:var(--accent)}
+.nochebar{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px 12px;margin:0 0 10px;font:600 1rem/1.25 var(--cond);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nochebar b{color:var(--ink)}
+.noche{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.noche:last-child{border-bottom:0}
+.noche .ir{flex:1;min-width:0;background:none;border:0;text-align:left;padding:4px 0}
+.noche .ir b{display:block;font:600 1.1rem/1.2 var(--cond)}
+.noche.aqui .ir b::after{content:" ● aquí";color:var(--accent);font-size:.85rem}
 .hbtn{background:var(--surface2);border:1px solid var(--line);border-radius:999px;padding:5px 10px;font:600 1rem/1.1 var(--cond);max-width:42vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #roundBtn{margin-left:auto}
 .sync{font-size:.78rem;color:var(--muted);display:inline-flex;align-items:center;gap:4px;flex-shrink:0}
@@ -175,6 +182,7 @@ table th:first-child,table td:first-child{text-align:left}
     <button class="hbtn" id="meBtn" data-act="modal" data-id="me">¿Quién eres?</button>
     <span class="sync" id="sync" data-act="modal" data-id="estado"><span class="dot"></span><span id="syncTxt"></span></span>
   </header>
+  <button class="nochebar" id="nocheBtn" data-act="tab" data-id="noches" style="display:none"></button>
   <main id="view"></main>
 </div>
 <nav class="tabs"><div class="in">
@@ -367,7 +375,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="013";
+const APP_VERSION="014";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -385,9 +393,24 @@ let netCache=false,netPending=false;
 
 /* ===== Estado ===== */
 let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
+/* --- Noches y carpetas (014). Cada noche es salas/{sala}/noches/{id}: su ficha (titulo, fecha,
+   carpeta…) y a la vez su ronda en curso (los campos que antes tenía bar/current); sus rondas
+   cerradas van en noches/{id}/rounds. Cada móvil recuerda en qué noche está (ronda.noche.<sala>). --- */
+let NOCHE=lsGet("ronda.noche."+SALA)||"";
+S.noches={};S.carpetas={};
+let NOCHES_DATA={};            // datos completos de cada noche, tal como llegan de la base de datos
+let migracionHecha=false;      // se sabe que existe bar/migracion014
+let avisoViejo="";             // pedidos apuntados con una versión anterior a la 014
+const META_NOCHE=["titulo","fecha","carpeta","creada","por","rondas","total"];
+const nocheMeta=id=>{const m=S.noches[id||NOCHE]||{};const o={};META_NOCHE.forEach(k=>{if(m[k]!=null)o[k]=m[k]});return o};
+const curPath=()=>"noches/"+NOCHE;
+const roundPath=id=>"noches/"+NOCHE+"/rounds/"+id;
+// Escribir la ronda en curso de la noche: dato a dato (update) o entera (set, conservando la ficha).
+function curUpdate(u){if(!NOCHE)return Promise.resolve();return dbUpdate(curPath(),u,()=>Object.assign(clone(S.current),nocheMeta()))}
+function curSet(){if(!NOCHE)return Promise.resolve();return dbSet(curPath(),Object.assign(clone(S.current),nocheMeta()))}
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[]};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -639,7 +662,8 @@ function parseMenu(txt){
   return{menu:{id:uid("m"),name:String((o&&o.name)||"Carta importada").slice(0,30),catalog},count:countProducts(catalog)};
 }
 function flash(t){const el=$("#toast");el.textContent=t;el.classList.add("show");clearTimeout(flash.t);flash.t=setTimeout(()=>el.classList.remove("show"),2200)}
-function docRef(path){const a=path.split("/");return colRef(a[0]).doc(a[1])}
+// "col/doc" o "col/doc/subcol/doc"… dentro de la sala.
+function docRef(path){const a=path.split("/");let r=colRef(a[0]).doc(a[1]);for(let i=2;i+1<a.length;i+=2)r=r.collection(a[i]).doc(a[i+1]);return r}
 function dbSet(path,data){if(!db||mode!=="firebase")return Promise.resolve();return docRef(path).set(data).catch(e=>{console.error(e);flash("Error guardando")})}
 function dbUpdate(path,data,fb){if(!db||mode!=="firebase")return Promise.resolve();return docRef(path).update(data).catch(e=>{console.warn(e);return fb?dbSet(path,fb()):null})}
 function dbDelete(path){if(!db||mode!=="firebase")return Promise.resolve();return docRef(path).delete().catch(e=>console.error(e))}
@@ -648,7 +672,7 @@ function dbDelete(path){if(!db||mode!=="firebase")return Promise.resolve();retur
 function writeOrders(pid){
   if(mode!=="firebase"){saveLocal();return}
   const arr=clone(drinks(pid)),u={};u["orders."+pid]=arr.length?arr:DEL();
-  dbUpdate("bar/current",u,()=>clone(S.current));
+  curUpdate(u);
 }
 function findItemByName(txt){
   const c=canon(txt);if(!c)return null;let hit=null;
@@ -673,7 +697,7 @@ function addDrinks(pids,d){
   d=tidy(d);
   const ts=Date.now(),u={};
   pids.forEach(pid=>{S.current.orders[pid]=drinks(pid).concat([Object.assign({},d,{ts,by:me})]);u["orders."+pid]=clone(S.current.orders[pid])});
-  if(mode==="firebase")dbUpdate("bar/current",u,()=>clone(S.current));else saveLocal();
+  if(mode==="firebase")curUpdate(u);else saveLocal();
 }
 function addDrink(pid,d){addDrinks([pid],d)}
 function setNote(pid,idx,txt){
@@ -705,12 +729,12 @@ function removeDrink(pid,idx){
   const del=S.current.delivered,u={};
   Object.keys(del).forEach(k=>{if(k.indexOf(pid+"_")===0){delete del[k];u["delivered."+k]=DEL()}});
   writeOrders(pid);
-  if(mode==="firebase"&&Object.keys(u).length)dbUpdate("bar/current",u);
+  if(mode==="firebase"&&Object.keys(u).length)curUpdate(u);
 }
 function setDeliveredBulk(pairs,val){
   const del=S.current.delivered,u={};
   pairs.forEach(k=>{if(val){del[k]=true;u["delivered."+k]=true}else{delete del[k];u["delivered."+k]=DEL()}});
-  if(mode==="firebase")dbUpdate("bar/current",u,()=>clone(S.current));else saveLocal();
+  if(mode==="firebase")curUpdate(u);else saveLocal();
 }
 function toggleDelivered(pid,idx){const k=pid+"_"+idx;setDeliveredBulk([k],!S.current.delivered[k])}
 function keysOf(pid){return drinks(pid).map((o,i)=>isNada(o)?null:pid+"_"+i).filter(Boolean)}
@@ -759,7 +783,7 @@ function elegirBar(barId){
   S.current.bar=barId||"";
   S.current.name=barId&&S.bares[barId]?S.bares[barId].name:"";
   if(barId&&S.bares[barId]){S.bares[barId].last=Date.now();barWrite({["bares."+barId+".last"]:S.bares[barId].last})}
-  if(mode==="firebase")dbUpdate("bar/current",{bar:S.current.bar,name:S.current.name},()=>clone(S.current));else saveLocal();
+  if(mode==="firebase")curUpdate({bar:S.current.bar,name:S.current.name});else saveLocal();
   recalcAuto(eraAuto);
 }
 // Al cerrar una ronda con bar, el bar recuerda el precio de todo lo pedido (cerrar = darlo por
@@ -810,7 +834,7 @@ function partesCompartido(s,r){
 function writeShared(id){
   if(mode!=="firebase"){saveLocal();return}
   const s=S.current.shared[id];
-  dbUpdate("bar/current",{["shared."+id]:s?clone(s):DEL()},()=>clone(S.current));
+  curUpdate({["shared."+id]:s?clone(s):DEL()});
 }
 
 function logLine(what){return{ts:Date.now(),by:me||"",what}}
@@ -836,9 +860,10 @@ const rondaDescuadrada=r=>Math.abs(sumaRonda(r)-(Number(r.total)||0))>=0.005;
 function guardarRonda(r,what,sinRecalcular){
   if(!sinRecalcular)r.total=sumaRonda(r);
   if(what)r.log=(r.log||[]).concat([logLine(what)]);
+  actualizarResumen();
   if(mode!=="firebase"){saveLocal();return}
   const doc=clone(Object.assign({},r));delete doc.id;
-  dbSet("rounds/"+r.id,doc);
+  dbSet(roundPath(r.id),doc);
   if(S.current.night)dbUpdate("archive/"+archiveKey(S.current.night,r.id),{orders:doc.orders,shared:doc.shared||{},prices:doc.prices||{},total:doc.total,payer:doc.payer||"",ticket:doc.ticket!=null?doc.ticket:DEL(),log:doc.log||[],savedTs:Date.now()});
 }
 function gruposRonda(r){
@@ -874,11 +899,10 @@ function cuadreTicket(total,ticket){
   return`<p class="status" style="color:var(--bad)">${d>0?`Faltan ${eur(d)}: el ticket es mayor que lo apuntado`:`Sobran ${eur(-d)}: el ticket es menor que lo apuntado`}</p>`;
 }
 const campoTicket=(attr,v)=>`<div class="set-row" style="margin-top:10px"><label for="tk-${attr}" style="flex:1">Total del ticket <span class="note">(opcional)</span></label><input id="tk-${attr}" class="price" type="number" step="0.05" inputmode="decimal" value="${v!=null?v:""}" placeholder="—" data-${attr}="1"> €</div>`;
+// El identificador de la noche (con el que se archivan sus rondas) es el de la noche elegida.
 function ensureNight(){
-  if(!S.current.night){
-    S.current.night="n"+Date.now().toString(36);
-    if(mode==="firebase")dbUpdate("bar/current",{night:S.current.night},()=>clone(S.current));else saveLocal();
-  }
+  if(NOCHE){if(S.current.night!==NOCHE){S.current.night=NOCHE;curUpdate({night:NOCHE})}return NOCHE}
+  if(!S.current.night){S.current.night="n"+Date.now().toString(36);saveLocal()}
   return S.current.night;
 }
 function archiveKey(night,rid){return night+"-"+rid}
@@ -908,21 +932,55 @@ function closeRound(payer){
   S.rounds=S.rounds.filter(r=>r.id!==id).concat([Object.assign({id},round)]);
   if(S.current.bar)aprenderPrecios(S.current.bar,Object.assign({},orders,{"(mesa)":compartidos()}));
   S.current={n:n+1,name:S.current.name||"",bar:S.current.bar||"",ticket:null,night,orders:{},delivered:{},shared:{}};
-  if(mode==="firebase"){dbSet("rounds/"+id,round);archiveRound(night,id,round);dbSet("bar/current",clone(S.current))}else saveLocal();
+  if(mode==="firebase"){dbSet(roundPath(id),round);archiveRound(night,id,round);curSet()}else saveLocal();
+  actualizarResumen();
 }
-function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.current.bar||"",ticket:null,night:S.current.night||"",orders:{},delivered:{},shared:{}};if(mode==="firebase")dbSet("bar/current",clone(S.current));else saveLocal()}
+function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.current.bar||"",ticket:null,night:S.current.night||"",orders:{},delivered:{},shared:{}};if(mode==="firebase")curSet();else saveLocal()}
 function undoLast(){
   if(!S.rounds.length)return;
   const last=sortedRounds().pop();
   S.rounds=S.rounds.filter(r=>r.id!==last.id);
   // Se conserva la noche: sin ella, la siguiente ronda cerrada se archivaba como de otra noche.
   S.current={n:last.n,name:last.name||"",bar:last.bar||"",ticket:ticketOk(last.ticket),night:S.current.night||"",orders:clone(last.orders||{}),delivered:{},shared:normShared(last.shared)};
-  if(mode==="firebase"){archiveNote(last.id,"Ronda reabierta para editarla");dbDelete("rounds/"+last.id);dbSet("bar/current",clone(S.current))}else saveLocal();
+  if(mode==="firebase"){archiveNote(last.id,"Ronda reabierta para editarla");dbDelete(roundPath(last.id));curSet()}else saveLocal();
+  actualizarResumen();
 }
-function newNight(){
-  const ids=S.rounds.map(r=>r.id);S.rounds=[];
-  S.current={n:1,name:"",bar:"",ticket:null,night:"n"+Date.now().toString(36),orders:{},delivered:{},shared:{}};
-  if(mode==="firebase"){ids.forEach(id=>dbDelete("rounds/"+id));dbSet("bar/current",clone(S.current))}else saveLocal();
+
+/* --- Noches y carpetas --- */
+const nochesLista=()=>Object.keys(S.noches).map(id=>Object.assign({id},S.noches[id])).sort((a,b)=>(b.fecha||0)-(a.fecha||0)||(b.creada||0)-(a.creada||0));
+const carpetasLista=()=>Object.keys(S.carpetas).map(id=>Object.assign({id},S.carpetas[id]));
+const nombreCarpeta=id=>(S.carpetas[id]&&S.carpetas[id].name)||"Sin carpeta";
+const fechaCorta=ts=>{if(!ts)return"";const d=new Date(ts);return["dom","lun","mar","mié","jue","vie","sáb"][d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)+(d.getFullYear()!==new Date().getFullYear()?"/"+d.getFullYear():"")};
+function normNoche(d){d=d||{};const m={titulo:String(d.titulo||"Noche").slice(0,60),fecha:Number(d.fecha)||0,carpeta:typeof d.carpeta==="string"?d.carpeta:"",creada:Number(d.creada)||0,por:d.por||""};if(d.rondas!=null)m.rondas=Number(d.rondas)||0;if(d.total!=null)m.total=Number(d.total)||0;return m}
+// Rondas cerradas y total de la noche, guardados en su ficha para enseñarlos en la lista de noches.
+function actualizarResumen(){
+  if(!NOCHE||!S.noches[NOCHE])return;
+  const rondas=S.rounds.length,total=r2(S.rounds.reduce((s,r)=>s+(Number(r.total)||0),0)),m=S.noches[NOCHE];
+  if(m.rondas===rondas&&Math.abs((m.total||0)-total)<0.005)return;
+  m.rondas=rondas;m.total=total;curUpdate({rondas,total});
+}
+function crearCarpeta(nombre){
+  const id=uid("c"),c={name:nombre.trim().slice(0,40),ts:Date.now()};
+  S.carpetas[id]=c;if(mode==="firebase")dbUpdate("bar/carpetas",{["carpetas."+id]:clone(c)},()=>({carpetas:clone(S.carpetas)}));
+  return id;
+}
+// Una noche nueva no borra nada: la anterior se queda como está, con o sin saldos pendientes.
+function crearNoche(carpeta,titulo){
+  const id=uid("n"),ahora=Date.now();
+  const meta={titulo:titulo.trim().slice(0,60),fecha:ahora,carpeta,creada:ahora,por:me||"",rondas:0,total:0};
+  const datos=Object.assign({n:1,name:"",bar:"",night:id,orders:{},delivered:{},shared:{}},meta);
+  S.noches[id]=normNoche(meta);NOCHES_DATA[id]=datos;
+  if(mode==="firebase")dbSet("noches/"+id,datos);
+  cambiarNoche(id);
+  return id;
+}
+function cambiarNoche(id){
+  if(!S.noches[id])return;
+  NOCHE=id;lsSet("ronda.noche."+SALA,id);
+  S.current=Object.assign(normCurrent(NOCHES_DATA[id]||{}),{night:id});S.rounds=[];
+  ui.sel=null;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.multi=false;ui.group=[];ui.pending=null;ui.payer=null;
+  ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.editRound=null;
+  escucharRondas();
 }
 
 /* ===== Cálculos ===== */
@@ -1074,6 +1132,7 @@ function vPedir(){
   let h="";
   if(!me)return `<p class="hint">Toca «¿Quién eres?» en la cabecera para empezar. Solo se pregunta una vez en cada móvil.</p><button class="btn primary" data-act="modal" data-id="me">¿Quién eres?</button>`;
   const am=S.config.assignerMode,locked=isLocked(),ps=activePeople(),paused=people().filter(p=>p.paused);
+  if(avisoViejo)h+=`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoViejo)}</p>`;
   if(am)h+=`<p class="status">🔐 Modo asignador: ${am===me?"lo tienes tú":esc(pname(am))+" apunta por todos. Solo puedes mirar."}</p>`;
   if(!ui.sel||!findP(ui.sel)||(findP(ui.sel).paused&&ui.sel!==me))ui.sel=(ps[0]||people()[0]).id;
   ui.group=ui.group.filter(id=>findP(id)&&!findP(id).paused);
@@ -1261,7 +1320,10 @@ function vCuentas(){
     });
     h+=`</section>`;
   }
-  h+=`<button class="btn warn" data-act="newNight">${ui.confirmReset?"¿Seguro? Se borra todo. Toca otra vez":"🌙 Noche nueva (borra rondas y saldos)"}</button>`;
+  if(mode==="firebase"&&NOCHE&&S.noches[NOCHE]){
+    const c=S.noches[NOCHE].carpeta==="c_recuperadas"?"c_otras":S.noches[NOCHE].carpeta;
+    h+=`<button class="btn" data-act="nocheNueva" data-carpeta="${esc(c)}">🌙 Nueva noche en «${esc(nombreCarpeta(c))}»</button><p class="note">Esta noche se queda guardada tal cual, con sus rondas y sus saldos. Puedes volver a ella desde la barra de arriba.</p>`;
+  }
   return h;
 }
 
@@ -1353,6 +1415,35 @@ function vImport(){
     h+=`<button class="btn small" data-act="impClear">Vaciar</button>`;
   }
   h+=`<section class="card" style="margin-top:14px"><h2>📷 Desde una foto de la carta</h2><p class="note">La app no lee fotos por sí sola. Lo práctico: haz la foto, mándasela a Claude (u otro asistente) pidiéndole que la transcriba a tabla, y pega aquí el resultado. El botón copia la petición ya redactada.</p><button class="btn small" data-act="copyPrompt">📋 Copiar la petición para el asistente</button></section>`;
+  return h;
+}
+/* Noches (014): carpetas, y dentro sus noches de la más reciente a la más antigua. */
+function vNoches(){
+  let h=`<div class="pad-head"><h2>Noches</h2><button class="mini" data-act="tab" data-id="pedir">← Volver</button></div>`;
+  if(mode!=="firebase")return h+`<p class="hint">Las noches necesitan conexión con la base de datos.</p>`;
+  h+=`<p class="note">Toca una noche para entrar en ella. Las noches no se borran: puedes volver a cualquiera para apuntar una ronda olvidada o corregir.</p>`;
+  const ns=nochesLista(),cs=carpetasLista(),ult=c=>Math.max(0,...ns.filter(n=>n.carpeta===c.id).map(n=>n.fecha||0));
+  cs.sort((a,b)=>ult(b)-ult(a)||a.name.localeCompare(b.name,"es"));
+  const bloque=(titulo,mias,cid)=>{
+    const todas=!!(ui.carpetaTodas&&ui.carpetaTodas[cid||"-"]),vis=todas?mias:mias.slice(0,5);
+    let b=`<section class="card"><h2 style="display:flex;align-items:center;gap:8px"><span style="flex:1">📁 ${esc(titulo)}</span>${cid?`<button class="linkish" data-act="carpetaRenombrar" data-id="${cid}" aria-label="Renombrar carpeta">✏️</button>`:""}</h2>`;
+    b+=vis.length?vis.map(vNocheFila).join(""):`<p class="note">Sin noches todavía.</p>`;
+    if(mias.length>5)b+=`<button class="linkish" data-act="carpetaTodas" data-id="${cid||"-"}">${todas?"Ver solo las últimas":"Ver las "+mias.length}</button>`;
+    if(cid&&cid!=="c_recuperadas")b+=`<button class="btn small" data-act="nocheNueva" data-carpeta="${cid}">＋ Nueva noche en ${esc(titulo)}</button>`;
+    return b+'</section>';
+  };
+  cs.forEach(c=>{h+=bloque(c.name,ns.filter(n=>n.carpeta===c.id),c.id)});
+  const sueltas=ns.filter(n=>!S.carpetas[n.carpeta]);
+  if(sueltas.length)h+=bloque("Sin carpeta",sueltas,"");
+  return h+`<button class="btn" data-act="carpetaNueva">＋ Nueva carpeta</button>`;
+}
+function vNocheFila(n){
+  const aqui=n.id===NOCHE;
+  let h=`<div class="noche${aqui?" aqui":""}"><button class="ir" data-act="nocheIr" data-id="${n.id}"><b>${esc(n.titulo)}</b><span class="note">${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""}</span></button><button class="linkish" data-act="nocheRenombrar" data-id="${n.id}" aria-label="Renombrar noche">✏️</button><button class="linkish" data-act="nocheMover" data-id="${n.id}" aria-label="Mover a otra carpeta">📁</button></div>`;
+  if(ui.moverNoche===n.id){
+    const otras=carpetasLista().filter(c=>c.id!==n.carpeta);
+    h+=`<div class="chips" style="margin:4px 0 10px">${otras.length?otras.map(c=>`<button class="chip" data-act="nocheMoverA" data-id="${n.id}" data-carpeta="${c.id}">→ ${esc(c.name)}</button>`).join(""):'<span class="note">No hay otras carpetas.</span>'}</div>`;
+  }
   return h;
 }
 function vRonda(){
@@ -1478,7 +1569,7 @@ function vMezclas(){
   h+=`<p class="note">Por defecto ahora: <b>${m&&m.def?esc(m.def):"ninguna"}</b></p>`;
   return h;
 }
-const VIEWS={sala:vSala,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
+const VIEWS={sala:vSala,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 // Bares que coinciden con lo escrito (sin acentos); vacío = los 6 más recientes.
 function barCoincidencias(){
@@ -1523,8 +1614,15 @@ function render(force){
   if(mode==="firebase"&&(netCache||netPending))$("#sync").className="sync off";
   document.querySelector("nav.tabs").style.display=(SALA&&!ui.salaError)?"":"none";
   document.querySelectorAll("nav.tabs button").forEach(b=>{b.dataset.id===ui.tab?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current")});
+  // Barra con la noche en la que estás, siempre a la vista (con conexión).
+  const nb=$("#nocheBtn"),conNoches=SALA&&!ui.salaError&&mode==="firebase";
+  nb.style.display=conNoches?"":"none";
+  if(conNoches)nb.innerHTML=NOCHE&&S.noches[NOCHE]?`📁 ${esc(nombreCarpeta(S.noches[NOCHE].carpeta))} › <b>${esc(S.noches[NOCHE].titulo)}</b> <span aria-hidden="true">▾</span>`:"Cargando las noches…";
   let html;
-  try{html=VIEWS[ui.tab]()}catch(err){console.error(err);html=`<p class="hint">⚠️ Error en esta pestaña: ${esc(err.message)}</p>`}
+  // Sin noche elegida todavía no se puede apuntar: lo apuntado no tendría dónde guardarse.
+  const esperandoNoche=mode==="firebase"&&SALA&&!NOCHE&&["pedir","comanda","reparto","cuentas","stats","ronda"].includes(ui.tab);
+  if(conNoches&&avisoReglas)nb.textContent="⚠️ Faltan las reglas nuevas";
+  try{html=avisoReglas&&esperandoNoche?`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoReglas)}</p>`:esperandoNoche?`<p class="hint">Cargando las noches…</p>`:VIEWS[ui.tab]()}catch(err){console.error(err);html=`<p class="hint">⚠️ Error en esta pestaña: ${esc(err.message)}</p>`}
   $("#view").innerHTML=html;
   $("#modal").innerHTML=vModal();
 }
@@ -1782,7 +1880,28 @@ document.addEventListener("click",e=>{
     }
     case"clearRound":if(!ui.confirmClear){ui.confirmClear=true;setTimeout(()=>{ui.confirmClear=false;render()},3000)}else{ui.confirmClear=false;if(!requirePin())return;clearRound();flash("Ronda vaciada")}break;
     case"undo":if(confirm("¿Reabrir la última ronda cerrada? Se deshace su pago y vuelve a estar editable.")){if(!requirePin())return;undoLast();ui.tab="pedir";flash("Ronda reabierta")}break;
-    case"newNight":if(!ui.confirmReset){ui.confirmReset=true;setTimeout(()=>{ui.confirmReset=false;render()},3000)}else{ui.confirmReset=false;if(!requirePin())return;newNight();flash("Noche nueva")}break;
+    /* --- noches y carpetas --- */
+    case"nocheIr":if(!S.noches[id])return;if(id!==NOCHE)cambiarNoche(id);ui.tab="pedir";window.scrollTo(0,0);flash("Estás en "+S.noches[id].titulo);break;
+    case"nocheNueva":{
+      const c=b.dataset.carpeta||"c_otras",def=`${nombreCarpeta(c)} · ${fechaCorta(Date.now())}`;
+      const t=prompt("Nombre de la noche nueva:",def);if(t===null)return;
+      crearNoche(S.carpetas[c]?c:"c_otras",(t.trim()||def));ui.tab="pedir";window.scrollTo(0,0);flash("Noche nueva: "+S.noches[NOCHE].titulo);break;
+    }
+    case"carpetaNueva":{const t=(prompt("Nombre de la carpeta (p. ej. Fiestas del pueblo 2026):")||"").trim();if(!t)return;crearCarpeta(t);flash("Carpeta creada: "+t);break}
+    case"carpetaRenombrar":{
+      const c=S.carpetas[id];if(!c)return;const t=(prompt("Nombre de la carpeta:",c.name)||"").trim();if(!t||t===c.name)return;
+      c.name=t.slice(0,40);dbUpdate("bar/carpetas",{["carpetas."+id+".name"]:c.name},()=>({carpetas:clone(S.carpetas)}));break;
+    }
+    case"carpetaTodas":ui.carpetaTodas=Object.assign({},ui.carpetaTodas,{[id]:!(ui.carpetaTodas&&ui.carpetaTodas[id])});break;
+    case"nocheRenombrar":{
+      const n=S.noches[id];if(!n)return;const t=(prompt("Nombre de la noche:",n.titulo)||"").trim();if(!t||t===n.titulo)return;
+      n.titulo=t.slice(0,60);dbUpdate("noches/"+id,{titulo:n.titulo});break;
+    }
+    case"nocheMover":ui.moverNoche=ui.moverNoche===id?null:id;break;
+    case"nocheMoverA":{
+      const n=S.noches[id],c=b.dataset.carpeta;if(!n||!S.carpetas[c])return;
+      n.carpeta=c;dbUpdate("noches/"+id,{carpeta:c});ui.moverNoche=null;flash("Movida a "+nombreCarpeta(c));break;
+    }
     case"copy":{
       const txt=roundLabel(S.current)+"\n"+comandaGroups().map(g=>`${g.count} ${label(g.o)}${g.o.clarification?" ("+g.o.clarification+")":""}`)
         .concat(compartidos().map(s=>`${s.qty} ${label(s)}${s.clarification?" ("+s.clarification+")":""} (para compartir)`)).join("\n");
@@ -2063,7 +2182,7 @@ document.addEventListener("change",e=>{
   }
   if(t.dataset.ticket){                 // Comanda: total del ticket de la ronda en curso (opcional)
     S.current.ticket=ticketOk(String(t.value).replace(",","."));
-    if(mode==="firebase")dbUpdate("bar/current",{ticket:S.current.ticket!=null?S.current.ticket:DEL()},()=>clone(S.current));else saveLocal();
+    if(mode==="firebase")curUpdate({ticket:S.current.ticket!=null?S.current.ticket:DEL()});else saveLocal();
     render(true);return;
   }
   if(t.dataset.rticket||t.dataset.rprice||t.dataset.rsprice){   // Corregir ronda cerrada
@@ -2090,7 +2209,7 @@ document.addEventListener("change",e=>{
     const id=t.dataset.barname,v=t.value.trim().slice(0,40),bar=S.bares[id];if(!v||!bar)return;
     if(barPorNombre(v)&&barPorNombre(v).id!==id){flash("Ya hay un bar con ese nombre");render(true);return}
     bar.name=v;barWrite({["bares."+id+".name"]:v});
-    if(S.current.bar===id){S.current.name=v;if(mode==="firebase")dbUpdate("bar/current",{name:v},()=>clone(S.current));else saveLocal()}
+    if(S.current.bar===id){S.current.name=v;if(mode==="firebase")curUpdate({name:v});else saveLocal()}
     render(true);return;
   }
   if(t.dataset.bprice){                 // Comanda: precio de un producto en este bar
@@ -2147,9 +2266,14 @@ async function copiarSala(code,clave){
   try{
     const destino=db.collection("salas").doc(code);
     await destino.collection("bar").doc("config").set(clone(S.config));
-    await destino.collection("bar").doc("current").set(clone(S.current));
     await destino.collection("bar").doc("precios").set({bares:clone(S.bares)});
-    for(const r of S.rounds){const d=Object.assign({},r);delete d.id;await destino.collection("rounds").doc(r.id).set(clone(d))}
+    await destino.collection("bar").doc("carpetas").set({carpetas:clone(S.carpetas)});
+    // Se copia la noche en la que estás, con sus rondas (las demás noches no).
+    if(NOCHE){
+      await destino.collection("noches").doc(NOCHE).set(Object.assign(clone(S.current),nocheMeta()));
+      for(const r of S.rounds){const d=Object.assign({},r);delete d.id;await destino.collection("noches").doc(NOCHE).collection("rounds").doc(r.id).set(clone(d))}
+    }
+    await destino.collection("bar").doc("migracion014").set({ts:Date.now(),por:me||"",copiaDe:SALA});
     irASala(code);
   }catch(e){console.error(e);alert("La sala se creó, pero no se pudieron copiar todos los datos.")}
 }
@@ -2169,22 +2293,131 @@ async function initFirebase(){
     if(!snap.exists)dbSet("bar/config",clone(S.config));
     render();
   },goLocal);
-  colRef("bar").doc("current").onSnapshot(META,snap=>{
-    netCache=!!(snap.metadata&&snap.metadata.fromCache);netPending=!!(snap.metadata&&snap.metadata.hasPendingWrites);
-    if(snap.exists)S.current=normCurrent(snap.data());
-    else{mode="firebase";dbSet("bar/current",clone(S.current))}
-    render();
-  },goLocal);
+  // Todas las noches (su ficha y su ronda en curso). La elegida alimenta S.current.
+  colRef("noches").onSnapshot(META,qs=>{
+    const md=qs.metadata||{};netCache=!!md.fromCache;netPending=!!md.hasPendingWrites;
+    const ns={},datos={};
+    qs.docs.forEach(x=>{const d=x.data()||{};ns[x.id]=normNoche(d);datos[x.id]=d});
+    S.noches=ns;NOCHES_DATA=datos;
+    if(!md.fromCache)nochesDelServidor=true;
+    if(NOCHE&&datos[NOCHE])S.current=Object.assign(normCurrent(datos[NOCHE]),{night:NOCHE});
+    avisoReglas="";asegurarNoche();render();
+  },errorNoches);
+  colRef("bar").doc("carpetas").onSnapshot(snap=>{
+    S.carpetas=normCarpetas(snap.exists?(snap.data()||{}).carpetas:{});render();
+  },e=>console.warn("carpetas:",e));
   // Los precios por bar van aparte de la config (que se reescribe entera) para no pisarse.
   colRef("bar").doc("precios").onSnapshot(snap=>{
     S.bares=normBares(snap.exists?(snap.data()||{}).bares:{});
     render();
   },e=>console.warn("bares:",e));
-  colRef("rounds").onSnapshot(qs=>{
-    S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,{orders:normOrders(d.orders)})});
-    render();
-  },goLocal);
+  prepararNoches();
   setTimeout(()=>{if(mode==="connecting")goLocal()},10000);
+}
+let nochesDelServidor=false,unsubRondas=null,rondasDe="",avisoReglas="";
+// Si se publica la app antes de pegar las reglas de la 014, Firebase no deja leer las noches:
+// decirlo claro en vez de «ese código de sala no vale».
+function errorNoches(e){
+  console.warn("noches:",e);
+  if(String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0){avisoReglas="Faltan las reglas nuevas de Firestore (versión 014): sin ellas no se pueden leer ni guardar las noches. Hay que pegarlas en la consola de Firebase y después volver a abrir la app. No se ha perdido nada.";render();return}
+  goLocal(e);
+}
+const normCarpetas=m=>{const o={};Object.keys(m||{}).forEach(id=>{const c=m[id];if(c&&c.name)o[id]={name:String(c.name).slice(0,40),ts:Number(c.ts)||0}});return o};
+// Rondas cerradas de la noche elegida; al cambiar de noche se deja de escuchar la anterior.
+function escucharRondas(){
+  if(!db||!SALA||!NOCHE||rondasDe===NOCHE)return;
+  if(typeof unsubRondas==="function")unsubRondas();
+  const id=NOCHE;rondasDe=id;S.rounds=[];
+  unsubRondas=colRef("noches").doc(id).collection("rounds").onSnapshot(qs=>{
+    if(id!==NOCHE)return;
+    S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,{orders:normOrders(d.orders)})});
+    actualizarResumen();render();
+  },errorNoches);
+}
+// Que siempre haya una noche elegida: la recordada, si no la más reciente; si no hay ninguna
+// (sala nueva, o se borraron todas desde Firebase), se crea una en «Otras».
+function asegurarNoche(){
+  if(NOCHE&&S.noches[NOCHE]){escucharRondas();return}
+  if(!migracionHecha)return;
+  const l=nochesLista();
+  if(l.length){cambiarNoche(l[0].id);return}
+  if(!nochesDelServidor)return;
+  if(!S.carpetas.c_otras){S.carpetas.c_otras={name:"Otras",ts:Date.now()};dbUpdate("bar/carpetas",{"carpetas.c_otras":clone(S.carpetas.c_otras)},()=>({carpetas:clone(S.carpetas)}))}
+  crearNoche("c_otras","Noche · "+fechaCorta(Date.now()));
+}
+// La conversión de lo de antes de la 014 se hace una sola vez por sala (marca bar/migracion014),
+// y solo leyendo del servidor: decidirlo con lo guardado en el móvil podría pisar datos.
+// Las escrituras solo salen con la app ya conectada (mode "firebase"); antes se perderían.
+const esperarConexion=()=>new Promise((ok,mal)=>{const t0=Date.now();(function mira(){if(mode==="firebase")return ok();if(mode==="local"||Date.now()-t0>15000)return mal(new Error("sin conexión"));setTimeout(mira,100)})()});
+async function prepararNoches(){
+  try{
+    await esperarConexion();
+    const mk=await colRef("bar").doc("migracion014").get({source:"server"});
+    if(!mk.exists)await migrar014();
+    else comprobarViejo(Number((mk.data()||{}).ts)||0);
+    migracionHecha=true;asegurarNoche();render();
+  }catch(e){
+    console.warn("noches:",e);
+    if(NOCHE&&S.noches[NOCHE]){migracionHecha=true;asegurarNoche();render()}   // sin conexión, pero ya se usaba
+    setTimeout(prepararNoches,15000);
+  }
+}
+async function migrar014(){
+  const srv={source:"server"},ahora=Date.now();
+  const [cur,rs,ar,cp]=await Promise.all([colRef("bar").doc("current").get(srv),colRef("rounds").get(srv),
+    colRef("archive").get(srv).catch(()=>({docs:[]})),colRef("bar").doc("carpetas").get(srv)]);
+  const viejo=cur.exists?normCurrent(cur.data()):null;
+  const rondas=rs.docs.map(x=>Object.assign({id:x.id},x.data()));
+  const hayAlgo=!!(viejo&&(Object.keys(viejo.orders).length||Object.keys(viejo.shared||{}).length))||rondas.length>0;
+  const idAct=(viejo&&viejo.night)||"n_inicial";
+  // Noches anteriores guardadas en el archivo (cada ronda archivada lleva su noche).
+  const porNoche={};
+  ar.docs.forEach(x=>{const d=x.data()||{};if(!d.night||d.night===idAct)return;(porNoche[d.night]=porNoche[d.night]||[]).push(Object.assign({},d,{id:d.roundId||x.id.split("-").pop()}))});
+  const yaCarpetas=cp.exists?normCarpetas((cp.data()||{}).carpetas):{},nuevas={};
+  if(!yaCarpetas.c_otras)nuevas.c_otras={name:"Otras",ts:ahora};
+  if(hayAlgo&&!yaCarpetas.c_pintxopote)nuevas.c_pintxopote={name:"Pintxopote",ts:ahora};
+  if(Object.keys(porNoche).length&&!yaCarpetas.c_recuperadas)nuevas.c_recuperadas={name:"Recuperadas del archivo",ts:ahora};
+  Object.assign(S.carpetas,yaCarpetas,nuevas);
+  const u={};Object.keys(nuevas).forEach(k=>{u["carpetas."+k]=nuevas[k]});
+  if(Object.keys(u).length)dbUpdate("bar/carpetas",u,()=>({carpetas:clone(S.carpetas)}));
+  const fechaDe=rr=>{const ts=rr.map(r=>Number(r.ts)||0).filter(Boolean);return ts.length?Math.min(...ts):0};
+  const sumar=rr=>r2(rr.reduce((s,r)=>s+(Number(r.total)||0),0));
+  // Escrituras esperadas una a una: si alguna falla (p. ej. faltan las reglas), no se pone la
+  // marca y la conversión se reintentará; si no, se quedaría a medias para siempre.
+  const pend=[];
+  const guardar=(nid,datos,rr)=>{
+    pend.push(docRef("noches/"+nid).set(clone(datos)));
+    rr.forEach(r=>{const d=Object.assign({},r),rid=d.id;delete d.id;pend.push(docRef("noches/"+nid+"/rounds/"+rid).set(clone(d)))});
+    S.noches[nid]=normNoche(datos);NOCHES_DATA[nid]=datos;
+  };
+  // Lo de ahora (ronda en curso y rondas cerradas) pasa a ser la primera noche, en «Pintxopote».
+  const fAct=fechaDe(rondas)||ahora;
+  guardar(idAct,Object.assign({n:1,name:"",bar:"",orders:{},delivered:{},shared:{}},viejo||{},{night:idAct,
+    titulo:(hayAlgo?"Pintxopote · ":"Noche · ")+fechaCorta(fAct),fecha:fAct,carpeta:hayAlgo?"c_pintxopote":"c_otras",
+    creada:ahora,por:me||"",rondas:rondas.length,total:sumar(rondas)}),rondas);
+  // Las noches del archivo, en «Recuperadas del archivo», sin ronda en curso.
+  Object.keys(porNoche).forEach(nid=>{
+    const rr=porNoche[nid].map(d=>{const o=Object.assign({},d);["night","roundId","people","savedTs","savedBy"].forEach(k=>delete o[k]);return o});
+    const f=fechaDe(rr),ult=rr.slice().sort((a,b)=>(Number(b.n)||0)-(Number(a.n)||0))[0]||{};
+    guardar(nid,{n:(Number(ult.n)||0)+1,name:ult.name||"",bar:ult.bar||"",night:nid,orders:{},delivered:{},shared:{},
+      titulo:"Noche del "+fechaCorta(f||ahora),fecha:f||ahora,carpeta:"c_recuperadas",creada:ahora,por:me||"",rondas:rr.length,total:sumar(rr)},rr);
+  });
+  await Promise.all(pend);
+  await docRef("bar/migracion014").set({ts:ahora,por:me||"",noche:idAct,recuperadas:Object.keys(porNoche).length});
+  // bar/current y rounds se dejan como estaban, de copia.
+  if(!NOCHE||!S.noches[NOCHE]){NOCHE="";cambiarNoche(idAct)}
+}
+// Un móvil con una versión anterior seguiría apuntando en bar/current y rounds: avisar.
+async function comprobarViejo(tsMarca){
+  try{
+    const srv={source:"server"};
+    const [cur,rs]=await Promise.all([colRef("bar").doc("current").get(srv),colRef("rounds").get(srv)]);
+    let ult=0;
+    if(cur.exists){const c=normCurrent(cur.data());Object.keys(c.orders).forEach(p=>(c.orders[p]||[]).forEach(o=>{ult=Math.max(ult,Number(o.ts)||0)}))}
+    rs.docs.forEach(x=>{ult=Math.max(ult,Number((x.data()||{}).ts)||0)});
+    avisoViejo=ult>tsMarca?"Alguien ha apuntado con una versión anterior de Eskari, y eso no sale en las noches. Que actualice la app (si la tiene instalada, cerrarla del todo y volver a abrirla).":"";
+    render();
+  }catch(e){}
 }
 render();
 initFirebase();
