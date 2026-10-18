@@ -88,6 +88,7 @@ nav.tabs button[aria-current="page"]{color:var(--ink);border-top-color:var(--acc
 .keys-title{font:700 1.15rem/1.2 var(--cond);margin:0 4px 8px}
 .mini{background:var(--surface2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font:600 .95rem var(--cond);white-space:nowrap}
 .mini.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.mini:disabled{opacity:.35;cursor:default}
 
 .mine{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px 12px;margin-bottom:12px}
 .drow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
@@ -375,7 +376,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="016";
+const APP_VERSION="017";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -401,20 +402,69 @@ S.noches={};S.carpetas={};
 let NOCHES_DATA={};            // datos completos de cada noche, tal como llegan de la base de datos
 let migracionHecha=false;      // se sabe que existe bar/migracion014
 let avisoViejo="";             // pedidos apuntados con una versión anterior a la 014
-const META_NOCHE=["titulo","fecha","carpeta","creada","por","rondas","total"];
+const META_NOCHE=["titulo","fecha","carpeta","creada","por","rondas","total","participantes"];
 const nocheMeta=id=>{const m=S.noches[id||NOCHE]||{};const o={};META_NOCHE.forEach(k=>{if(m[k]!=null)o[k]=m[k]});return o};
 const curPath=()=>"noches/"+NOCHE;
 const roundPath=id=>"noches/"+NOCHE+"/rounds/"+id;
-// Escribir la ronda en curso de la noche: dato a dato (update) o entera (set, conservando la ficha).
+// Escribir la ronda en curso de la noche: dato a dato (curUpdate) o entera (curSet). curSet solo
+// reescribe los campos de la ronda (desde la 017), sin tocar la ficha ni los participantes: así,
+// cerrar una ronda no pisa un cambio hecho a la vez desde otro móvil. Si la noche aún no existe,
+// se crea entera.
 function curUpdate(u){if(!NOCHE)return Promise.resolve();return dbUpdate(curPath(),u,()=>Object.assign(clone(S.current),nocheMeta()))}
-function curSet(){if(!NOCHE)return Promise.resolve();return dbSet(curPath(),Object.assign(clone(S.current),nocheMeta()))}
+function curSet(){
+  if(!NOCHE)return Promise.resolve();
+  const c=clone(S.current);
+  return dbUpdate(curPath(),{n:c.n,name:c.name||"",bar:c.bar||"",night:c.night||NOCHE,orders:c.orders||{},delivered:c.delivered||{},shared:c.shared||{},ticket:c.ticket!=null?c.ticket:DEL()},
+    ()=>Object.assign(c,nocheMeta()));
+}
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
-const activePeople=()=>people().filter(p=>!p.paused);
+/* --- Participantes de cada noche (017): S.noches[id].participantes = { persona: { ts, ido? } }.
+   Cada persona, en la noche elegida, está «aquí», «ido» (se fue un rato o a casa: sigue siendo de
+   la noche, con lo suyo, pero no sale en Pedir ni en los repartos por defecto) o «no» (no vino).
+   La cuadrilla (Ajustes) es la lista de todos; la antigua pausa de Ajustes ya no se usa, salvo
+   como punto de partida de una noche que aún no tiene participantes. --- */
+const partsNoche=id=>{const m=S.noches[id||NOCHE];return m&&m.participantes?m.participantes:null};
+function estadoEn(pid){
+  const ps=partsNoche();
+  if(!ps){const p=findP(pid);return p&&!p.paused?"aqui":"no"}
+  const x=ps[pid];return !x?"no":x.ido?"ido":"aqui";
+}
+const activePeople=()=>people().filter(p=>estadoEn(p.id)==="aqui");   // los que están aquí
+const idos=()=>people().filter(p=>estadoEn(p.id)==="ido");
+// Quien tiene algo en la noche (pidió, compartió, pagó una ronda o un pago): no puede ser «no vino».
+function tieneAlgo(pid){
+  if(drinks(pid).length||compartidos().some(s=>(s.who||[]).includes(pid)))return true;
+  if(S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid||compartidos(r).some(s=>(s.who||[]).includes(pid))))return true;
+  return (S.pagos||[]).some(x=>x.de===pid||x.a===pid);
+}
+// Participantes que salen de lo apuntado en la noche (para las noches de antes de la 017).
+function derivarParticipantes(){
+  const o={},ahora=Date.now();people().forEach(p=>{if(tieneAlgo(p.id))o[p.id]={ts:ahora}});
+  if(!Object.keys(o).length)people().forEach(p=>{if(!p.paused)o[p.id]={ts:ahora}});
+  return o;
+}
+function guardarParticipantes(campos){if(mode==="firebase")curUpdate(campos);else saveLocal()}
+// Cambiar el estado de una persona en la noche elegida.
+function ponEstado(pid,e){
+  const m=S.noches[NOCHE];if(!m||!findP(pid))return;
+  if(!m.participantes){m.participantes=derivarParticipantes();guardarParticipantes({participantes:clone(m.participantes)})}
+  if(e==="no"){if(tieneAlgo(pid))return;delete m.participantes[pid];guardarParticipantes({["participantes."+pid]:DEL()});return}
+  const x={ts:(m.participantes[pid]&&m.participantes[pid].ts)||Date.now()};if(e==="ido")x.ido=true;
+  m.participantes[pid]=x;guardarParticipantes({["participantes."+pid]:clone(x)});
+}
+// Quien recibe algo (una bebida, una ración, paga…) pasa a estar aquí, aunque no viniera o se hubiera ido.
+function asegurarParticipantes(pids){(pids||[]).forEach(pid=>{if(pid&&findP(pid)&&estadoEn(pid)!=="aqui"&&S.noches[NOCHE])ponEstado(pid,"aqui")})}
+// Las noches de antes de la 017 reciben sus participantes la primera vez que se abren, a partir de
+// sus rondas (solo con la lista de rondas leída del servidor, no a medias desde el móvil).
+function asegurarListaParticipantes(){
+  const m=S.noches[NOCHE];if(!m||m.participantes)return;
+  m.participantes=derivarParticipantes();guardarParticipantes({participantes:clone(m.participantes)});
+}
 const findP=id=>people().find(p=>p.id===id);
 const pname=id=>(findP(id)||{name:id||"?"}).name;
 const menus=()=>S.config.menus;
@@ -485,7 +535,13 @@ const roundLabel=r=>"Ronda "+r.n+(r.name?" · "+r.name:"");
 // Las raciones para compartir también cuentan: su producto está pedido y sus participantes han participado.
 function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>(o[k]||[]).forEach(x=>{if(x&&x.drink&&x.drink!=="nada")s.add(x.drink)}));const addS=m=>Object.keys(m||{}).forEach(k=>{if(m[k]&&m[k].drink)s.add(m[k].drink)});add(S.current.orders);addS(S.current.shared);S.rounds.forEach(r=>{add(r.orders);addS(r.shared)});return s}
 const comparte=(m,pid)=>Object.keys(m||{}).some(k=>m[k]&&(m[k].who||[]).includes(pid));
-function personUsed(pid){if(drinks(pid).length||comparte(S.current.shared,pid))return true;return S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid||comparte(r.shared,pid))}
+// Quien ha participado en alguna noche (o tiene algo en la actual) no se puede borrar de la cuadrilla.
+function personUsed(pid){
+  if(drinks(pid).length||comparte(S.current.shared,pid))return true;
+  if(S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid||comparte(r.shared,pid)))return true;
+  if((S.pagos||[]).some(x=>x.de===pid||x.a===pid))return true;
+  return Object.keys(S.noches).some(id=>{const ps=S.noches[id].participantes;return !!(ps&&ps[pid]&&(id!==NOCHE||tieneAlgo(pid)))});
+}
 
 function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,mix:cloneMix(c.mix),items:(c.items||[]).map(cloneNode)}))}
 function countProducts(cat){let n=0;eachCatalog(cat,x=>{if(!x.group)n++});return n}
@@ -694,7 +750,7 @@ function tidy(d){
   return d;
 }
 function addDrinks(pids,d){
-  d=tidy(d);
+  d=tidy(d);asegurarParticipantes(pids);
   const ts=Date.now(),u={};
   pids.forEach(pid=>{S.current.orders[pid]=drinks(pid).concat([Object.assign({},d,{ts,by:me})]);u["orders."+pid]=clone(S.current.orders[pid])});
   if(mode==="firebase")curUpdate(u);else saveLocal();
@@ -846,7 +902,7 @@ function requirePin(){
   return true;
 }
 function setRoundPayer(rid,payer){
-  const r=S.rounds.find(x=>x.id===rid);if(!r)return;
+  const r=S.rounds.find(x=>x.id===rid);if(!r)return;if(payer)asegurarParticipantes([payer]);
   const before=r.payer?pname(r.payer):"sin pagar";
   r.payer=payer||"";
   guardarRonda(r,`Pagador: ${before} → ${payer?pname(payer):"sin pagar"}`,true);   // el pagador no cambia el total
@@ -917,7 +973,7 @@ function archiveNote(rid,what){
   dbUpdate("archive/"+archiveKey(S.current.night,rid),{log:clone((r&&r.log)||[]).concat([logLine(what)]),payer:(r&&r.payer)||"",savedTs:Date.now()});
 }
 function closeRound(payer){
-  const night=ensureNight();
+  const night=ensureNight();if(payer)asegurarParticipantes([payer]);
   const orders=clone(S.current.orders),prices={};let total=0;
   // prices = precio de cada producto en esta ronda, para las consumiciones SIN precio propio.
   // (Hasta la 008 también lo apuntaban las que tenían precio propio, y una caña invitada a 0 €
@@ -954,7 +1010,17 @@ const nochesLista=()=>Object.keys(S.noches).map(id=>Object.assign({id},S.noches[
 const carpetasLista=()=>Object.keys(S.carpetas).map(id=>Object.assign({id},S.carpetas[id]));
 const nombreCarpeta=id=>(S.carpetas[id]&&S.carpetas[id].name)||"Sin carpeta";
 const fechaCorta=ts=>{if(!ts)return"";const d=new Date(ts);return["dom","lun","mar","mié","jue","vie","sáb"][d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)+(d.getFullYear()!==new Date().getFullYear()?"/"+d.getFullYear():"")};
-function normNoche(d){d=d||{};const m={titulo:String(d.titulo||"Noche").slice(0,60),fecha:Number(d.fecha)||0,carpeta:typeof d.carpeta==="string"?d.carpeta:"",creada:Number(d.creada)||0,por:d.por||""};if(d.rondas!=null)m.rondas=Number(d.rondas)||0;if(d.total!=null)m.total=Number(d.total)||0;return m}
+function normNoche(d){d=d||{};const m={titulo:String(d.titulo||"Noche").slice(0,60),fecha:Number(d.fecha)||0,carpeta:typeof d.carpeta==="string"?d.carpeta:"",creada:Number(d.creada)||0,por:d.por||""};if(d.rondas!=null)m.rondas=Number(d.rondas)||0;if(d.total!=null)m.total=Number(d.total)||0;
+  if(d.participantes&&typeof d.participantes==="object"){m.participantes={};Object.keys(d.participantes).forEach(k=>{const x=d.participantes[k]||{};m.participantes[k]=x.ido?{ts:Number(x.ts)||0,ido:true}:{ts:Number(x.ts)||0}})}
+  return m}
+// Los participantes con los que empieza una noche nueva: los de la última noche de esa carpeta
+// (todos «aquí»); si no hay, los de la cuadrilla que no estaban en pausa.
+function participantesDeSalida(carpeta){
+  const ult=nochesLista().find(n=>n.carpeta===carpeta&&n.participantes),ahora=Date.now(),o={};
+  if(ult)Object.keys(ult.participantes).forEach(pid=>{if(findP(pid))o[pid]={ts:ahora}});
+  if(!Object.keys(o).length)people().forEach(p=>{if(!p.paused)o[p.id]={ts:ahora}});
+  return o;
+}
 // Rondas cerradas y total de la noche, guardados en su ficha para enseñarlos en la lista de noches.
 function actualizarResumen(){
   if(!NOCHE||!S.noches[NOCHE])return;
@@ -970,7 +1036,7 @@ function crearCarpeta(nombre){
 // Una noche nueva no borra nada: la anterior se queda como está, con o sin saldos pendientes.
 function crearNoche(carpeta,titulo){
   const id=uid("n"),ahora=Date.now();
-  const meta={titulo:titulo.trim().slice(0,60),fecha:ahora,carpeta,creada:ahora,por:me||"",rondas:0,total:0};
+  const meta={titulo:titulo.trim().slice(0,60),fecha:ahora,carpeta,creada:ahora,por:me||"",rondas:0,total:0,participantes:participantesDeSalida(carpeta)};
   const datos=Object.assign({n:1,name:"",bar:"",night:id,orders:{},delivered:{},shared:{}},meta);
   S.noches[id]=normNoche(meta);NOCHES_DATA[id]=datos;
   if(mode==="firebase")dbSet("noches/"+id,datos);
@@ -982,7 +1048,7 @@ function cambiarNoche(id){
   NOCHE=id;lsSet("ronda.noche."+SALA,id);
   S.current=Object.assign(normCurrent(NOCHES_DATA[id]||{}),{night:id});S.rounds=[];
   ui.sel=null;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.multi=false;ui.group=[];ui.pending=null;ui.payer=null;
-  ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.editRound=null;ui.pagoForm=null;
+  ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.editRound=null;ui.pagoForm=null;ui.partsEdit=false;
   escucharRondas();
 }
 
@@ -1056,7 +1122,7 @@ function escucharPagos(){
   });
 }
 function crearPago(de,a,v){
-  if(!de||!a||de===a||!(v>0))return false;
+  if(!de||!a||de===a||!(v>0))return false;asegurarParticipantes([de,a]);
   const id=uid("g"),x={de,a,importe:r2(v),ts:Date.now(),by:me||""};
   S.pagos=S.pagos.concat([Object.assign({id},x)]);
   if(mode==="firebase")dbSet(pagoPath(id),x);else saveLocal();
@@ -1157,7 +1223,7 @@ const gLabel=o=>label(o)+(o.clarification?" · "+o.clarification:"");
 
 /* ===== Vistas ===== */
 function vMe(){
-  return `<div class="selector-box${me?"":" need"}"><label for="selectMe">Eres:</label><select id="selectMe"><option value="">Elige quién eres…</option>${people().map(p=>`<option value="${p.id}"${p.id===me?" selected":""}>${esc(p.name)}${p.paused?" (en pausa)":""}</option>`).join("")}</select></div>`;
+  return `<div class="selector-box${me?"":" need"}"><label for="selectMe">Eres:</label><select id="selectMe"><option value="">Elige quién eres…</option>${people().map(p=>`<option value="${p.id}"${p.id===me?" selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`;
 }
 function nodeAt(){
   const cat=catalog().find(c=>c.id===ui.path[0]);
@@ -1227,18 +1293,38 @@ function vGrid(ps,multi){
     return `<button class="person${on?" sel":""}${last?"":" pending"}" style="--c:${colorOf(last)}" data-act="sel" data-id="${p.id}"><span class="nm">${multi?(on?"☑ ":"☐ "):""}${esc(p.name)}</span><span class="dr">${last?emoji(last)+" ":""}${esc(txt)}</span>${last?`<span class="ts">${hhmm(last.ts)}</span>`:""}</button>`;
   }).join("")+'</div>';
 }
+// Los que se han ido de la noche: un toque en su nombre y vuelven.
+function vIdos(lista){
+  if(!lista.length)return"";
+  return `<p class="note" style="margin:-4px 2px 12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">🚶 Se ha${lista.length===1?"":"n"} ido: ${lista.map(p=>`<button class="mini" data-act="volver" data-id="${p.id}" title="Ha vuelto">${esc(p.name)} ↩</button>`).join("")}</p>`;
+}
+// ¿Quién viene esta noche? Cada uno: aquí, se ha ido o no vino (quien tiene algo apuntado no puede
+// quedar como «no vino»).
+function vParticipantes(){
+  const t=S.noches[NOCHE]?S.noches[NOCHE].titulo:"";
+  let h=`<div class="pad-head"><h2>👥 ¿Quién viene?</h2><button class="mini on" data-act="partsCerrar">✓ Listo</button></div>`;
+  h+=`<p class="note" style="margin:0 2px 10px">${esc(t)}. Solo los que están «aquí» salen en Pedir y en los repartos. Quien se va un rato o a casa, «se ha ido»: sigue en la noche con lo suyo.</p><div class="mine">`;
+  people().forEach(p=>{
+    const e=estadoEn(p.id),fijo=tieneAlgo(p.id);
+    h+=`<div class="drow"><b>${esc(p.name)}</b><div class="acts">`+[["aqui","Aquí"],["ido","🚶 Se ha ido"],["no","No vino"]].map(([k,txt])=>`<button class="mini${e===k?" on":""}" data-act="partsPon" data-id="${p.id}" data-e="${k}"${k==="no"&&fijo?' disabled title="Tiene algo apuntado esta noche"':""}>${txt}</button>`).join("")+`</div></div>`;
+  });
+  h+=`</div><button class="btn small" data-act="addPerson">＋ Alguien nuevo en la cuadrilla</button>`;
+  return h;
+}
 function vPedir(){
   let h="";
   if(!me)return `<p class="hint">Toca «¿Quién eres?» en la cabecera para empezar. Solo se pregunta una vez en cada móvil.</p><button class="btn primary" data-act="modal" data-id="me">¿Quién eres?</button>`;
-  const am=S.config.assignerMode,locked=isLocked(),ps=activePeople(),paused=people().filter(p=>p.paused);
+  const am=S.config.assignerMode,locked=isLocked(),ps=activePeople(),paused=idos();
   if(avisoViejo)h+=`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoViejo)}</p>`;
   if(am)h+=`<p class="status">🔐 Modo asignador: ${am===me?"lo tienes tú":esc(pname(am))+" apunta por todos. Solo puedes mirar."}</p>`;
-  if(!ui.sel||!findP(ui.sel)||(findP(ui.sel).paused&&ui.sel!==me))ui.sel=(ps[0]||people()[0]).id;
-  ui.group=ui.group.filter(id=>findP(id)&&!findP(id).paused);
+  if(!ui.sel||!findP(ui.sel)||(estadoEn(ui.sel)!=="aqui"&&ui.sel!==me))ui.sel=(ps[0]||people()[0]).id;
+  ui.group=ui.group.filter(id=>findP(id)&&estadoEn(id)==="aqui");
   if(locked){ui.multi=false;ui.flow="personas";ui.pending=null;ui.lastAdd=null;ui.share=false;ui.sharePending=null;ui.shareEdit=null}
+  if(ui.partsEdit&&!locked&&S.noches[NOCHE])return h+vParticipantes();
   if(ui.share||ui.sharePending||ui.shareEdit){const paso=vCompartirPaso(ps,paused);if(paso)return h+paso}
 
   if(!locked)h+=`<div class="row2" style="margin-bottom:10px"><button class="mini${ui.flow==="personas"?" on":""}" data-act="flow" data-id="personas">1º persona</button><button class="mini${ui.flow==="bebida"?" on":""}" data-act="flow" data-id="bebida">1º bebida</button></div>`;
+  if(!locked&&S.noches[NOCHE])h+=`<button class="mini" data-act="partsEdit" style="width:100%;margin-bottom:10px">👥 Quién viene esta noche · ${ps.length}${paused.length?` · 🚶 ${paused.length} se ha${paused.length===1?"":"n"} ido`:""}</button>`;
 
   /* --- flujo: primero la bebida, luego a quién --- */
   if(!locked&&ui.flow==="bebida"){
@@ -1249,7 +1335,7 @@ function vPedir(){
     const d=ui.pending,n=ui.group.length;
     h+=`<div class="pad-head"><h2>${emoji(d)} ${esc(label(d))} → ¿para quién?</h2><button class="mini on" data-act="pendingCancel">✕</button></div>`;
     h+=vGrid(ps,true);
-    if(paused.length)h+=`<p class="note" style="margin:-4px 2px 12px">⏸ En pausa: ${esc(paused.map(p=>p.name).join(", "))}</p>`;
+    h+=vIdos(paused);
     h+=`<div class="chips" style="margin-bottom:10px"><button class="chip" data-act="groupAll">Todos</button><button class="chip" data-act="groupMissing">Los que faltan</button><button class="chip" data-act="groupNone">Ninguno</button></div>`;
     h+=`<button class="btn primary" data-act="assignPending"${n?"":" disabled"}>${n?`Apuntar ${esc(label(d))} a ${n} persona${n===1?"":"s"}`:"Marca al menos a una persona"}</button>`;
     return h;
@@ -1257,7 +1343,7 @@ function vPedir(){
 
   /* --- flujo normal: primero la persona --- */
   h+=vGrid(ps,ui.multi);
-  if(paused.length)h+=`<p class="note" style="margin:-4px 2px 12px">⏸ En pausa: ${esc(paused.map(p=>p.name).join(", "))} · se reanudan en Ajustes</p>`;
+  h+=vIdos(paused);
   if(ui.multi){
     const n=ui.group.length;
     h+=`<div class="pad-head"><h2>Para ${n} persona${n===1?"":"s"}</h2><button class="mini on" data-act="multiOff">✕ Cancelar</button></div>`;
@@ -1297,7 +1383,7 @@ function vCompartirPaso(ps,paused){
   let h=`<div class="pad-head"><h2>🍽️ ${emoji(s)} ${esc(label(s))}${s.clarification?" · "+esc(s.clarification):""}</h2><button class="mini on" data-act="shareCancel">✕</button></div>`;
   if(!editando)h+=`<div class="set-row" style="margin:0 2px 10px"><span style="flex:1">¿Cuántas?</span><button class="mini" data-act="shareQty" data-id="-1" aria-label="Una menos">−</button><b style="min-width:2.5ch;text-align:center;font-size:1.2rem">${s.qty}</b><button class="mini" data-act="shareQty" data-id="1" aria-label="Una más">+</button></div>`;
   h+=`<p class="note" style="margin:0 2px 8px">¿Quién la comparte? Toca para quitar o añadir.</p>`+vGrid(ps,true);
-  if(paused.length)h+=`<p class="note" style="margin:-4px 2px 12px">⏸ En pausa: ${esc(paused.map(p=>p.name).join(", "))}</p>`;
+  h+=vIdos(paused);
   h+=`<div class="chips" style="margin-bottom:10px"><button class="chip" data-act="groupAll">Todos</button><button class="chip" data-act="groupNone">Ninguno</button></div>`;
   h+=`<p class="status">${n?`Entre ${n}: ${eur(tot)} en total, unos ${eur(tot/n)} cada uno`:"Marca al menos a una persona"}</p>`;
   h+=`<button class="btn primary" data-act="${editando?"shareSaveWho":"shareAdd"}"${n?"":" disabled"}>${editando?"Guardar quién la comparte":`Apuntar para ${n} persona${n===1?"":"s"}`}</button>`;
@@ -1392,11 +1478,11 @@ function vReparto(){
 function vCuentas(){
   const B=balances(),ps=people();
   if(ui.payer&&!findP(ui.payer))ui.payer=null;
-  const payers=ps.filter(p=>!p.paused||drinks(p.id).length||B.drank[p.id]>0);
+  const payers=ps.filter(p=>estadoEn(p.id)!=="no"||drinks(p.id).length||B.drank[p.id]>0);
   let h=`<section class="card"><h2>${esc(roundLabel(S.current))} · ${eur(roundTotal())}</h2>`;
   if(anyOrders()){
     const sug=suggestPayer(B);
-    h+=`<p class="note">¿Quién paga esta ronda?${S.rounds.length?" Sugerido: <b>"+esc(pname(sug))+"</b> (el que más debe).":""}</p><div class="chips">${payers.map(p=>`<button class="chip${ui.payer===p.id?" on":""}${S.rounds.length&&p.id===sug?" sug":""}" data-act="payer" data-id="${p.id}">${p.paused?"⏸ ":""}${esc(p.name)}</button>`).join("")}</div>`;
+    h+=`<p class="note">¿Quién paga esta ronda?${S.rounds.length?" Sugerido: <b>"+esc(pname(sug))+"</b> (el que más debe).":""}</p><div class="chips">${payers.map(p=>`<button class="chip${ui.payer===p.id?" on":""}${S.rounds.length&&p.id===sug?" sug":""}" data-act="payer" data-id="${p.id}">${estadoEn(p.id)==="ido"?"🚶 ":""}${esc(p.name)}</button>`).join("")}</div>`;
     h+=`<button class="btn primary" data-act="close"${ui.payer?"":" disabled"}>${ui.payer?`Cerrar ronda ${S.current.n} (paga ${esc(pname(ui.payer))}) → Ronda ${S.current.n+1}`:"Elige quién paga para cerrar la ronda"}</button>`;
     h+=`<button class="btn" data-act="closeUnpaid">Cerrar sin pagar (se asigna luego)</button>`;
     h+=`<button class="btn warn" data-act="clearRound">${ui.confirmClear?"¿Seguro? Toca otra vez para vaciar":"Vaciar ronda actual sin guardarla"}</button>`;
@@ -1406,7 +1492,7 @@ function vCuentas(){
   if(S.rounds.length||S.pagos.length){
     const conPagos=S.pagos.length>0;
     h+=`<section class="card"><h2>Saldos (${S.rounds.length} ronda${S.rounds.length===1?"":"s"})</h2><table><thead><tr><th>Quién</th><th>Bebido</th><th>Pagado</th>${conPagos?"<th>Pagos</th>":""}<th>Saldo</th></tr></thead><tbody>`;
-    ps.forEach(p=>{const v=B.b[p.id],g=B.pag[p.id];h+=`<tr class="${p.paused?"paused":""}"><td>${p.paused?"⏸ ":""}${esc(p.name)}</td><td>${eur(B.drank[p.id])}</td><td>${eur(B.paid[p.id])}</td>${conPagos?`<td>${Math.abs(g)<0.005?"—":(g>0?"+":"")+eur(g)}</td>`:""}<td class="${v>0.004?"pos":v<-0.004?"neg":""}">${v>0?"+":""}${eur(v)}</td></tr>`});
+    ps.filter(p=>estadoEn(p.id)!=="no"||Math.abs(B.b[p.id])>0.004||B.drank[p.id]>0||B.paid[p.id]>0).forEach(p=>{const v=B.b[p.id],g=B.pag[p.id],ido=estadoEn(p.id)==="ido";h+=`<tr class="${ido?"paused":""}"><td>${ido?"🚶 ":""}${esc(p.name)}</td><td>${eur(B.drank[p.id])}</td><td>${eur(B.paid[p.id])}</td>${conPagos?`<td>${Math.abs(g)<0.005?"—":(g>0?"+":"")+eur(g)}</td>`:""}<td class="${v>0.004?"pos":v<-0.004?"neg":""}">${v>0?"+":""}${eur(v)}</td></tr>`});
     h+="</tbody></table></section>";
     // Para quedar en paz: cada línea se salda de un toque; «＋ Apuntar un pago» para cualquier otro importe.
     if(st.length)h+=`<section class="card"><h2>Para quedar en paz</h2>${st.map(s=>`<div class="drow"><div>${esc(pname(s.from))} → ${esc(pname(s.to))}: <b>${eur(s.v)}</b></div>${avisoPagos?"":`<div class="acts"><button class="mini" data-act="pagoSaldar" data-de="${s.from}" data-a="${s.to}" data-v="${s.v}">✓ Pagado</button></div>`}</div>`).join("")}</section>`;
@@ -1417,7 +1503,7 @@ function vCuentas(){
     if(avisoPagos)h+=`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoPagos)}</p>`;
     h+=S.pagos.length?S.pagos.map(x=>`<div class="drow"><div><div>${esc(pname(x.de))} → ${esc(pname(x.a))}: <b>${eur(x.importe)}</b></div><div class="note">${hhmm(x.ts)} · apuntó ${esc(byName(x.by))}</div></div><div class="acts"><button class="linkish rm" data-act="pagoBorrar" data-id="${x.id}" aria-label="Quitar este pago">✕</button></div></div>`).join(""):`<p class="note">Cuando alguien le dé dinero a otro para quedar en paz, apúntalo aquí. Puede ser justo lo que debe, menos o más: los saldos se recalculan.</p>`;
     if(ui.pagoForm&&!avisoPagos){
-      const f=ui.pagoForm,quien=ps.filter(p=>!p.paused||Math.abs(B.b[p.id])>0.004||B.drank[p.id]>0||B.paid[p.id]>0);
+      const f=ui.pagoForm,quien=ps.filter(p=>estadoEn(p.id)!=="no"||Math.abs(B.b[p.id])>0.004||B.drank[p.id]>0||B.paid[p.id]>0);
       const sug=f.de&&f.a?(st.find(s=>s.from===f.de&&s.to===f.a)||{}).v:null;
       h+=`<p class="note" style="margin:10px 0 4px">¿Quién paga?</p><div class="chips">${quien.map(p=>`<button class="chip${f.de===p.id?" on":""}" data-act="pagoDe" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div>`;
       h+=`<p class="note" style="margin:10px 0 4px">¿A quién?</p><div class="chips">${quien.filter(p=>p.id!==f.de).map(p=>`<button class="chip${f.a===p.id?" on":""}" data-act="pagoA" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div>`;
@@ -1448,7 +1534,7 @@ function vCuentas(){
 function vStats(){
   if(!S.rounds.length)return`<p class="hint">Las estadísticas aparecen cuando se cierra la primera ronda.</p>`;
   let h='<section class="card"><h2>Bebida favorita</h2>';
-  people().forEach(p=>{const f=favDrink(p.id);h+=`<div class="drow"><b>${p.paused?"⏸ ":""}${esc(p.name)}</b><span>${f?(IDX[f.k]?emoji({drink:f.k})+" "+esc(IDX[f.k].name):"🔧 "+esc(f.k))+` <span class="note">(${f.n})</span>`:"—"}</span></div>`});
+  people().forEach(p=>{const f=favDrink(p.id);h+=`<div class="drow"><b>${esc(p.name)}</b><span>${f?(IDX[f.k]?emoji({drink:f.k})+" "+esc(IDX[f.k].name):"🔧 "+esc(f.k))+` <span class="note">(${f.n})</span>`:"—"}</span></div>`});
   h+='</section><section class="card"><h2>Últimas rondas</h2>';
   const rs=sortedRounds().slice(-5);
   people().forEach(p=>{const l=rs.map(r=>((r.orders||{})[p.id]||[]).map(o=>label(o)).join(" + ")||"—");h+=`<div class="drow"><b>${esc(p.name)}</b><span class="note">${esc(l.join(" | "))}</span></div>`});
@@ -1486,10 +1572,10 @@ function vAjustes(){
   h+='<section class="card"><h2>Cuadrilla</h2><p class="note">Arrastra por ⠿ para cambiar el orden.</p><div data-droplist="people">';
   ps.forEach(p=>{
     const u=personUsed(p.id);
-    h+=`<div class="set-row${p.paused?" paused":""}" data-key="${p.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" value="${esc(p.name)}" data-pname="${p.id}"><button class="mini${p.paused?" on":""}" data-act="pausePerson" data-id="${p.id}">${p.paused?"▶":"⏸"}</button>${u?'<span class="lock" title="Ha participado esta noche">🔒</span>':`<button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar">×</button>`}</div>`;
+    h+=`<div class="set-row" data-key="${p.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" value="${esc(p.name)}" data-pname="${p.id}">${u?'<span class="lock" title="Ha participado en alguna noche">🔒</span>':`<button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar">×</button>`}</div>`;
   });
   h+='</div>';
-  h+='<p class="note">⏸ Pausar = se va un rato o a casa: desaparece de Pedir, pero conserva sus saldos y puede volver. 🔒 = ya ha participado esta noche, así que no se puede borrar (púsalo en pausa).</p><button class="btn" data-act="addPerson">+ Añadir persona</button></section>';
+  h+='<p class="note">Aquí está toda la cuadrilla. Quién viene cada noche (o se ha ido un rato) se elige en Pedir › «👥 Quién viene esta noche». 🔒 = ha participado en alguna noche, así que no se puede borrar.</p><button class="btn" data-act="addPerson">+ Añadir persona</button></section>';
 
   h+='<section class="card"><h2>Modo asignador</h2><p class="note">Mientras está activo, solo esa persona puede apuntar o quitar bebidas en todos los móviles.</p>';
   if(!me)h+='<p class="note">Elige primero quién eres.</p>';
@@ -1578,7 +1664,7 @@ function vRonda(){
   if(ui.rsWho&&!sw){ui.rsWho=null;ui.rsGroup=[]}
   if(sw){
     const n=ui.rsGroup.length,tot=totalCompartido(sw,r);
-    h+=`<section class="card" style="border-color:var(--ink)"><h2>🍽️ ¿Quién compartió ${esc(label(sw))}?</h2><div class="chips">${people().map(p=>{const on=ui.rsGroup.includes(p.id);return `<button class="chip${on?" on":""}" data-act="rsToggle" data-pid="${p.id}">${on?"☑":"☐"} ${p.paused?"⏸ ":""}${esc(p.name)}</button>`}).join("")}</div>`;
+    h+=`<section class="card" style="border-color:var(--ink)"><h2>🍽️ ¿Quién compartió ${esc(label(sw))}?</h2><div class="chips">${people().map(p=>{const on=ui.rsGroup.includes(p.id);return `<button class="chip${on?" on":""}" data-act="rsToggle" data-pid="${p.id}">${on?"☑":"☐"} ${estadoEn(p.id)==="ido"?"🚶 ":""}${esc(p.name)}</button>`}).join("")}</div>`;
     h+=`<div class="chips" style="margin-top:8px"><button class="chip" data-act="rsAll">Todos</button><button class="chip" data-act="rsNone">Ninguno</button></div>`;
     h+=`<p class="status">${n?`Entre ${n}: ${eur(tot)} en total, unos ${eur(tot/n)} cada uno`:"Marca al menos a una persona"}</p>`;
     h+=`<div class="row2"><button class="btn small primary" data-act="rsSaveWho"${n?"":" disabled"}>Guardar</button><button class="btn small" data-act="rsWhoCancel">Cancelar</button></div></section>`;
@@ -1598,7 +1684,7 @@ function vRonda(){
   h+=campoTicket("rticket",r.ticket)+cuadreTicket(sumaRonda(r),ticketOk(r.ticket))+`</div>`;
   h+=`<section class="card" style="margin-top:12px"><h2>Quién pagó</h2><div class="chips"><button class="chip${r.payer?"":" on"}" data-act="rPayer" data-pid="">Nadie</button>${people().map(p=>`<button class="chip${r.payer===p.id?" on":""}" data-act="rPayer" data-pid="${p.id}">${esc(p.name)}</button>`).join("")}</div></section>`;
   h+=`<section class="card"><h2>Por persona</h2><p class="note">Para quitar algo que no se tomó o añadir algo que se os olvidó apuntar.</p>`;
-  people().filter(p=>(r.orders[p.id]||[]).length||!p.paused).forEach(p=>{
+  people().filter(p=>(r.orders[p.id]||[]).length||estadoEn(p.id)!=="no").forEach(p=>{
     const ds=r.orders[p.id]||[];
     h+=`<div class="drow"><div><div><b>${esc(p.name)}</b></div>${ds.length?ds.map((o,i)=>`<div class="note" style="display:flex;align-items:center;gap:6px">${emoji(o)} ${esc(gLabel(o))} · ${eur(roundPrice(r,o))}<button class="linkish rm" data-act="rDel" data-pid="${p.id}" data-idx="${i}" aria-label="Quitar">✕</button></div>`).join(""):'<div class="note">Nada</div>'}</div><div class="acts"><button class="linkish" data-act="rAdd" data-pid="${p.id}">+ añadir</button></div></div>`;
   });
@@ -1709,7 +1795,7 @@ function vModal(){
   if(!ui.modal)return"";
   if(ui.modal==="me")
     return sheet(`<h2>¿Quién eres?</h2><p class="note">Queda guardado en este móvil.</p><div class="chips">`+
-      people().map(p=>`<button class="chip${p.id===me?" on":""}" data-act="setMe" data-id="${p.id}">${p.paused?"⏸ ":""}${esc(p.name)}</button>`).join("")+
+      people().map(p=>`<button class="chip${p.id===me?" on":""}" data-act="setMe" data-id="${p.id}">${esc(p.name)}</button>`).join("")+
       `</div><button class="btn small" data-act="modalClose" style="margin-top:12px">Cerrar</button>`);
   if(ui.modal==="round")
     return sheet(`<h2>¿En qué bar estáis?</h2><p class="note">La ronda usa los precios de ese bar, y las siguientes lo heredan. El bar recuerda lo que os ha cobrado: lo corregido en la Comanda y, al cerrar cada ronda, todo lo pedido.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
@@ -1752,7 +1838,7 @@ document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0)
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
-    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;if(ui.share||ui.sharePending||ui.shareEdit){ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.group=[]}ui.rsWho=null;ui.rsGroup=[];if(id!=="carta"&&id!=="mezclas")ui.cartaQ="";window.scrollTo(0,0);break;
+    case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.partsEdit=false;if(ui.share||ui.sharePending||ui.shareEdit){ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.group=[]}ui.rsWho=null;ui.rsGroup=[];if(id!=="carta"&&id!=="mezclas")ui.cartaQ="";window.scrollTo(0,0);break;
     case"cartaCat":ui.cartaCat=ui.cartaCat===id?null:id;ui.cartaGrp=null;alTope(id);break;
     case"cartaGrp":ui.cartaGrp=ui.cartaGrp===id?null:id;alTope(id);break;
     case"sel":if(ui.multi||ui.pending||ui.sharePending||ui.shareEdit){const k=ui.group.indexOf(id);k<0?ui.group.push(id):ui.group.splice(k,1)}else{ui.sel=id;ui.path=[];ui.lastAdd=null;ui.editMix=null}break;
@@ -1827,12 +1913,12 @@ document.addEventListener("click",e=>{
       flash(`${s.qty>1?s.qty+" ":""}${label(s)} para compartir entre ${s.who.length}`);
       ui.sharePending=null;ui.group=[];ui.path=[];break;
     }
-    case"shareWho":{const s=(S.current.shared||{})[id];if(!s||isLocked())return;ui.shareEdit=id;ui.group=(s.who||[]).filter(p=>findP(p)&&!findP(p).paused);window.scrollTo(0,0);break}
+    case"shareWho":{const s=(S.current.shared||{})[id];if(!s||isLocked())return;ui.shareEdit=id;ui.group=(s.who||[]).filter(p=>findP(p)&&estadoEn(p)==="aqui");window.scrollTo(0,0);break}
     case"shareSaveWho":{
       const s=(S.current.shared||{})[ui.shareEdit];if(!s||isLocked())return;
       if(!ui.group.length){flash("Marca al menos a una persona");return}
-      // Se conservan los que están en pausa (no salen en la rejilla para tocarlos).
-      const pausados=(s.who||[]).filter(p=>findP(p)&&findP(p).paused);
+      // Se conservan los que se han ido o no están (no salen en la rejilla para tocarlos).
+      const pausados=(s.who||[]).filter(p=>findP(p)&&estadoEn(p)!=="aqui");
       s.who=pausados.concat(ui.group.filter(p=>!pausados.includes(p)));writeShared(ui.shareEdit);
       flash(`Entre ${s.who.length}`);ui.shareEdit=null;ui.group=[];break;
     }
@@ -1970,7 +2056,7 @@ document.addEventListener("click",e=>{
       const orden=people().map(p=>p.id),nuevo=ui.rsGroup.slice().sort((a,b)=>orden.indexOf(a)-orden.indexOf(b));
       const antes=(s.who||[]).slice(),entran=nuevo.filter(p=>!antes.includes(p)),salen=antes.filter(p=>!nuevo.includes(p));
       if(!entran.length&&!salen.length){ui.rsWho=null;ui.rsGroup=[];break}
-      r.shared=Object.assign({},r.shared,{[ui.rsWho]:Object.assign({},s,{who:nuevo})});
+      asegurarParticipantes(nuevo);r.shared=Object.assign({},r.shared,{[ui.rsWho]:Object.assign({},s,{who:nuevo})});
       const cambios=[entran.length?"entra "+entran.map(pname).join(", "):"",salen.length?"sale "+salen.map(pname).join(", "):""].filter(Boolean).join("; ");
       // El total no cambia: solo cómo se reparte.
       guardarRonda(r,`Comparten ${label(s)}: ${cambios} (entre ${nuevo.length})`,true);
@@ -1995,11 +2081,16 @@ document.addEventListener("click",e=>{
         const pr=parseFloat(String(prompt(`«${txt}» no está en la carta. ¿Precio en €?`,"2")||"").replace(",","."));if(isNaN(pr))return;
         o={custom:txt.slice(0,40),price:r2(pr),ts:r.ts,by:me||""};
       }
-      r.orders=Object.assign({},r.orders,{[pid]:(r.orders[pid]||[]).concat([o])});
+      asegurarParticipantes([pid]);r.orders=Object.assign({},r.orders,{[pid]:(r.orders[pid]||[]).concat([o])});
       guardarRonda(r,`Añadido: ${gLabel(o)} a ${pname(pid)}`);flash("Añadido: "+gLabel(o));break;
     }
     case"clearRound":if(!ui.confirmClear){ui.confirmClear=true;setTimeout(()=>{ui.confirmClear=false;render()},3000)}else{ui.confirmClear=false;if(!requirePin())return;clearRound();flash("Ronda vaciada")}break;
     case"undo":if(confirm("¿Reabrir la última ronda cerrada? Se deshace su pago y vuelve a estar editable.")){if(!requirePin())return;undoLast();ui.tab="pedir";flash("Ronda reabierta")}break;
+    /* --- participantes de la noche (017) --- */
+    case"partsEdit":if(isLocked())return;ui.partsEdit=true;ui.multi=false;ui.pending=null;ui.path=[];window.scrollTo(0,0);break;
+    case"partsCerrar":ui.partsEdit=false;break;
+    case"partsPon":if(isLocked())return;if(b.dataset.e==="no"&&tieneAlgo(id)){flash("Tiene algo apuntado esta noche");return}ponEstado(id,b.dataset.e);break;
+    case"volver":if(isLocked())return;ponEstado(id,"aqui");flash("Ha vuelto: "+pname(id));break;
     /* --- pagos entre personas (015) --- */
     case"pagoSaldar":{
       const de=b.dataset.de,a=b.dataset.a,v=Number(b.dataset.v);
@@ -2036,7 +2127,8 @@ document.addEventListener("click",e=>{
     case"nocheNueva":{
       const c=b.dataset.carpeta||"c_otras",def=`${nombreCarpeta(c)} · ${fechaCorta(Date.now())}`;
       const t=prompt("Nombre de la noche nueva:",def);if(t===null)return;
-      crearNoche(S.carpetas[c]?c:"c_otras",(t.trim()||def));ui.tab="pedir";window.scrollTo(0,0);flash("Noche nueva: "+S.noches[NOCHE].titulo);break;
+      // Al empezar la noche, a elegir quién viene (de partida, los de la última noche de esa carpeta).
+      crearNoche(S.carpetas[c]?c:"c_otras",(t.trim()||def));ui.tab="pedir";ui.partsEdit=true;window.scrollTo(0,0);flash("Noche nueva: "+S.noches[NOCHE].titulo);break;
     }
     case"carpetaNueva":{const t=(prompt("Nombre de la carpeta (p. ej. Fiestas del pueblo 2026):")||"").trim();if(!t)return;crearCarpeta(t);flash("Carpeta creada: "+t);break}
     case"carpetaRenombrar":{
@@ -2060,7 +2152,12 @@ document.addEventListener("click",e=>{
     }
     case"toggleAsk":askNote=!askNote;lsSet("ronda.ask",askNote?"1":null);break;
 
-    case"addPerson":{const n=prompt("Nombre:","Nuevo");if(!n||!n.trim())return;editConfig(c=>{c.people.push({id:uid("p"),name:n.trim().slice(0,24),paused:false})});return}
+    case"addPerson":{
+      const n=prompt("Nombre:","Nuevo");if(!n||!n.trim())return;const pid=uid("p");
+      editConfig(c=>{c.people.push({id:pid,name:n.trim().slice(0,24),paused:false})});
+      if(S.noches[NOCHE])ponEstado(pid,"aqui");   // alguien nuevo suele ser alguien que viene esta noche
+      return;
+    }
     case"setPin":{
       if(S.config.pin&&!requirePin())return;
       const v=prompt("PIN nuevo (vacío para quitarlo):",S.config.pin||"");
@@ -2075,7 +2172,6 @@ document.addEventListener("click",e=>{
       if(!confirm(`¿Quitar a ${pname(id)} de la cuadrilla?`))return;
       editConfig(c=>{c.people=c.people.filter(p=>p.id!==id)});return;
     }
-    case"pausePerson":editConfig(c=>{c.people.forEach(p=>{if(p.id===id)p.paused=!p.paused})});return;
     case"assignerOn":if(me&&!S.config.assignerMode)editConfig(c=>{c.assignerMode=me});return;
     case"assignerOff":{
       if(S.config.assignerMode!==me){if(!confirm(`¿Quitarle el modo asignador a ${pname(S.config.assignerMode)}?`))return;if(!requirePin())return}
@@ -2483,7 +2579,9 @@ function escucharRondas(){
   unsubRondas=colRef("noches").doc(id).collection("rounds").onSnapshot(qs=>{
     if(id!==NOCHE)return;
     S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,{orders:normOrders(d.orders)})});
-    actualizarResumen();render();
+    actualizarResumen();
+    if(!(qs.metadata&&qs.metadata.fromCache))asegurarListaParticipantes();
+    render();
   },errorNoches);
 }
 // Que siempre haya una noche elegida: la recordada, si no la más reciente; si no hay ninguna
