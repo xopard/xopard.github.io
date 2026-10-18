@@ -376,7 +376,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="018";
+const APP_VERSION="019";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -442,9 +442,11 @@ function estadoEn(pid){
 const activePeople=()=>people().filter(p=>estadoEn(p.id)==="aqui");   // los que están aquí
 const idos=()=>people().filter(p=>estadoEn(p.id)==="ido");
 // Quien tiene algo en la noche (pidió, compartió, pagó una ronda o un pago): no puede ser «no vino».
+// «No toma nada» no cuenta: antes de la 017 también se usaba para decir que uno no venía.
+const pideAlgo=ds=>(ds||[]).some(o=>!isNada(o));
 function tieneAlgo(pid){
-  if(drinks(pid).length||compartidos().some(s=>(s.who||[]).includes(pid)))return true;
-  if(S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid||compartidos(r).some(s=>(s.who||[]).includes(pid))))return true;
+  if(pideAlgo(drinks(pid))||compartidos().some(s=>(s.who||[]).includes(pid)))return true;
+  if(S.rounds.some(r=>pideAlgo((r.orders||{})[pid])||r.payer===pid||compartidos(r).some(s=>(s.who||[]).includes(pid))))return true;
   return (S.pagos||[]).some(x=>x.de===pid||x.a===pid);
 }
 // Participantes que salen de lo apuntado en la noche (para las noches de antes de la 017).
@@ -458,7 +460,11 @@ function guardarParticipantes(campos){if(mode==="firebase")curUpdate(campos);els
 function ponEstado(pid,e){
   const m=S.noches[NOCHE];if(!m||!findP(pid))return;
   if(!m.participantes){m.participantes=derivarParticipantes();guardarParticipantes({participantes:clone(m.participantes)})}
-  if(e==="no"){if(tieneAlgo(pid))return;delete m.participantes[pid];guardarParticipantes({["participantes."+pid]:DEL()});return}
+  if(e==="no"){
+    if(tieneAlgo(pid))return;delete m.participantes[pid];
+    // Su «No toma nada» de la ronda en curso sobra; el de las rondas cerradas se queda como se apuntó (no cuesta nada).
+    const u={["participantes."+pid]:DEL()};if(drinks(pid).length){delete S.current.orders[pid];u["orders."+pid]=DEL()}
+    guardarParticipantes(u);return}
   const x={ts:(m.participantes[pid]&&m.participantes[pid].ts)||Date.now()};if(e==="ido")x.ido=true;
   m.participantes[pid]=x;guardarParticipantes({["participantes."+pid]:clone(x)});
 }
