@@ -375,7 +375,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="015";
+const APP_VERSION="016";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -1068,13 +1068,78 @@ function suggestPayer(B){
   if(!c.length)c=people();
   return c.slice().sort((x,y)=>(B.b[x.id]-B.b[y.id])||(B.times[x.id]-B.times[y.id]))[0].id;
 }
-function settle(b){
+/* --- Plan para quedar en paz (016) ---
+   Criterio (Aitor): el menor número de pagos; quien paga justo lo asignado tacha su línea y el
+   resto no cambia; se recalcula (otra vez con el mínimo) solo si alguien paga distinto (más,
+   menos o a otra persona) o si cambian las rondas. El plan no se guarda: se reconstruye igual
+   en todos los móviles repasando los pagos por orden. Importes en céntimos para no arrastrar
+   decimales. */
+const ordenPersona=id=>{const i=people().findIndex(p=>p.id===id);return i<0?1e6:i};
+// Reparto voraz (el de siempre): el que más debe, al que más le deben. Dentro de un grupo que
+// se compensa da N−1 pagos como mucho.
+function repartoVoraz(pares){
   const d=[],c=[];
-  people().forEach(p=>{const v=Math.round((b[p.id]||0)*100);if(v<0)d.push({id:p.id,v:-v});else if(v>0)c.push({id:p.id,v})});
-  d.sort((x,y)=>y.v-x.v);c.sort((x,y)=>y.v-x.v);
+  pares.forEach(([id,v])=>{if(v<0)d.push({id,v:-v});else if(v>0)c.push({id,v})});
+  const ord=(x,y)=>y.v-x.v||ordenPersona(x.id)-ordenPersona(y.id)||(x.id<y.id?-1:1);
+  d.sort(ord);c.sort(ord);
   const o=[];let i=0,j=0;
-  while(i<d.length&&j<c.length){const m=Math.min(d[i].v,c[j].v);o.push({from:d[i].id,to:c[j].id,v:m/100});d[i].v-=m;c[j].v-=m;if(!d[i].v)i++;if(!c[j].v)j++}
+  while(i<d.length&&j<c.length){const m=Math.min(d[i].v,c[j].v);o.push({from:d[i].id,to:c[j].id,v:m});d[i].v-=m;c[j].v-=m;if(!d[i].v)i++;if(!c[j].v)j++}
   return o;
+}
+// El mínimo de pagos: separar a la gente en el mayor número de grupos que se compensan entre sí
+// (cada grupo de N se salda con N−1 pagos). Exacto hasta 16 personas con saldo; si hay más, voraz.
+function pagosMinimos(cent){
+  const ids=Object.keys(cent).filter(k=>cent[k]).sort((a,b)=>ordenPersona(a)-ordenPersona(b)||(a<b?-1:1));
+  if(!ids.length)return[];
+  const v=ids.map(id=>Math.round(cent[id]));
+  // Si por redondeos la suma no es exactamente cero, el céntimo que sobra se le ajusta al de mayor saldo.
+  const tot=v.reduce((s,x)=>s+x,0);
+  if(tot){let k=0;v.forEach((x,i)=>{if(Math.abs(x)>Math.abs(v[k]))k=i});v[k]-=tot}
+  const n=ids.length;
+  if(n>16)return repartoVoraz(ids.map((id,i)=>[id,v[i]]));
+  const N=1<<n,suma=new Float64Array(N),dp=new Int8Array(N),quita=new Int8Array(N);
+  for(let m=1;m<N;m++){const lb=m&-m;suma[m]=suma[m^lb]+v[31-Math.clz32(lb)]}
+  for(let m=1;m<N;m++){
+    let mejor=-1,bi=0;
+    for(let i=0;i<n;i++)if(m>>i&1){const x=dp[m^(1<<i)];if(x>mejor){mejor=x;bi=i}}
+    dp[m]=mejor+(suma[m]===0?1:0);quita[m]=bi;
+  }
+  const grupos=[];let m=N-1,act=[];
+  while(m){const i=quita[m];act.push(i);m^=1<<i;if(suma[m]===0){grupos.push(act);act=[]}}
+  const o=[];grupos.forEach(g=>repartoVoraz(g.map(i=>[ids[i],v[i]])).forEach(x=>o.push(x)));
+  return o;
+}
+// Completar un plan para que salde los saldos corr: lo que le falte (o sobre) se salda con el mínimo
+// de pagos, compensando con las líneas que ya hay entre las mismas dos personas.
+function completarPlan(lineas,corr){
+  const r=Object.assign({},corr),out=lineas.map(l=>Object.assign({},l));
+  out.forEach(l=>{r[l.from]=(r[l.from]||0)+l.v;r[l.to]=(r[l.to]||0)-l.v});
+  pagosMinimos(r).forEach(e=>{
+    const op=out.find(l=>l.from===e.to&&l.to===e.from&&l.v>0);
+    if(op){if(op.v>=e.v)op.v-=e.v;else{out.push({from:e.from,to:e.to,v:e.v-op.v});op.v=0}return}
+    const igual=out.find(l=>l.from===e.from&&l.to===e.to);
+    if(igual)igual.v+=e.v;else out.push(Object.assign({},e));
+  });
+  return out.filter(l=>l.v>0);
+}
+// Plan vigente: el mínimo con los saldos de las rondas y, pago a pago por orden, tachar la línea si
+// el pago es justo esa. Si no lo es, se arregla solo la diferencia sobre el plan que había, si con
+// eso no hacen falta más pagos que con un plan nuevo; si no, plan nuevo con el mínimo.
+function planPaz(B,pagos){
+  const c=x=>Math.round((Number(x)||0)*100),corr={};
+  Object.keys(B.b).forEach(id=>{corr[id]=c(B.b[id])-c((B.pag||{})[id])});      // solo rondas
+  let plan=pagosMinimos(corr);
+  (pagos||S.pagos||[]).slice().sort((a,b)=>(a.ts||0)-(b.ts||0)||(a.id<b.id?-1:1)).forEach(x=>{
+    const v=c(x.importe);
+    if(x.de in corr)corr[x.de]+=v;if(x.a in corr)corr[x.a]-=v;
+    const i=plan.findIndex(l=>l.from===x.de&&l.to===x.a&&l.v===v);
+    if(i>=0){plan.splice(i,1);return}
+    const viejo=plan.map(l=>Object.assign({},l)),k=viejo.findIndex(l=>l.from===x.de&&l.to===x.a);
+    if(k>=0)viejo[k].v-=Math.min(viejo[k].v,v);           // lo que cubra el pago, de su línea
+    const parche=completarPlan(viejo.filter(l=>l.v>0),corr),nuevo=pagosMinimos(corr);
+    plan=parche.length<=nuevo.length?parche:nuevo;
+  });
+  return plan.map(l=>({from:l.from,to:l.to,v:l.v/100}));
 }
 let GROUPS=[];
 function comandaGroups(){
@@ -1337,7 +1402,7 @@ function vCuentas(){
     h+=`<button class="btn warn" data-act="clearRound">${ui.confirmClear?"¿Seguro? Toca otra vez para vaciar":"Vaciar ronda actual sin guardarla"}</button>`;
   }else h+=`<p class="note">Aún no hay pedidos en esta ronda.</p>`;
   h+="</section>";
-  const st=settle(B.b);
+  const st=planPaz(B);
   if(S.rounds.length||S.pagos.length){
     const conPagos=S.pagos.length>0;
     h+=`<section class="card"><h2>Saldos (${S.rounds.length} ronda${S.rounds.length===1?"":"s"})</h2><table><thead><tr><th>Quién</th><th>Bebido</th><th>Pagado</th>${conPagos?"<th>Pagos</th>":""}<th>Saldo</th></tr></thead><tbody>`;
