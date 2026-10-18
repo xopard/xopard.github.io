@@ -375,7 +375,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="014";
+const APP_VERSION="015";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -410,7 +410,7 @@ function curUpdate(u){if(!NOCHE)return Promise.resolve();return dbUpdate(curPath
 function curSet(){if(!NOCHE)return Promise.resolve();return dbSet(curPath(),Object.assign(clone(S.current),nocheMeta()))}
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -939,10 +939,13 @@ function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.cur
 function undoLast(){
   if(!S.rounds.length)return;
   const last=sortedRounds().pop();
+  // La nota al archivo, ANTES de quitar la ronda: archiveNote() la busca en S.rounds para conservar
+  // su pagador y su registro (hasta la 014 se escribía después y el archivo los perdía).
+  if(mode==="firebase")archiveNote(last.id,"Ronda reabierta para editarla");
   S.rounds=S.rounds.filter(r=>r.id!==last.id);
   // Se conserva la noche: sin ella, la siguiente ronda cerrada se archivaba como de otra noche.
   S.current={n:last.n,name:last.name||"",bar:last.bar||"",ticket:ticketOk(last.ticket),night:S.current.night||"",orders:clone(last.orders||{}),delivered:{},shared:normShared(last.shared)};
-  if(mode==="firebase"){archiveNote(last.id,"Ronda reabierta para editarla");dbDelete(roundPath(last.id));curSet()}else saveLocal();
+  if(mode==="firebase"){dbDelete(roundPath(last.id));curSet()}else saveLocal();
   actualizarResumen();
 }
 
@@ -979,7 +982,7 @@ function cambiarNoche(id){
   NOCHE=id;lsSet("ronda.noche."+SALA,id);
   S.current=Object.assign(normCurrent(NOCHES_DATA[id]||{}),{night:id});S.rounds=[];
   ui.sel=null;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.multi=false;ui.group=[];ui.pending=null;ui.payer=null;
-  ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.editRound=null;
+  ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.editRound=null;ui.pagoForm=null;
   escucharRondas();
 }
 
@@ -1025,8 +1028,39 @@ function balances(){
     compartidos(r).forEach(s=>{const pt=partesCompartido(s,r);Object.keys(pt).forEach(pid=>{if(pid in drank)drank[pid]+=pt[pid]})});
     if(r.payer in paid){paid[r.payer]+=Number(r.total)||0;times[r.payer]++}
   });
-  people().forEach(p=>{b[p.id]=r2(paid[p.id]-drank[p.id])});
-  return{b,drank,paid,times};
+  // Pagos entre personas (015): quien paga sube su saldo y quien cobra lo baja.
+  const pag={};people().forEach(p=>{pag[p.id]=0});
+  (S.pagos||[]).forEach(x=>{if(x.de in pag)pag[x.de]+=x.importe;if(x.a in pag)pag[x.a]-=x.importe});
+  people().forEach(p=>{b[p.id]=r2(paid[p.id]-drank[p.id]+pag[p.id])});
+  return{b,drank,paid,times,pag};
+}
+
+/* --- Pagos entre personas (015): noches/{noche}/pagos/{id} = { de, a, importe, ts, by }.
+   Cada pago, documento aparte: dos móviles apuntando a la vez no se pisan, y cerrar una ronda
+   (que reescribe la noche) no los toca. --- */
+S.pagos=[];
+let unsubPagos=null,pagosDe="",avisoPagos="";
+const pagoPath=id=>"noches/"+NOCHE+"/pagos/"+id;
+function normPago(id,d){d=d||{};const v=r2(Number(d.importe)||0);if(!d.de||!d.a||d.de===d.a||!(v>0))return null;return{id,de:d.de,a:d.a,importe:v,ts:Number(d.ts)||0,by:d.by||""}}
+function escucharPagos(){
+  if(!db||!SALA||!NOCHE||pagosDe===NOCHE)return;
+  if(typeof unsubPagos==="function")unsubPagos();
+  const id=NOCHE;pagosDe=id;S.pagos=[];
+  unsubPagos=colRef("noches").doc(id).collection("pagos").onSnapshot(qs=>{
+    if(id!==NOCHE)return;
+    S.pagos=qs.docs.map(x=>normPago(x.id,x.data())).filter(Boolean).sort((a,b)=>a.ts-b.ts);avisoPagos="";render();
+  },e=>{
+    console.warn("pagos:",e);
+    if(String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0)avisoPagos="Faltan las reglas nuevas de Firestore para los pagos (versión 015). Lo demás funciona; los pagos no se pueden apuntar hasta pegarlas en la consola de Firebase y volver a abrir la app.";
+    render();
+  });
+}
+function crearPago(de,a,v){
+  if(!de||!a||de===a||!(v>0))return false;
+  const id=uid("g"),x={de,a,importe:r2(v),ts:Date.now(),by:me||""};
+  S.pagos=S.pagos.concat([Object.assign({id},x)]);
+  if(mode==="firebase")dbSet(pagoPath(id),x);else saveLocal();
+  return true;
 }
 function suggestPayer(B){
   let c=activePeople().filter(p=>drinks(p.id).some(o=>!isNada(o)));
@@ -1303,12 +1337,31 @@ function vCuentas(){
     h+=`<button class="btn warn" data-act="clearRound">${ui.confirmClear?"¿Seguro? Toca otra vez para vaciar":"Vaciar ronda actual sin guardarla"}</button>`;
   }else h+=`<p class="note">Aún no hay pedidos en esta ronda.</p>`;
   h+="</section>";
-  if(S.rounds.length){
-    h+=`<section class="card"><h2>Saldos (${S.rounds.length} ronda${S.rounds.length>1?"s":""})</h2><table><thead><tr><th>Quién</th><th>Bebido</th><th>Pagado</th><th>Saldo</th></tr></thead><tbody>`;
-    ps.forEach(p=>{const v=B.b[p.id];h+=`<tr class="${p.paused?"paused":""}"><td>${p.paused?"⏸ ":""}${esc(p.name)}</td><td>${eur(B.drank[p.id])}</td><td>${eur(B.paid[p.id])}</td><td class="${v>0.004?"pos":v<-0.004?"neg":""}">${v>0?"+":""}${eur(v)}</td></tr>`});
+  const st=settle(B.b);
+  if(S.rounds.length||S.pagos.length){
+    const conPagos=S.pagos.length>0;
+    h+=`<section class="card"><h2>Saldos (${S.rounds.length} ronda${S.rounds.length===1?"":"s"})</h2><table><thead><tr><th>Quién</th><th>Bebido</th><th>Pagado</th>${conPagos?"<th>Pagos</th>":""}<th>Saldo</th></tr></thead><tbody>`;
+    ps.forEach(p=>{const v=B.b[p.id],g=B.pag[p.id];h+=`<tr class="${p.paused?"paused":""}"><td>${p.paused?"⏸ ":""}${esc(p.name)}</td><td>${eur(B.drank[p.id])}</td><td>${eur(B.paid[p.id])}</td>${conPagos?`<td>${Math.abs(g)<0.005?"—":(g>0?"+":"")+eur(g)}</td>`:""}<td class="${v>0.004?"pos":v<-0.004?"neg":""}">${v>0?"+":""}${eur(v)}</td></tr>`});
     h+="</tbody></table></section>";
-    const st=settle(B.b);
-    if(st.length)h+=`<section class="card"><h2>Para quedar en paz</h2>${st.map(s=>`<p style="margin:4px 0">${esc(pname(s.from))} → ${esc(pname(s.to))}: <b>${eur(s.v)}</b></p>`).join("")}</section>`;
+    // Para quedar en paz: cada línea se salda de un toque; «＋ Apuntar un pago» para cualquier otro importe.
+    if(st.length)h+=`<section class="card"><h2>Para quedar en paz</h2>${st.map(s=>`<div class="drow"><div>${esc(pname(s.from))} → ${esc(pname(s.to))}: <b>${eur(s.v)}</b></div>${avisoPagos?"":`<div class="acts"><button class="mini" data-act="pagoSaldar" data-de="${s.from}" data-a="${s.to}" data-v="${s.v}">✓ Pagado</button></div>`}</div>`).join("")}</section>`;
+    else if(S.rounds.length)h+=`<section class="card"><h2 class="pos">✓ Todo en paz</h2><p class="note">Nadie debe nada a nadie en esta noche.</p></section>`;
+  }
+  if(S.rounds.length||S.pagos.length||avisoPagos){
+    h+=`<section class="card"><h2>Pagos entre vosotros</h2>`;
+    if(avisoPagos)h+=`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoPagos)}</p>`;
+    h+=S.pagos.length?S.pagos.map(x=>`<div class="drow"><div><div>${esc(pname(x.de))} → ${esc(pname(x.a))}: <b>${eur(x.importe)}</b></div><div class="note">${hhmm(x.ts)} · apuntó ${esc(byName(x.by))}</div></div><div class="acts"><button class="linkish rm" data-act="pagoBorrar" data-id="${x.id}" aria-label="Quitar este pago">✕</button></div></div>`).join(""):`<p class="note">Cuando alguien le dé dinero a otro para quedar en paz, apúntalo aquí. Puede ser justo lo que debe, menos o más: los saldos se recalculan.</p>`;
+    if(ui.pagoForm&&!avisoPagos){
+      const f=ui.pagoForm,quien=ps.filter(p=>!p.paused||Math.abs(B.b[p.id])>0.004||B.drank[p.id]>0||B.paid[p.id]>0);
+      const sug=f.de&&f.a?(st.find(s=>s.from===f.de&&s.to===f.a)||{}).v:null;
+      h+=`<p class="note" style="margin:10px 0 4px">¿Quién paga?</p><div class="chips">${quien.map(p=>`<button class="chip${f.de===p.id?" on":""}" data-act="pagoDe" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div>`;
+      h+=`<p class="note" style="margin:10px 0 4px">¿A quién?</p><div class="chips">${quien.filter(p=>p.id!==f.de).map(p=>`<button class="chip${f.a===p.id?" on":""}" data-act="pagoA" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div>`;
+      h+=`<div class="set-row" style="margin-top:10px"><label for="pagoImporte" style="flex:1">¿Cuánto?</label><input id="pagoImporte" class="price" type="number" step="0.05" inputmode="decimal" value="${sug!=null?sug:""}" placeholder="0,00"> €</div>`;
+      h+=`<div class="row2"><button class="btn small primary" data-act="pagoGuardar"${f.de&&f.a?"":" disabled"}>Apuntar el pago</button><button class="btn small" data-act="pagoCancelar">Cancelar</button></div>`;
+    }else if(!avisoPagos)h+=`<button class="btn small" data-act="pagoNuevo">＋ Apuntar un pago</button>`;
+    h+=`</section>`;
+  }
+  if(S.rounds.length){
     const last=sortedRounds()[S.rounds.length-1];
     h+=`<section class="card"><h2>Historial</h2>`;
     sortedRounds().slice().reverse().forEach(r=>{
@@ -1426,7 +1479,9 @@ function vNoches(){
   cs.sort((a,b)=>ult(b)-ult(a)||a.name.localeCompare(b.name,"es"));
   const bloque=(titulo,mias,cid)=>{
     const todas=!!(ui.carpetaTodas&&ui.carpetaTodas[cid||"-"]),vis=todas?mias:mias.slice(0,5);
-    let b=`<section class="card"><h2 style="display:flex;align-items:center;gap:8px"><span style="flex:1">📁 ${esc(titulo)}</span>${cid?`<button class="linkish" data-act="carpetaRenombrar" data-id="${cid}" aria-label="Renombrar carpeta">✏️</button>`:""}</h2>`;
+    // 🗑 solo en carpetas vacías (y nunca en «Otras», que es donde van las noches sueltas).
+    const borrable=cid&&cid!=="c_otras"&&!mias.length;
+    let b=`<section class="card"><h2 style="display:flex;align-items:center;gap:8px"><span style="flex:1">📁 ${esc(titulo)}</span>${cid?`<button class="linkish" data-act="carpetaRenombrar" data-id="${cid}" aria-label="Renombrar carpeta">✏️</button>`:""}${borrable?`<button class="linkish rm" data-act="carpetaBorrar" data-id="${cid}" aria-label="Borrar carpeta vacía">🗑</button>`:""}</h2>`;
     b+=vis.length?vis.map(vNocheFila).join(""):`<p class="note">Sin noches todavía.</p>`;
     if(mias.length>5)b+=`<button class="linkish" data-act="carpetaTodas" data-id="${cid||"-"}">${todas?"Ver solo las últimas":"Ver las "+mias.length}</button>`;
     if(cid&&cid!=="c_recuperadas")b+=`<button class="btn small" data-act="nocheNueva" data-carpeta="${cid}">＋ Nueva noche en ${esc(titulo)}</button>`;
@@ -1880,7 +1935,38 @@ document.addEventListener("click",e=>{
     }
     case"clearRound":if(!ui.confirmClear){ui.confirmClear=true;setTimeout(()=>{ui.confirmClear=false;render()},3000)}else{ui.confirmClear=false;if(!requirePin())return;clearRound();flash("Ronda vaciada")}break;
     case"undo":if(confirm("¿Reabrir la última ronda cerrada? Se deshace su pago y vuelve a estar editable.")){if(!requirePin())return;undoLast();ui.tab="pedir";flash("Ronda reabierta")}break;
+    /* --- pagos entre personas (015) --- */
+    case"pagoSaldar":{
+      const de=b.dataset.de,a=b.dataset.a,v=Number(b.dataset.v);
+      if(crearPago(de,a,v))flash(`Apuntado: ${pname(de)} → ${pname(a)} ${eur(v)}`);break;
+    }
+    case"pagoNuevo":ui.pagoForm={de:null,a:null};break;
+    case"pagoCancelar":ui.pagoForm=null;break;
+    case"pagoDe":if(ui.pagoForm){ui.pagoForm.de=id;if(ui.pagoForm.a===id)ui.pagoForm.a=null}break;
+    case"pagoA":if(ui.pagoForm)ui.pagoForm.a=id;break;
+    case"pagoGuardar":{
+      const f=ui.pagoForm;if(!f||!f.de||!f.a)return;
+      const el=document.getElementById("pagoImporte"),v=parseFloat(String(el?el.value:"").replace(",","."));
+      if(!(v>0)){flash("Escribe cuánto");return}
+      if(crearPago(f.de,f.a,v)){flash(`Apuntado: ${pname(f.de)} → ${pname(f.a)} ${eur(v)}`);ui.pagoForm=null}break;
+    }
+    case"pagoBorrar":{
+      const x=S.pagos.find(p=>p.id===id);if(!x)return;
+      if(!confirm(`¿Quitar el pago de ${pname(x.de)} a ${pname(x.a)} (${eur(x.importe)})? Los saldos vuelven a como estaban.`))return;
+      if(!requirePin())return;
+      S.pagos=S.pagos.filter(p=>p.id!==id);
+      if(mode==="firebase")dbDelete(pagoPath(id));else saveLocal();
+      flash("Pago quitado");break;
+    }
     /* --- noches y carpetas --- */
+    case"carpetaBorrar":{
+      const c=S.carpetas[id];if(!c||id==="c_otras")return;
+      if(Object.values(S.noches).some(n=>n.carpeta===id)){flash("Solo se pueden borrar carpetas vacías");return}
+      if(!confirm(`¿Borrar la carpeta «${c.name}»? Está vacía.`))return;
+      delete S.carpetas[id];
+      if(mode==="firebase")dbUpdate("bar/carpetas",{["carpetas."+id]:DEL()},()=>({carpetas:clone(S.carpetas)}));
+      flash("Carpeta borrada");break;
+    }
     case"nocheIr":if(!S.noches[id])return;if(id!==NOCHE)cambiarNoche(id);ui.tab="pedir";window.scrollTo(0,0);flash("Estás en "+S.noches[id].titulo);break;
     case"nocheNueva":{
       const c=b.dataset.carpeta||"c_otras",def=`${nombreCarpeta(c)} · ${fechaCorta(Date.now())}`;
@@ -2325,6 +2411,7 @@ function errorNoches(e){
 const normCarpetas=m=>{const o={};Object.keys(m||{}).forEach(id=>{const c=m[id];if(c&&c.name)o[id]={name:String(c.name).slice(0,40),ts:Number(c.ts)||0}});return o};
 // Rondas cerradas de la noche elegida; al cambiar de noche se deja de escuchar la anterior.
 function escucharRondas(){
+  escucharPagos();
   if(!db||!SALA||!NOCHE||rondasDe===NOCHE)return;
   if(typeof unsubRondas==="function")unsubRondas();
   const id=NOCHE;rondasDe=id;S.rounds=[];
