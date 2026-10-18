@@ -4271,7 +4271,7 @@ window.addEventListener('popstate',()=>{
 });
 
 // ── VERSIÓN ──────────────────────────────────────────────────
-const APP_VERSION='042';
+const APP_VERSION='043';
 
 function about(){
   closeMenu();
@@ -4903,6 +4903,11 @@ async function mobileSaveNow(){
   // forzar: sin él, saveToDropbox volvía a marcarlo como pendiente en el móvil y no subía nada
   if(!(await saveToDropbox(true))) markPending(true);
 }
+
+// Sin autocompletado del navegador en los campos de Zenba (043): su caja de sugerencias tapaba,
+// por ejemplo, la lista de categorías al filtrarla. Los que tienen lista propia (concepto) la conservan.
+document.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([list])')
+  .forEach(i=>i.setAttribute('autocomplete','off'));
 
 (async()=>{
   // Abierto por doble clic desde el disco: Dropbox no es posible (OAuth exige https)
