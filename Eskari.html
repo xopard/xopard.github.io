@@ -137,6 +137,9 @@ textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1p
 .set-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
 .set-row input[type=text]{flex:1;min-width:0}
 .campo{display:block;width:100%;margin:0 0 8px;font-size:1.05rem;padding:10px 12px}
+.miembro{border-bottom:1px solid var(--line);padding:8px 0}
+.miembro select{display:block;width:100%;margin-top:6px}
+.miembro .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .x{background:none;border:0;color:var(--muted);font-size:1.2rem;padding:6px;flex-shrink:0}
 .catbox{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:2px 10px 2px 6px;margin:8px 0}
 .catbox.open{padding-bottom:10px}
@@ -394,15 +397,30 @@ try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){cons
 // navegador). Sin sesión no se lee nada. Si Firebase Auth no carga, la app sigue como antes.
 let auth=null,USER=null,authListo=false,arrancado=false;
 try{if(db&&firebase.auth){auth=firebase.auth();auth.languageCode="es"}}catch(e){console.error("Firebase Auth:",e)}
+/* Miembros (025): salas/{sala}/miembros/{uid} = { rol: "admin"|"miembro"|"pendiente", persona (id de
+   la cuadrilla; "" si aún no ha elegido), nombre (el que puso al pedir entrar), email, ts,
+   dispositivo, por/aceptado (quién le aceptó y cuándo) }. Solo los miembros leen y escriben la
+   sala (reglas). Quien crea la sala, o la reclama con la contraseña de crear salas, es admin. */
+let MIEMBRO=null,miembroListo=false,MIEMBROS={},datosArrancados=false;
+const esDentro=()=>!auth||(!!MIEMBRO&&(MIEMBRO.rol==="admin"||MIEMBRO.rol==="miembro"));
+const esAdmin=()=>!!MIEMBRO&&MIEMBRO.rol==="admin";
+const normMiembro=d=>({rol:["admin","miembro","pendiente"].includes(d&&d.rol)?d.rol:"pendiente",persona:String((d&&d.persona)||""),nombre:String((d&&d.nombre)||"").slice(0,30),email:String((d&&d.email)||""),ts:Number(d&&d.ts)||0,dispositivo:String((d&&d.dispositivo)||"")});
+// Para reconocer un dispositivo en la lista de miembros (no es un dato fiable, solo orientativo).
+function dispositivo(){
+  const u=navigator.userAgent||"";
+  const so=/iPhone|iPad/.test(u)?(/iPad/.test(u)?"iPad":"iPhone"):/Android/.test(u)?"Android":/Windows/.test(u)?"Windows":/Mac OS/.test(u)?"Mac":/Linux/.test(u)?"Linux":"";
+  const nav=/Edg\//.test(u)?"Edge":/CriOS|Chrome\//.test(u)?"Chrome":/FxiOS|Firefox\//.test(u)?"Firefox":/Safari\//.test(u)?"Safari":"";
+  return [so,nav].filter(Boolean).join(" · ")||"otro";
+}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="024";
+const APP_VERSION="025";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
 if(SALA)lsSet("ronda.sala",SALA);
-const sufijo=()=>{let s="";while(s.length<5)s+=Math.random().toString(36).slice(2);return s.slice(0,5)};
-// Recorta el nombre antes de añadir el sufijo, para que el sufijo al azar llegue siempre entero.
-const codigoSala=base=>base.slice(0,18).replace(/-+$/,"")+"-"+sufijo();
+// Hasta la 024 el código llevaba un sufijo al azar, porque el código era la llave. Desde la 025
+// solo entran los miembros, así que el código es el nombre tal cual (24 como mucho).
+const codigoSala=base=>base.slice(0,24).replace(/-+$/,"");
 const salaLink=id=>location.origin+location.pathname+"?sala="+(id||SALA);
 function irASala(id){lsSet("ronda.sala",id);location.href=salaLink(id)}
 const root=()=>db.collection("salas").doc(SALA);
@@ -438,7 +456,7 @@ function curSet(){
 }
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null,rbarPlan:null,rAprende:true,cuEmail:"",cuMsg:"",cuError:false,cuOcupado:false};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null,rbarPlan:null,rAprende:true,cuEmail:"",cuMsg:"",cuError:false,cuOcupado:false,mbNombre:"",miembroError:""};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -569,7 +587,9 @@ const roundLabel=r=>"Ronda "+r.n+(r.name?" · "+r.name:"");
 function usedIds(){const s=new Set();const add=o=>Object.keys(o||{}).forEach(k=>(o[k]||[]).forEach(x=>{if(x&&x.drink&&x.drink!=="nada")s.add(x.drink)}));const addS=m=>Object.keys(m||{}).forEach(k=>{if(m[k]&&m[k].drink)s.add(m[k].drink)});add(S.current.orders);addS(S.current.shared);S.rounds.forEach(r=>{add(r.orders);addS(r.shared)});return s}
 const comparte=(m,pid)=>Object.keys(m||{}).some(k=>m[k]&&(m[k].who||[]).includes(pid));
 // Quien ha participado en alguna noche (o tiene algo en la actual) no se puede borrar de la cuadrilla.
+// Tampoco quien es un miembro de la sala (025).
 function personUsed(pid){
+  if(Object.keys(MIEMBROS).some(u=>MIEMBROS[u].persona===pid))return true;
   if(drinks(pid).length||comparte(S.current.shared,pid))return true;
   if(S.rounds.some(r=>((r.orders||{})[pid]||[]).length||r.payer===pid||comparte(r.shared,pid)))return true;
   if((S.pagos||[]).some(x=>x.de===pid||x.a===pid))return true;
@@ -1327,6 +1347,8 @@ const gLabel=o=>label(o)+(o.clarification?" · "+o.clarification:"");
 
 /* ===== Vistas ===== */
 function vMe(){
+  // Con cuentas (025), quién eres no se elige en el móvil: lo dice tu ficha de miembro.
+  if(auth&&MIEMBRO)return`<p>Eres <b>${esc(me?pname(me):"(sin elegir)")}</b>${esAdmin()?" · administrador de la sala":""}.</p><p class="note">${esAdmin()?"Se cambia en Miembros, más abajo.":"Si no eres tú, pídeselo a un administrador."}</p>`;
   return `<div class="selector-box${me?"":" need"}"><label for="selectMe">Eres:</label><select id="selectMe"><option value="">Elige quién eres…</option>${people().map(p=>`<option value="${p.id}"${p.id===me?" selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`;
 }
 function nodeAt(){
@@ -1422,6 +1444,7 @@ function vPedir(){
   let h="";
   if(!me)return `<p class="hint">Toca «¿Quién eres?» en la cabecera para empezar. Solo se pregunta una vez en cada móvil.</p><button class="btn primary" data-act="modal" data-id="me">¿Quién eres?</button>`;
   const am=S.config.assignerMode,locked=isLocked(),ps=activePeople(),paused=idos();
+  h+=vAvisoPendientes();
   if(avisoViejo)h+=`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoViejo)}</p>`;
   if(am)h+=`<p class="status">🔐 Modo asignador: ${am===me?"lo tienes tú":esc(pname(am))+" apunta por todos. Solo puedes mirar."}</p>`;
   if(!ui.sel||!findP(ui.sel)||(estadoEn(ui.sel)!=="aqui"&&ui.sel!==me))ui.sel=(ps[0]||people()[0]).id;
@@ -1673,7 +1696,7 @@ function vBaresAjustes(){
 }
 function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
-  let h=vTuCuenta()+`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
+  let h=vTuCuenta()+vMiembros()+`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
 
   h+='<section class="card"><h2>Cuadrilla</h2><p class="note">Arrastra por ⠿ para cambiar el orden.</p><div data-droplist="people">';
   ps.forEach(p=>{
@@ -1690,7 +1713,7 @@ function vAjustes(){
   else h+=`<p>Lo tiene <b>${esc(pname(am))}</b>.</p><button class="btn warn" data-act="assignerOff">Forzar desactivación</button>`;
   h+='</section>';
 
-  h+=`<section class="card"><h2>Sala de la cuadrilla</h2><p class="note">Cada sala tiene sus pedidos, su cuadrilla, sus cartas y sus cuentas, sin mezclarse con las demás. Comparte el enlace solo con los tuyos.</p><p><b>Sala actual:</b> ${esc(SALA)}</p><button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de esta sala</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otra sala</button><button class="btn small" data-act="salaChange">↪ Entrar en otra sala</button></div><button class="btn small" data-act="salaClone">⧉ Copiar esta sala a un código nuevo</button><p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
+  h+=`<section class="card"><h2>Sala de la cuadrilla</h2><p class="note">Cada sala tiene sus pedidos, su cuadrilla, sus cartas y sus cuentas, sin mezclarse con las demás. ${auth?"Quien abra el enlace tendrá que pedir entrar, y alguien de dentro le aceptará.":"Comparte el enlace solo con los tuyos."}</p><p><b>Sala actual:</b> ${esc(SALA)}</p><button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de esta sala</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otra sala</button><button class="btn small" data-act="salaChange">↪ Entrar en otra sala</button></div><button class="btn small" data-act="salaClone">⧉ Copiar esta sala a un código nuevo</button><p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
   h+=`<button class="btn primary" data-act="tab" data-id="carta">✏️ Editar «${esc(curMenu().name)}» · ${countProducts(catalog())} productos</button>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
@@ -1918,14 +1941,66 @@ function vTuCuenta(){
   else h+=`<p>Has entrado como <b>${esc(USER.email||"")}</b>.</p>`+msgCuenta();
   return h+`<button class="btn small" data-act="cuSalir">Cerrar sesión en este navegador</button></section>`;
 }
+/* --- Miembros (025) --- */
+const otraSala=()=>`<section class="card"><h2>Otra sala</h2><div class="set-row"><input type="text" id="salaInput" placeholder="código de la sala" autocapitalize="off" autocorrect="off"></div><button class="btn small" data-act="salaEnter">Entrar en otra sala</button><button class="btn small" data-act="salaNew">+ Crear una sala</button></section>`;
+// Con sesión pero sin ser de la sala: pedir entrar, esperar a que te acepten o reclamarla.
+function vEntrar(){
+  if(ui.miembroError)return`<p class="status" style="color:var(--bad);margin-top:20px">⚠️ ${esc(ui.miembroError)}</p>`+vTuCuenta();
+  if(!miembroListo)return`<p class="hint">Comprobando la sala…</p>`;
+  let h="";
+  if(MIEMBRO&&MIEMBRO.rol==="pendiente")
+    h+=`<section class="card" style="margin-top:20px"><h2>⏳ Esperando a que te acepten</h2><p>Has pedido entrar en la sala <b>${esc(SALA)}</b> como «${esc(MIEMBRO.nombre)}». En cuanto alguien de dentro te acepte, entrarás solo; no hace falta que cierres la app.</p><button class="btn small" data-act="mbCancelar">Cancelar la petición</button></section>`;
+  else{
+    h+=`<section class="card" style="margin-top:20px"><h2>Pedir entrar</h2><p class="note">La sala <b>${esc(SALA)}</b> es privada: pide entrar y alguien de dentro te aceptará.</p><input class="campo" type="text" id="mbNombre" value="${esc(ui.mbNombre||"")}" placeholder="¿Cómo te llaman en la cuadrilla?" autocomplete="nickname" aria-label="Tu nombre"><button class="btn primary" data-act="mbPedir">Pedir entrar</button></section>`;
+    if(USER&&!USER.isAnonymous)h+=`<section class="card"><h2>¿Administras la app?</h2><p class="note">Si esta sala es de antes de la versión 025 y todavía no tiene administrador, puedes reclamarla con la contraseña de crear salas. Solo se puede una vez.</p><button class="btn small" data-act="mbReclamar">Reclamar esta sala</button></section>`;
+  }
+  return h+otraSala()+vTuCuenta();
+}
+// Miembro sin persona (quien reclama una sala): elegir quién es de la cuadrilla.
+function vQuienEres(){
+  const libres=people().filter(p=>!Object.keys(MIEMBROS).some(u=>u!==(USER&&USER.uid)&&MIEMBROS[u].persona===p.id));
+  return`<section class="card" style="margin-top:20px"><h2>¿Quién eres?</h2><p class="note">Elige quién eres en la cuadrilla de esta sala. Solo se pregunta una vez; si te equivocas, se cambia en Ajustes › Miembros.</p><div class="chips">${libres.map(p=>`<button class="chip" data-act="mbSoy" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div><button class="btn small" data-act="mbSoyNuevo">No estoy en la lista: añadirme</button></section>`;
+}
+const pendientes=()=>Object.keys(MIEMBROS).filter(u=>MIEMBROS[u].rol==="pendiente");
+function vAvisoPendientes(){
+  const ps=pendientes();if(!ps.length)return"";
+  return`<p class="status">🔔 ${esc(ps.map(u=>MIEMBROS[u].nombre||"Alguien").join(", "))} ${ps.length===1?"quiere":"quieren"} entrar en la sala. <button class="linkish" data-act="mbVer">Ver</button></p>`;
+}
+function vMiembros(){
+  if(!auth||!MIEMBRO)return"";
+  const yo=USER&&USER.uid,admin=esAdmin();
+  const ids=Object.keys(MIEMBROS).sort((a,b)=>(MIEMBROS[a].ts||0)-(MIEMBROS[b].ts||0));
+  const pend=ids.filter(u=>MIEMBROS[u].rol==="pendiente"),den=ids.filter(u=>MIEMBROS[u].rol!=="pendiente");
+  let h=`<section class="card" id="miembros"><h2>Miembros de la sala</h2>`;
+  if(pend.length){
+    h+=`<p class="note">Quieren entrar. Elige quién es cada uno de la cuadrilla (o añádelo) y acéptalo:</p>`;
+    pend.forEach(u=>{
+      const m=MIEMBROS[u],igual=people().find(p=>canon(p.name)===canon(m.nombre));
+      // En el móvil no caben en una fila: nombre, desplegable y botones, uno debajo de otro.
+      h+=`<div class="miembro"><div><b>«${esc(m.nombre||"?")}»</b></div><div class="note">${esc([m.email||"sin cuenta",m.dispositivo].filter(Boolean).join(" · "))}</div>`+
+        `<select data-mbpersona="${u}" aria-label="Quién es">${people().map(p=>`<option value="${p.id}"${igual&&igual.id===p.id?" selected":""}>Es ${esc(p.name)}</option>`).join("")}<option value="nuevo"${igual?"":" selected"}>➕ Añadirle a la cuadrilla como «${esc(m.nombre||"Nuevo")}»</option></select>`+
+        `<div class="acts"><button class="mini on" data-act="mbAceptar" data-id="${u}">Aceptar</button><button class="mini" data-act="mbRechazar" data-id="${u}">Rechazar</button></div></div>`;
+    });
+  }
+  den.forEach(u=>{
+    const m=MIEMBROS[u],quien=m.persona&&findP(m.persona)?pname(m.persona):"(sin elegir)";
+    let acts="";
+    if(admin&&u!==yo)acts=`<button class="mini" data-act="mbAdmin" data-id="${u}">${m.rol==="admin"?"Quitar admin":"Hacer admin"}</button><button class="mini" data-act="mbQuitar" data-id="${u}">Quitar</button>`;
+    h+=`<div class="miembro"><div><b>${esc(quien)}</b>${m.rol==="admin"?" · administrador":""}${u===yo?" · tú":""}</div><div class="note">${esc([m.email||"sin cuenta",m.dispositivo].filter(Boolean).join(" · "))}</div>`+
+      (admin?`<select data-mbcambia="${u}" aria-label="Cambiar quién es">${people().map(p=>`<option value="${p.id}"${p.id===m.persona?" selected":""}>Es ${esc(p.name)}</option>`).join("")}${m.persona&&findP(m.persona)?"":`<option value="" selected>(sin elegir)</option>`}</select>`:"")+
+      `${acts?`<div class="acts">${acts}</div>`:""}</div>`;
+  });
+  h+=`<p class="note">Cualquiera de dentro puede aceptar a gente nueva. ${admin?"Como administrador, también puedes cambiar quién es cada uno, nombrar a otros administradores y quitar a alguien de la sala.":"Los administradores pueden además quitar a alguien o cambiar quién es."}</p></section>`;
+  return h;
+}
 function vSala(){
   const aviso=ui.salaError?`<section class="card" style="border-color:var(--bad)"><h2>⚠️ Ese código no vale</h2><p>La sala <b>${esc(SALA)}</b> no existe o no está autorizada. Comprueba el enlace que te han pasado.</p></section>`:"";
   return aviso+`<section class="card" style="margin-top:20px"><h2>Entrar en una sala</h2>
     <p class="note">La app funciona por salas: cada cuadrilla tiene la suya, con sus pedidos y sus cuentas. Necesitas el enlace o el código que te hayan pasado.</p>
     <div class="set-row"><input type="text" id="salaInput" placeholder="código de la sala" autocapitalize="off" autocorrect="off"></div>
     <button class="btn primary" data-act="salaEnter">Entrar</button></section>
-    <section class="card"><h2>¿Administras la app?</h2><p class="note">Crear salas nuevas requiere la contraseña de administrador.</p>
-    <button class="btn small" data-act="salaNew">+ Crear una sala</button></section>`;
+    <section class="card"><h2>¿Administras la app?</h2><p class="note">Crear salas nuevas requiere la contraseña de crear salas${auth?" y una cuenta con email; quien la crea queda de administrador":""}.</p>
+    <button class="btn small" data-act="salaNew">+ Crear una sala</button></section>`+vTuCuenta();
 }
 function vMezclas(){
   const f=findNode(catalog(),ui.mixFor);
@@ -1951,7 +2026,7 @@ function vMezclas(){
   h+=`<p class="note">Por defecto ahora: <b>${m&&m.def?esc(m.def):"ninguna"}</b></p>`;
   return h;
 }
-const VIEWS={cuenta:vCuenta,sala:vSala,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
+const VIEWS={cuenta:vCuenta,entrar:vEntrar,quien:vQuienEres,sala:vSala,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 // Bares que coinciden con lo escrito (sin acentos); vacío = los 6 más recientes.
 function barCoincidencias(){
@@ -1970,6 +2045,8 @@ function vBarLista(){
 const sheet=inner=>`<div class="modal" data-act="modalClose"><div class="sheet" data-act="noop">${inner}</div></div>`;
 function vModal(){
   if(!ui.modal)return"";
+  if(ui.modal==="me"&&auth&&MIEMBRO)
+    return sheet(`<h2>${esc(me?pname(me):"¿Quién eres?")}</h2>${vMe()}<p class="note">Cuenta: ${USER?(USER.isAnonymous?"sin cuenta (solo este navegador)":esc(USER.email||"")):""}</p><button class="btn small" data-act="modalClose" style="margin-top:12px">Cerrar</button>`);
   if(ui.modal==="me")
     return sheet(`<h2>¿Quién eres?</h2><p class="note">Queda guardado en este móvil.</p><div class="chips">`+
       people().map(p=>`<button class="chip${p.id===me?" on":""}" data-act="setMe" data-id="${p.id}">${esc(p.name)}</button>`).join("")+
@@ -2002,10 +2079,17 @@ function render(force){
   if(!force&&ae&&(ae.tagName==="INPUT"||ae.tagName==="TEXTAREA")&&(ae.closest("#view")||ae.closest("#modal"))){pending=true;return}
   pending=false;
   reindex();
-  if(me&&!findP(me)){me=null;lsSet("ronda.me",null)}
+  // Con cuentas (025), quién eres lo dice tu ficha de miembro, no el móvil.
+  if(auth)me=MIEMBRO&&MIEMBRO.persona?MIEMBRO.persona:null;
+  else if(me&&!findP(me)){me=null;lsSet("ronda.me",null)}
   const fuera=!!auth&&(!authListo||!USER);   // 024: sin sesión, solo «Entra en Eskari»
-  if(fuera)ui.tab="cuenta";else{if(ui.tab==="cuenta")ui.tab="pedir";if(!SALA||ui.salaError)ui.tab="sala"}
-  const dentro=!!SALA&&!ui.salaError&&!fuera;
+  // 025: con sesión pero sin ser de la sala, «Pedir entrar»; miembro sin persona, «¿Quién eres?».
+  const fueraSala=!fuera&&!!auth&&!!SALA&&!ui.salaError&&!esDentro();
+  const sinPersona=!fuera&&!!auth&&esDentro()&&!MIEMBRO.persona&&mode==="firebase";
+  if(fuera)ui.tab="cuenta";
+  else if(fueraSala)ui.tab="entrar";
+  else{if(["cuenta","entrar","quien"].includes(ui.tab))ui.tab="pedir";if(!SALA||ui.salaError)ui.tab="sala";else if(sinPersona)ui.tab="quien"}
+  const dentro=!!SALA&&!ui.salaError&&!fuera&&!fueraSala&&!sinPersona;
   $("#roundBtn").style.display=dentro?"":"none";
   $("#meBtn").style.display=dentro?"":"none";
   $("#roundBtn").textContent="Ronda "+S.current.n+(S.current.name?" · "+S.current.name:"");
@@ -2205,7 +2289,7 @@ document.addEventListener("click",e=>{
       break;
     }
     case"noop":return;
-    case"setMe":{me=id;lsSet("ronda.me",me);ui.sel=me;ui.modal=null;break}
+    case"setMe":{if(auth){ui.modal=null;break}me=id;lsSet("ronda.me",me);ui.sel=me;ui.modal=null;break}
     case"pickBar":if(S.bares[id]){if(ui.modal==="rbar"){barDeRonda(id);break}elegirBar(id);ui.modal=null;ui.barQ="";flash("Precios de "+S.bares[id].name)}break;
     case"newBar":{
       const txt=(ui.barQ||"").trim();if(!txt)return;
@@ -2460,6 +2544,63 @@ document.addEventListener("click",e=>{
       if(!confirm(USER.isAnonymous?"Has entrado sin cuenta: si cierras la sesión, se pierde y no se puede recuperar. ¿Cerrarla?":"¿Cerrar la sesión en este navegador? Para volver a entrar necesitarás tu email y tu contraseña."))return;
       auth.signOut().catch(e=>cuenta(mensajeAuth(e),true));
       return;
+    /* --- miembros (025) --- */
+    case"mbPedir":{
+      if(!auth||!USER||!SALA)return;
+      const n=((document.getElementById("mbNombre")||{}).value||"").trim().slice(0,30);ui.mbNombre=n;
+      if(!n){alert("Escribe cómo te llaman, para que sepan quién eres.");return}
+      root().collection("miembros").doc(USER.uid).set({rol:"pendiente",nombre:n,email:USER.email||"",ts:Date.now(),dispositivo:dispositivo()})
+        .catch(e=>{console.warn(e);alert("No se ha podido pedir entrar. Mira la conexión y vuelve a probar.")});
+      return;
+    }
+    case"mbCancelar":if(auth&&USER)root().collection("miembros").doc(USER.uid).delete();return;
+    case"mbReclamar":{
+      if(!auth||!USER||USER.isAnonymous)return;
+      const clave=(prompt("Contraseña de crear salas:","")||"").trim();if(!clave)return;
+      // En un solo lote: la marca de que se ha reclamado (una vez) y tu ficha de administrador.
+      const bt=db.batch(),ahora=Date.now();
+      bt.set(db.collection("reclamos").doc(SALA),{clave,uid:USER.uid,ts:ahora});
+      bt.set(root().collection("miembros").doc(USER.uid),{rol:"admin",persona:"",nombre:"",email:USER.email||"",ts:ahora,dispositivo:dispositivo()});
+      bt.commit().then(()=>flash("Ya eres administrador de esta sala"))
+        .catch(e=>{console.warn(e);alert("No se ha podido reclamar: o la contraseña no es correcta, o esta sala ya tenía administrador.")});
+      return;
+    }
+    case"mbSoy":case"mbSoyNuevo":{
+      if(!auth||!USER||!MIEMBRO)return;
+      let pid=id;
+      if(b.dataset.act==="mbSoyNuevo"){
+        const n=(prompt("¿Cómo te llaman en la cuadrilla?",ui.mbNombre||"")||"").trim().slice(0,30);if(!n)return;
+        pid=uid("p");editConfig(c=>c.people.push({id:pid,name:n,paused:false}));
+      }
+      if(!findP(pid))return;
+      root().collection("miembros").doc(USER.uid).update({persona:pid}).catch(e=>{console.warn(e);alert("No se ha podido guardar.")});
+      return;
+    }
+    case"mbVer":ui.tab="ajustes";render();setTimeout(()=>{const el=document.getElementById("miembros");if(el&&el.scrollIntoView)el.scrollIntoView({block:"start"})},0);return;
+    case"mbAceptar":{
+      const m=MIEMBROS[id];if(!m||m.rol!=="pendiente"||!esDentro())return;
+      const sel=document.querySelector(`[data-mbpersona="${id}"]`);let pid=sel?sel.value:"nuevo";
+      if(pid==="nuevo"){pid=uid("p");editConfig(c=>c.people.push({id:pid,name:(m.nombre||"Nuevo").slice(0,30),paused:false}))}
+      if(!findP(pid))return;
+      root().collection("miembros").doc(id).update({rol:"miembro",persona:pid,por:USER.uid,aceptado:Date.now()})
+        .then(()=>flash(`${pname(pid)} ya está dentro`)).catch(e=>{console.warn(e);alert("No se ha podido aceptar.")});
+      return;
+    }
+    case"mbRechazar":{
+      const m=MIEMBROS[id];if(!m||m.rol!=="pendiente")return;
+      if(!confirm(`¿Rechazar a «${m.nombre}»? Podrá volver a pedir entrar.`))return;
+      root().collection("miembros").doc(id).delete();return;
+    }
+    case"mbAdmin":{
+      const m=MIEMBROS[id];if(!m||!esAdmin()||id===USER.uid)return;
+      root().collection("miembros").doc(id).update({rol:m.rol==="admin"?"miembro":"admin"}).catch(e=>{console.warn(e);alert("No se ha podido cambiar.")});
+      return;
+    }
+    case"mbQuitar":{
+      const m=MIEMBROS[id];if(!m||!esAdmin()||id===USER.uid)return;
+      if(!confirm(`¿Quitar de la sala a ${m.persona&&findP(m.persona)?pname(m.persona):"«"+m.nombre+"»"}${m.email?" ("+m.email+")":""}? Dejará de ver la sala; lo apuntado se queda.`))return;
+      root().collection("miembros").doc(id).delete();return;
+    }
     case"salaEnter":{
       const el=document.getElementById("salaInput");
       const v=((el&&el.value)||"").trim().toLowerCase();
@@ -2468,20 +2609,26 @@ document.addEventListener("click",e=>{
       irASala(v);return;
     }
     case"salaNew":{
-      const base=(prompt("Nombre de la sala nueva (p. ej. cuadrilla-txus):","")||"").trim().toLowerCase()
+      if(auth&&(!USER||USER.isAnonymous)){alert("Para crear una sala necesitas una cuenta con email. Puedes ponérsela a esta sesión en «Tu cuenta».");return}
+      const base=(prompt("Nombre de la sala nueva (p. ej. cuadrilla-txus). Será también su código:","")||"").trim().toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
       if(!base)return;
       const code=codigoSala(base);
-      const clave=(prompt("Contraseña de administrador:","")||"").trim();
+      if(!salaOk(code)){alert("Ese nombre no vale: entre 2 y 24 letras, números o guiones.");return}
+      let nombre="";
+      if(auth){nombre=(prompt("¿Cómo te llaman en la cuadrilla?",(USER.email||"").split("@")[0])||"").trim().slice(0,30);if(!nombre)return}
+      const clave=(prompt("Contraseña de crear salas:","")||"").trim();
       if(!clave)return;
-      crearSala(code,clave);return;
+      crearSala(code,clave,false,"p1",nombre);return;
     }
     case"salaClone":{
+      if(auth&&(!USER||USER.isAnonymous)){alert("Para crear una sala necesitas una cuenta con email.");return}
       const base=(prompt("Código nuevo para copiar esta sala:",SALA.replace(/-[a-z0-9]{5}$/,""))||"").trim().toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
       if(!base)return;
       const code=codigoSala(base);
-      const clave=(prompt("Contraseña de administrador:","")||"").trim();
+      if(!salaOk(code)){alert("Ese código no vale: entre 2 y 24 letras, números o guiones.");return}
+      const clave=(prompt("Contraseña de crear salas:","")||"").trim();
       if(!clave)return;
       copiarSala(code,clave);return;
     }
@@ -2661,6 +2808,7 @@ function copyOut(txt,okMsg){
 document.addEventListener("input",e=>{
   if(e.target&&e.target.id==="impText")ui.impText=e.target.value;
   if(e.target&&e.target.id==="cuEmail")ui.cuEmail=e.target.value;
+  if(e.target&&e.target.id==="mbNombre")ui.mbNombre=e.target.value;
   // Solo se redibuja la lista: redibujar la pantalla entera quitaría el foco y cerraría el teclado.
   if(e.target&&e.target.id==="cartaBuscar"){ui.cartaQ=e.target.value;const l=$("#cartaLista");if(l)l.innerHTML=vCartaLista()}
   if(e.target&&e.target.id==="barInput"){ui.barQ=e.target.value;const l=$("#barLista");if(l)l.innerHTML=vBarLista()}
@@ -2685,7 +2833,13 @@ function alTope(id){setTimeout(()=>{const el=document.querySelector(`#view [data
 document.addEventListener("change",e=>{
   if(e.target&&e.target.id==="impText"){ui.impText=e.target.value;render(true);return}
   const t=e.target;
-  if(t.id==="selectMe"){me=t.value||null;lsSet("ronda.me",me);ui.sel=me;render(true);return}
+  if(t.id==="selectMe"){if(auth)return;me=t.value||null;lsSet("ronda.me",me);ui.sel=me;render(true);return}
+  // 025: un administrador cambia quién es un miembro.
+  if(t.dataset.mbcambia){
+    const u=t.dataset.mbcambia;if(!esAdmin()||!MIEMBROS[u]||!findP(t.value))return;
+    root().collection("miembros").doc(u).update({persona:t.value}).then(()=>flash("Cambiado")).catch(e=>{console.warn(e);alert("No se ha podido cambiar.")});
+    return;
+  }
   if(t.dataset.gidx){const v=parseFloat(String(t.value).replace(",","."));if(isNaN(v)||v<0)return;const g=GROUPS[parseInt(t.dataset.gidx,10)];if(g)setGroupPrice(g.items,v);render(true);return}
   if(t.dataset.sprice){                 // Comanda: precio propio de una ración para compartir
     const s=(S.current.shared||{})[t.dataset.sprice];if(!s)return;
@@ -2754,27 +2908,32 @@ document.addEventListener("change",e=>{
 });
 
 /* ===== Arranque ===== */
-async function crearSala(code,clave,silencio){
+// persona: quién eres en la sala nueva (p1 en una nueva; en una copia, quien eres aquí).
+// nombre: en una sala nueva, la cuadrilla empieza solo contigo, con ese nombre.
+async function crearSala(code,clave,silencio,persona,nombre){
   if(!db){alert("Sin conexión con la base de datos.");return false}
   try{
     const ref=db.collection("salas").doc(code);
     const ya=await ref.get();
-    if(ya.exists){alert("Ese código ya existe.");return false}
+    if(ya.exists){alert("Ya hay una sala con ese nombre. Elige otro.");return false}
     // La clave va a un documento aparte que las reglas no dejan leer; la sala no la guarda.
-    const b=db.batch();
+    // Con cuentas (025), en el mismo lote quien la crea queda de administrador.
+    const b=db.batch(),ahora=Date.now();
     b.set(db.collection("claves").doc(code),{clave});
-    b.set(ref,{creada:Date.now(),por:me||""});
+    b.set(ref,{creada:ahora,por:auth&&USER?USER.uid:(me||"")});
+    if(auth&&USER)b.set(ref.collection("miembros").doc(USER.uid),{rol:"admin",persona:persona||"",nombre:nombre||"",email:USER.email||"",ts:ahora,dispositivo:dispositivo()});
     await b.commit();
+    if(nombre){const c=defaults().config;c.people=[{id:"p1",name:nombre,paused:false}];await ref.collection("bar").doc("config").set(c)}
     if(!silencio)irASala(code);
     return true;
   }catch(e){
     console.warn(e);
-    alert("No se ha podido crear la sala. Si la contraseña de administrador no es correcta, la base de datos rechaza la creación.");
+    alert("No se ha podido crear la sala. Si la contraseña de crear salas no es correcta, la base de datos rechaza la creación.");
     return false;
   }
 }
 async function copiarSala(code,clave){
-  if(!await crearSala(code,clave,true))return;
+  if(!await crearSala(code,clave,true,me||""))return;
   try{
     const destino=db.collection("salas").doc(code);
     await destino.collection("bar").doc("config").set(clone(S.config));
@@ -2798,6 +2957,39 @@ function goLocal(err){
 async function initFirebase(){
   if(!SALA){mode="local";render();return}
   if(!db){goLocal();return}
+  if(auth&&USER){escucharMiembro();return}   // 025: primero, si eres de la sala
+  arrancarDatos();
+}
+// Tu ficha de miembro de esta sala. Si eres miembro, arrancan los datos; si no, «Pedir entrar».
+// Si te quitan mientras estás dentro, se recarga y vuelves a «Pedir entrar».
+function escucharMiembro(){
+  root().collection("miembros").doc(USER.uid).onSnapshot(snap=>{
+    MIEMBRO=snap.exists?normMiembro(snap.data()):null;miembroListo=true;ui.miembroError="";
+    if(esDentro()){
+      me=MIEMBRO.persona||null;
+      if(!datosArrancados){datosArrancados=true;arrancarDatos();escucharMiembros()}
+    }else if(datosArrancados){location.reload();return}
+    else if(!MIEMBRO)comprobarSala();
+    render();
+  },e=>{
+    console.warn("miembro:",e);miembroListo=true;
+    ui.miembroError=String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0
+      ?"Faltan las reglas nuevas de Firestore (versión 025): sin ellas no se puede comprobar quién es de la sala. Hay que pegarlas en la consola de Firebase y volver a abrir la app."
+      :"No se ha podido comprobar si eres de esta sala. Mira la conexión y vuelve a abrir la app.";
+    render();
+  });
+}
+// Quien no es de la sala solo puede saber si existe (para decir «ese código no vale»).
+function comprobarSala(){
+  db.collection("salas").doc(SALA).get().then(s=>{if(!s.exists){ui.salaError=true;render()}}).catch(e=>console.warn("sala:",e));
+}
+// Todos los miembros y peticiones (solo lo ven los de dentro).
+function escucharMiembros(){
+  root().collection("miembros").onSnapshot(qs=>{
+    const o={};qs.docs.forEach(x=>{o[x.id]=normMiembro(x.data())});MIEMBROS=o;render();
+  },e=>console.warn("miembros:",e));
+}
+function arrancarDatos(){
   const META={includeMetadataChanges:true};
   colRef("bar").doc("config").onSnapshot(META,snap=>{
     if(snap.exists)S.config=normConfig(snap.data());
