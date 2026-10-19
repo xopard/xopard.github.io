@@ -136,6 +136,7 @@ textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1p
 .card h2{font:700 1.35rem var(--cond);margin:0 0 8px}
 .set-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
 .set-row input[type=text]{flex:1;min-width:0}
+.campo{display:block;width:100%;margin:0 0 8px;font-size:1.05rem;padding:10px 12px}
 .x{background:none;border:0;color:var(--muted);font-size:1.2rem;padding:6px;flex-shrink:0}
 .catbox{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:2px 10px 2px 6px;margin:8px 0}
 .catbox.open{padding-bottom:10px}
@@ -199,6 +200,7 @@ table th:first-child,table td:first-child{text-align:left}
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script>
 /* ===== Catálogo y cuadrilla por defecto ===== */
 const DEFAULT_PEOPLE=["Aitor","Amigo 2","Amigo 3","Amigo 4","Amigo 5","Amigo 6","Amigo 7","Amigo 8","Amigo 9"];
@@ -388,8 +390,12 @@ function loadLocal(){
 const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomain:"la-ronda-d659f.firebaseapp.com",projectId:"la-ronda-d659f",storageBucket:"la-ronda-d659f.firebasestorage.app",messagingSenderId:"1038336383449",appId:"1:1038336383449:web:dce83053f28d5bc85be1c8"};
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
+// Cuentas (024): se entra con email y contraseña, o sin cuenta (anónima: solo vale en ese
+// navegador). Sin sesión no se lee nada. Si Firebase Auth no carga, la app sigue como antes.
+let auth=null,USER=null,authListo=false,arrancado=false;
+try{if(db&&firebase.auth){auth=firebase.auth();auth.languageCode="es"}}catch(e){console.error("Firebase Auth:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="023";
+const APP_VERSION="024";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -432,7 +438,7 @@ function curSet(){
 }
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null,rbarPlan:null,rAprende:true};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null,rbarPlan:null,rAprende:true,cuEmail:"",cuMsg:"",cuError:false,cuOcupado:false};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -1667,7 +1673,7 @@ function vBaresAjustes(){
 }
 function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
-  let h=`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
+  let h=vTuCuenta()+`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
 
   h+='<section class="card"><h2>Cuadrilla</h2><p class="note">Arrastra por ⠿ para cambiar el orden.</p><div data-droplist="people">';
   ps.forEach(p=>{
@@ -1872,6 +1878,46 @@ function vCartaBusqueda(q,used){
   hits.forEach(x=>{h+=`<div class="found"><div class="note">${esc(x.ruta)}</div>${vItemRow(x.it,used,true)}</div>`});
   return h+'</div>';
 }
+/* --- Cuentas (024) --- */
+const camposCuenta=ac=>`<input class="campo" type="email" id="cuEmail" value="${esc(ui.cuEmail)}" placeholder="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Email"><input class="campo" type="password" id="cuPass" placeholder="contraseña (al menos 6 caracteres)" autocomplete="${ac}" aria-label="Contraseña">`;
+const msgCuenta=()=>ui.cuMsg?`<p class="status"${ui.cuError?' style="color:var(--bad)"':""}>${esc(ui.cuMsg)}</p>`:"";
+function cuenta(msg,err){ui.cuMsg=msg||"";ui.cuError=!!err;render(true)}
+function mensajeAuth(e){
+  const c=String(e&&e.code||"");
+  return({
+    "auth/invalid-email":"Ese email no es válido.",
+    "auth/missing-email":"Falta el email.",
+    "auth/missing-password":"Falta la contraseña.",
+    "auth/weak-password":"La contraseña tiene que tener al menos 6 caracteres.",
+    "auth/email-already-in-use":"Ya hay una cuenta con ese email. Si es tuya, usa «Entrar».",
+    "auth/credential-already-in-use":"Ya hay una cuenta con ese email.",
+    "auth/provider-already-linked":"Esta sesión ya tiene email.",
+    "auth/user-not-found":"El email o la contraseña no son correctos.",
+    "auth/wrong-password":"El email o la contraseña no son correctos.",
+    "auth/invalid-credential":"El email o la contraseña no son correctos.",
+    "auth/invalid-login-credentials":"El email o la contraseña no son correctos.",
+    "auth/user-disabled":"Esta cuenta está desactivada.",
+    "auth/too-many-requests":"Demasiados intentos. Espera un rato y vuelve a probar.",
+    "auth/network-request-failed":"Sin conexión. Inténtalo cuando tengas cobertura.",
+    "auth/operation-not-allowed":"Esta forma de entrar no está activada en Firebase (Authentication › Método de acceso).",
+    "auth/admin-restricted-operation":"Entrar sin cuenta no está activado en Firebase (Authentication › Método de acceso › Anónimo).",
+    "auth/requires-recent-login":"Por seguridad, cierra la sesión y vuelve a entrar antes de hacer esto."
+  })[c]||("No se ha podido: "+((e&&e.message)||c||"error desconocido"));
+}
+function vCuenta(){
+  if(!authListo)return`<p class="hint">Cargando…</p>`;
+  const dis=ui.cuOcupado?" disabled":"";
+  return`<section class="card" style="margin-top:20px"><h2>Entra en Eskari</h2><p class="note">Con una cuenta entras desde cualquier móvil u ordenador con tu email y tu contraseña.</p>`+camposCuenta("current-password")+msgCuenta()+
+    `<button class="btn primary" data-act="cuEntrar"${dis}>Entrar</button><button class="btn" data-act="cuCrear"${dis}>Crear una cuenta nueva</button><button class="linkish" data-act="cuOlvido" style="margin-top:10px">¿Has olvidado la contraseña?</button></section>`+
+    `<section class="card"><h2>Sin cuenta</h2><p class="note">Si te han invitado y no quieres crear una cuenta. Solo vale en este móvil y en este navegador: si borras sus datos o cambias de móvil, se pierde. Puedes ponerle email y contraseña después, en Ajustes.</p><button class="btn small" data-act="cuAnonimo"${dis}>Entrar sin cuenta</button></section>`;
+}
+function vTuCuenta(){
+  if(!auth||!USER)return"";
+  let h=`<section class="card"><h2>Tu cuenta</h2>`;
+  if(USER.isAnonymous)h+=`<p class="note">Has entrado <b>sin cuenta</b>: solo vale en este navegador. Si borras sus datos o cambias de móvil, se pierde. Para no perderla, ponle email y contraseña:</p>`+camposCuenta("new-password")+msgCuenta()+`<button class="btn small primary" data-act="cuUnir"${ui.cuOcupado?" disabled":""}>Crear la cuenta con este email</button>`;
+  else h+=`<p>Has entrado como <b>${esc(USER.email||"")}</b>.</p>`+msgCuenta();
+  return h+`<button class="btn small" data-act="cuSalir">Cerrar sesión en este navegador</button></section>`;
+}
 function vSala(){
   const aviso=ui.salaError?`<section class="card" style="border-color:var(--bad)"><h2>⚠️ Ese código no vale</h2><p>La sala <b>${esc(SALA)}</b> no existe o no está autorizada. Comprueba el enlace que te han pasado.</p></section>`:"";
   return aviso+`<section class="card" style="margin-top:20px"><h2>Entrar en una sala</h2>
@@ -1905,7 +1951,7 @@ function vMezclas(){
   h+=`<p class="note">Por defecto ahora: <b>${m&&m.def?esc(m.def):"ninguna"}</b></p>`;
   return h;
 }
-const VIEWS={sala:vSala,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
+const VIEWS={cuenta:vCuenta,sala:vSala,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 // Bares que coinciden con lo escrito (sin acentos); vacío = los 6 más recientes.
 function barCoincidencias(){
@@ -1947,7 +1993,7 @@ function vModal(){
   if(ui.modal==="rbar")
     return sheet(`<h2>¿En qué bar fue esta ronda?</h2><p class="note">Si con ese bar cambiaría algún precio, verás cuáles y decides si usar los suyos o dejar los de la ronda. Después corrige con el ticket lo que no cuadre: el bar lo aprende. La ronda en curso no cambia.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
   if(ui.modal==="estado")
-    return sheet(`<h2>Estado</h2><p>${mode==="firebase"?((netCache||netPending)?"📴 Sin cobertura: apuntas igual y se envía al recuperarla.":"🟢 Compartida con toda la cuadrilla, al instante."):mode==="connecting"?"Conectando…":"⚠️ Sin conexión con la base de datos: solo se guarda en este móvil."}</p><p class="note">Sala <b>${esc(SALA)}</b> · ronda ${S.current.n}${S.current.name?" · "+esc(S.current.name):""} · ${S.rounds.length} cerrada${S.rounds.length===1?"":"s"} · versión ${APP_VERSION}</p><button class="btn small" data-act="modalClose">Cerrar</button>`);
+    return sheet(`<h2>Estado</h2><p>${mode==="firebase"?((netCache||netPending)?"📴 Sin cobertura: apuntas igual y se envía al recuperarla.":"🟢 Compartida con toda la cuadrilla, al instante."):mode==="connecting"?"Conectando…":"⚠️ Sin conexión con la base de datos: solo se guarda en este móvil."}</p><p class="note">Sala <b>${esc(SALA)}</b> · ronda ${S.current.n}${S.current.name?" · "+esc(S.current.name):""} · ${S.rounds.length} cerrada${S.rounds.length===1?"":"s"} · versión ${APP_VERSION}${USER?` · ${USER.isAnonymous?"sin cuenta":esc(USER.email||"")}`:""}</p><button class="btn small" data-act="modalClose">Cerrar</button>`);
   return"";
 }
 function render(force){
@@ -1957,18 +2003,20 @@ function render(force){
   pending=false;
   reindex();
   if(me&&!findP(me)){me=null;lsSet("ronda.me",null)}
-  if(!SALA||ui.salaError)ui.tab="sala";
-  $("#roundBtn").style.display=(SALA&&!ui.salaError)?"":"none";
-  $("#meBtn").style.display=(SALA&&!ui.salaError)?"":"none";
+  const fuera=!!auth&&(!authListo||!USER);   // 024: sin sesión, solo «Entra en Eskari»
+  if(fuera)ui.tab="cuenta";else{if(ui.tab==="cuenta")ui.tab="pedir";if(!SALA||ui.salaError)ui.tab="sala"}
+  const dentro=!!SALA&&!ui.salaError&&!fuera;
+  $("#roundBtn").style.display=dentro?"":"none";
+  $("#meBtn").style.display=dentro?"":"none";
   $("#roundBtn").textContent="Ronda "+S.current.n+(S.current.name?" · "+S.current.name:"");
   $("#meBtn").textContent=me?pname(me):"¿Quién eres?";
   $("#sync").className="sync"+(mode==="firebase"&&!netCache&&!netPending?" on":mode==="connecting"?"":" off");
   $("#syncTxt").textContent=mode==="firebase"?((netCache||netPending)?"sin red":""):mode==="connecting"?"…":"local";
   if(mode==="firebase"&&(netCache||netPending))$("#sync").className="sync off";
-  document.querySelector("nav.tabs").style.display=(SALA&&!ui.salaError)?"":"none";
+  document.querySelector("nav.tabs").style.display=dentro?"":"none";
   document.querySelectorAll("nav.tabs button").forEach(b=>{b.dataset.id===ui.tab?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current")});
   // Barra con la noche en la que estás, siempre a la vista (con conexión).
-  const nb=$("#nocheBtn"),conNoches=SALA&&!ui.salaError&&mode==="firebase";
+  const nb=$("#nocheBtn"),conNoches=dentro&&mode==="firebase";
   nb.style.display=conNoches?"":"none";
   if(conNoches)nb.innerHTML=NOCHE&&S.noches[NOCHE]?`📁 ${esc(nombreCarpeta(S.noches[NOCHE].carpeta))} › <b>${esc(S.noches[NOCHE].titulo)}</b> <span aria-hidden="true">▾</span>`:"Cargando las noches…";
   let html;
@@ -2380,6 +2428,38 @@ document.addEventListener("click",e=>{
       if(!confirm(`Vas a entrar en la sala "${v}". Se recargará la app y verás los datos de esa cuadrilla.`))return;
       irASala(v);return;
     }
+    /* --- cuenta (024) --- */
+    case"cuEntrar":case"cuCrear":case"cuUnir":{
+      if(!auth||ui.cuOcupado)return;
+      const em=((document.getElementById("cuEmail")||{}).value||"").trim(),pw=(document.getElementById("cuPass")||{}).value||"",a=b.dataset.act;
+      ui.cuEmail=em;
+      if(!em||!pw){cuenta("Escribe tu email y tu contraseña.",true);return}
+      if(a==="cuUnir"&&!(USER&&USER.isAnonymous))return;
+      ui.cuOcupado=true;cuenta("");
+      const p=a==="cuEntrar"?auth.signInWithEmailAndPassword(em,pw):a==="cuCrear"?auth.createUserWithEmailAndPassword(em,pw)
+        :USER.linkWithCredential(firebase.auth.EmailAuthProvider.credential(em,pw));
+      // Al entrar o crear la cuenta, onAuthStateChanged arranca la app; al ponerle email a la sesión sin cuenta, no avisa.
+      p.then(()=>{ui.cuOcupado=false;if(a==="cuUnir"){USER=auth.currentUser;cuenta("Hecho: ya tienes cuenta. Para entrar en otro sitio, usa "+em+" y tu contraseña.")}else render(true)})
+       .catch(e=>{ui.cuOcupado=false;cuenta(mensajeAuth(e),true);const el=document.getElementById("cuPass");if(el)el.value=pw});   // la contraseña no se pone en el HTML
+      return;
+    }
+    case"cuOlvido":{
+      if(!auth)return;
+      const em=((document.getElementById("cuEmail")||{}).value||"").trim();ui.cuEmail=em;
+      if(!em){cuenta("Escribe arriba tu email y vuelve a tocar «¿Has olvidado la contraseña?».",true);return}
+      auth.sendPasswordResetEmail(em).then(()=>cuenta(`Si hay una cuenta con ${em}, te llegará un email para poner otra contraseña (mira también en spam).`)).catch(e=>cuenta(mensajeAuth(e),true));
+      return;
+    }
+    case"cuAnonimo":
+      if(!auth||ui.cuOcupado)return;
+      ui.cuOcupado=true;cuenta("");
+      auth.signInAnonymously().then(()=>{ui.cuOcupado=false;render(true)}).catch(e=>{ui.cuOcupado=false;cuenta(mensajeAuth(e),true)});
+      return;
+    case"cuSalir":
+      if(!auth||!USER)return;
+      if(!confirm(USER.isAnonymous?"Has entrado sin cuenta: si cierras la sesión, se pierde y no se puede recuperar. ¿Cerrarla?":"¿Cerrar la sesión en este navegador? Para volver a entrar necesitarás tu email y tu contraseña."))return;
+      auth.signOut().catch(e=>cuenta(mensajeAuth(e),true));
+      return;
     case"salaEnter":{
       const el=document.getElementById("salaInput");
       const v=((el&&el.value)||"").trim().toLowerCase();
@@ -2580,6 +2660,7 @@ function copyOut(txt,okMsg){
 }
 document.addEventListener("input",e=>{
   if(e.target&&e.target.id==="impText")ui.impText=e.target.value;
+  if(e.target&&e.target.id==="cuEmail")ui.cuEmail=e.target.value;
   // Solo se redibuja la lista: redibujar la pantalla entera quitaría el foco y cerraría el teclado.
   if(e.target&&e.target.id==="cartaBuscar"){ui.cartaQ=e.target.value;const l=$("#cartaLista");if(l)l.innerHTML=vCartaLista()}
   if(e.target&&e.target.id==="barInput"){ui.barQ=e.target.value;const l=$("#barLista");if(l)l.innerHTML=vBarLista()}
@@ -2587,6 +2668,8 @@ document.addEventListener("input",e=>{
 // Intro en el campo del bar: elige el que coincide exactamente, o el único que coincide; lo crea
 // solo si no coincide ninguno (con varios, hay que tocar uno).
 document.addEventListener("keydown",e=>{
+  // Intro en la contraseña: entrar (o, en Ajustes, crear la cuenta de la sesión sin cuenta).
+  if(e.key==="Enter"&&e.target&&e.target.id==="cuPass"){e.preventDefault();const bt=document.querySelector('#view [data-act="cuEntrar"],#view [data-act="cuUnir"]');if(bt)bt.click();return}
   if(e.key!=="Enter"||!e.target||e.target.id!=="barInput")return;
   e.preventDefault();
   const txt=(ui.barQ||"").trim();if(!txt)return;
@@ -2856,7 +2939,15 @@ async function comprobarViejo(tsMarca){
   }catch(e){}
 }
 render();
-initFirebase();
+// Sin sesión no se lee nada de la sala: se arranca al entrar (024). Al cerrar la sesión se
+// recarga la página, para que no siga escuchando nada con la sesión anterior.
+if(auth)auth.onAuthStateChanged(u=>{
+  const antes=USER;USER=u;authListo=true;
+  if(!u&&antes){location.reload();return}
+  if(u&&!arrancado){arrancado=true;ui.cuMsg="";initFirebase()}
+  render();
+});
+else initFirebase();
 
 </script>
 </body>
