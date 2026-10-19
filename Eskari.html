@@ -340,6 +340,19 @@ function normList(v){
   return[];
 }
 function normOrders(o){const r={};if(o&&typeof o==="object")Object.keys(o).forEach(k=>{const l=normList(o[k]);if(l.length)r[k]=l});return r}
+// Una ronda cerrada al leerla (023). Las de antes (las del 24/9, traídas de la sala vieja) guardan
+// el precio en cada consumición aunque sea el de la ronda para ese producto. Ese precio no es
+// «puesto a mano»: se quita (el total no cambia), para que corregir, cambiar el bar y «que el bar
+// aprenda» las traten como a las demás. Hasta la 022 contaban como precios a mano y el bar no
+// aprendía nada de ellas.
+function normRonda(d){
+  const p=d.prices||{};
+  const sin=o=>{if(!o||o.price==null||!o.drink||o.custom||o.drink==="nada"||p[o.drink]==null||Math.abs(Number(o.price)-Number(p[o.drink]))>=0.005)return o;const x=Object.assign({},o);delete x.price;return x};
+  const orders=normOrders(d.orders);Object.keys(orders).forEach(pid=>{orders[pid]=orders[pid].map(sin)});
+  const r={orders};
+  if(d.shared&&typeof d.shared==="object"){r.shared={};Object.keys(d.shared).forEach(k=>{r.shared[k]=sin(d.shared[k])})}
+  return r;
+}
 const ticketOk=v=>(v!=null&&v!==""&&!isNaN(Number(v)))?r2(Number(v)):null;
 // Raciones para compartir (010): shared = { id: { drink|custom, clarification?, price?, qty, who:[pid], ts, by } }.
 function normShared(m){
@@ -366,7 +379,7 @@ function normConfig(c){
 }
 function loadLocal(){
   try{const s=JSON.parse(lsGet("ronda.state."+SALA)||null);
-    if(s&&s.config&&s.current)return{config:normConfig(s.config),current:normCurrent(s.current),rounds:(s.rounds||[]).map(r=>Object.assign({},r,{orders:normOrders(r.orders)})),bares:normBares(s.bares)};
+    if(s&&s.config&&s.current)return{config:normConfig(s.config),current:normCurrent(s.current),rounds:(s.rounds||[]).map(r=>Object.assign({},r,normRonda(r))),bares:normBares(s.bares)};
   }catch(e){}
   return defaults();
 }
@@ -376,7 +389,7 @@ const firebaseConfig={apiKey:"AIzaSyC4T6yZls3yYdKLqTSQN-HyirYx9DZgQyM",authDomai
 let db=null;
 try{firebase.initializeApp(firebaseConfig);db=firebase.firestore()}catch(e){console.error("Firebase init:",e)}
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="022";
+const APP_VERSION="023";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 const SALA=(salaOk(salaFromUrl())?salaFromUrl():(salaOk(lsGet("ronda.sala"))?lsGet("ronda.sala"):""));
@@ -2751,7 +2764,7 @@ function escucharRondas(){
   unsubRondas=colRef("noches").doc(id).collection("rounds").onSnapshot({includeMetadataChanges:true},qs=>{
     if(id!==NOCHE)return;
     rondasCargadas=true;
-    S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,{orders:normOrders(d.orders)})});
+    S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,normRonda(d))});
     actualizarResumen();
     if(!(qs.metadata&&qs.metadata.fromCache))asegurarListaParticipantes();
     render();
