@@ -417,7 +417,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="027";
+const APP_VERSION="028";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -447,7 +447,7 @@ S.noches={};S.carpetas={};
 let NOCHES_DATA={};            // datos completos de cada noche, tal como llegan de la base de datos
 let migracionHecha=false;      // se sabe que existe bar/migracion014
 let avisoViejo="";             // pedidos apuntados con una versión anterior a la 014
-const META_NOCHE=["titulo","fecha","carpeta","creada","por","rondas","total","participantes"];
+const META_NOCHE=["titulo","fecha","carpeta","creada","por","rondas","total","participantes","quien"];
 const nocheMeta=id=>{const m=S.noches[id||NOCHE]||{};const o={};META_NOCHE.forEach(k=>{if(m[k]!=null)o[k]=m[k]});return o};
 const curPath=()=>"noches/"+NOCHE;
 const roundPath=id=>"noches/"+NOCHE+"/rounds/"+id;
@@ -501,17 +501,28 @@ function derivarParticipantes(){
   return o;
 }
 function guardarParticipantes(campos){if(mode==="firebase")curUpdate(campos);else saveLocal()}
+/* Noches privadas (028): cada noche lleva también «quien», la lista de ids de sus participantes
+   (los «aquí» y los que se han ido). Las reglas y la consulta de noches (array-contains) usan esa
+   lista: con cuentas, cada uno solo ve las noches en las que está. Se cambia elemento a elemento
+   (arrayUnion / arrayRemove) para que dos móviles no se pisen. */
+const FV=()=>firebase.firestore.FieldValue;
+const listaQuien=ps=>Object.keys(ps||{});
 // Cambiar el estado de una persona en la noche elegida.
 function ponEstado(pid,e){
   const m=S.noches[NOCHE];if(!m||!findP(pid))return;
-  if(!m.participantes){m.participantes=derivarParticipantes();guardarParticipantes({participantes:clone(m.participantes)})}
+  // Con cuentas, uno no puede quitarse de la noche: dejaría de verla.
+  if(e==="no"&&auth&&pid===me){flash("No puedes quitarte de la noche: dejarías de verla");return}
+  if(!m.participantes){m.participantes=derivarParticipantes();m.quien=listaQuien(m.participantes);guardarParticipantes({participantes:clone(m.participantes),quien:m.quien.slice()})}
   if(e==="no"){
-    if(tieneAlgo(pid))return;delete m.participantes[pid];
+    if(tieneAlgo(pid))return;delete m.participantes[pid];m.quien=listaQuien(m.participantes);
     // Su «No toma nada» de la ronda en curso sobra; el de las rondas cerradas se queda como se apuntó (no cuesta nada).
-    const u={["participantes."+pid]:DEL()};if(drinks(pid).length){delete S.current.orders[pid];u["orders."+pid]=DEL()}
+    const u={["participantes."+pid]:DEL()};if(mode==="firebase")u.quien=FV().arrayRemove(pid);
+    if(drinks(pid).length){delete S.current.orders[pid];u["orders."+pid]=DEL()}
     guardarParticipantes(u);return}
   const x={ts:(m.participantes[pid]&&m.participantes[pid].ts)||Date.now()};if(e==="ido")x.ido=true;
-  m.participantes[pid]=x;guardarParticipantes({["participantes."+pid]:clone(x)});
+  m.participantes[pid]=x;m.quien=listaQuien(m.participantes);
+  const u={["participantes."+pid]:clone(x)};if(mode==="firebase")u.quien=FV().arrayUnion(pid);
+  guardarParticipantes(u);
 }
 // Quien recibe algo (una bebida, una ración, paga…) pasa a estar aquí, aunque no viniera o se hubiera ido.
 function asegurarParticipantes(pids){(pids||[]).forEach(pid=>{if(pid&&findP(pid)&&estadoEn(pid)!=="aqui"&&S.noches[NOCHE])ponEstado(pid,"aqui")})}
@@ -522,7 +533,7 @@ function asegurarEnNoche(pids){(pids||[]).forEach(pid=>{if(pid&&findP(pid)&&esta
 // sus rondas (solo con la lista de rondas leída del servidor, no a medias desde el móvil).
 function asegurarListaParticipantes(){
   const m=S.noches[NOCHE];if(!m||m.participantes)return;
-  m.participantes=derivarParticipantes();guardarParticipantes({participantes:clone(m.participantes)});
+  m.participantes=derivarParticipantes();m.quien=listaQuien(m.participantes);guardarParticipantes({participantes:clone(m.participantes),quien:m.quien.slice()});
 }
 const findP=id=>people().find(p=>p.id===id);
 const pname=id=>(findP(id)||{name:id||"?"}).name;
@@ -1144,6 +1155,7 @@ const nombreCarpeta=id=>(S.carpetas[id]&&S.carpetas[id].name)||"Sin carpeta";
 const fechaCorta=ts=>{if(!ts)return"";const d=new Date(ts);return["dom","lun","mar","mié","jue","vie","sáb"][d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)+(d.getFullYear()!==new Date().getFullYear()?"/"+d.getFullYear():"")};
 function normNoche(d){d=d||{};const m={titulo:String(d.titulo||"Noche").slice(0,60),fecha:Number(d.fecha)||0,carpeta:typeof d.carpeta==="string"?d.carpeta:"",creada:Number(d.creada)||0,por:d.por||""};if(d.rondas!=null)m.rondas=Number(d.rondas)||0;if(d.total!=null)m.total=Number(d.total)||0;
   if(d.participantes&&typeof d.participantes==="object"){m.participantes={};Object.keys(d.participantes).forEach(k=>{const x=d.participantes[k]||{};m.participantes[k]=x.ido?{ts:Number(x.ts)||0,ido:true}:{ts:Number(x.ts)||0}})}
+  if(Array.isArray(d.quien))m.quien=d.quien.filter(x=>typeof x==="string");
   return m}
 // Los participantes con los que empieza una noche nueva: los de la última noche de esa carpeta
 // (todos «aquí»); si no hay, los de la cuadrilla que no estaban en pausa.
@@ -1161,14 +1173,15 @@ function actualizarResumen(){
   m.rondas=rondas;m.total=total;curUpdate({rondas,total});
 }
 function crearCarpeta(nombre){
-  const id=uid("c"),c={name:nombre.trim().slice(0,40),ts:Date.now()};
+  const id=uid("c"),c={name:nombre.trim().slice(0,40),ts:Date.now()};if(me)c.por=me;   // 028: quién la creó, para enseñársela aunque esté vacía
   S.carpetas[id]=c;if(mode==="firebase")dbUpdate("bar/carpetas",{["carpetas."+id]:clone(c)},()=>({carpetas:clone(S.carpetas)}));
   return id;
 }
 // Una noche nueva no borra nada: la anterior se queda como está, con o sin saldos pendientes.
 function crearNoche(carpeta,titulo){
-  const id=uid("n"),ahora=Date.now();
-  const meta={titulo:titulo.trim().slice(0,60),fecha:ahora,carpeta,creada:ahora,por:me||"",rondas:0,total:0,participantes:participantesDeSalida(carpeta)};
+  const id=uid("n"),ahora=Date.now(),ps=participantesDeSalida(carpeta);
+  if(auth&&me&&!ps[me])ps[me]={ts:ahora};   // 028: quien la crea siempre está (si no, no la vería)
+  const meta={titulo:titulo.trim().slice(0,60),fecha:ahora,carpeta,creada:ahora,por:me||"",rondas:0,total:0,participantes:ps,quien:listaQuien(ps)};
   const datos=Object.assign({n:1,name:"",bar:"",night:id,orders:{},delivered:{},shared:{}},meta);
   S.noches[id]=normNoche(meta);NOCHES_DATA[id]=datos;
   if(mode==="firebase")dbSet("noches/"+id,datos);
@@ -1249,6 +1262,7 @@ function escucharPagos(){
     S.pagos=qs.docs.map(x=>normPago(x.id,x.data())).filter(Boolean).sort((a,b)=>a.ts-b.ts);avisoPagos="";render();
   },e=>{
     console.warn("pagos:",e);
+    if(id!==NOCHE||(auth&&!S.noches[id]))return;   // 028: una noche en la que ya no estás (te han quitado)
     if(String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0)avisoPagos="Faltan las reglas nuevas de Firestore para los pagos (versión 015). Lo demás funciona; los pagos no se pueden apuntar hasta pegarlas en la consola de Firebase y volver a abrir la app.";
     render();
   });
@@ -1440,10 +1454,10 @@ function vIdos(lista){
 function vParticipantes(){
   const t=S.noches[NOCHE]?S.noches[NOCHE].titulo:"";
   let h=`<div class="pad-head"><h2>👥 ¿Quién viene?</h2><button class="mini on" data-act="partsCerrar">✓ Listo</button></div>`;
-  h+=`<p class="note" style="margin:0 2px 10px">${esc(t)}. Solo los que están «aquí» salen en Pedir y en los repartos. Quien se va un rato o a casa, «se ha ido»: sigue en la noche con lo suyo.</p><div class="mine">`;
+  h+=`<p class="note" style="margin:0 2px 10px">${esc(t)}. Solo los que están «aquí» salen en Pedir y en los repartos. Quien se va un rato o a casa, «se ha ido»: sigue en la noche con lo suyo.${auth?" Esta noche solo la ven los que están en ella (aquí o se han ido).":""}</p><div class="mine">`;
   people().forEach(p=>{
-    const e=estadoEn(p.id),fijo=tieneAlgo(p.id);
-    h+=`<div class="drow"><b>${esc(p.name)}</b><div class="acts">`+[["aqui","Aquí"],["ido","🚶 Se ha ido"],["no","No vino"]].map(([k,txt])=>`<button class="mini${e===k?" on":""}" data-act="partsPon" data-id="${p.id}" data-e="${k}"${k==="no"&&fijo?' disabled title="Tiene algo apuntado esta noche"':""}>${txt}</button>`).join("")+`</div></div>`;
+    const e=estadoEn(p.id),fijo=tieneAlgo(p.id),yo=!!auth&&p.id===me;
+    h+=`<div class="drow"><b>${esc(p.name)}</b><div class="acts">`+[["aqui","Aquí"],["ido","🚶 Se ha ido"],["no","No vino"]].map(([k,txt])=>`<button class="mini${e===k?" on":""}" data-act="partsPon" data-id="${p.id}" data-e="${k}"${k==="no"&&(fijo||yo)?` disabled title="${yo?"Dejarías de ver la noche":"Tiene algo apuntado esta noche"}"`:""}>${txt}</button>`).join("")+`</div></div>`;
   });
   h+=`</div><button class="btn small" data-act="addPerson">＋ Alguien nuevo en la cuadrilla</button>`;
   return h;
@@ -1758,6 +1772,13 @@ function vImport(){
   h+=`<section class="card" style="margin-top:14px"><h2>📷 Desde una foto de la carta</h2><p class="note">La app no lee fotos por sí sola. Lo práctico: haz la foto, mándasela a Claude (u otro asistente) pidiéndole que la transcriba a tabla, y pega aquí el resultado. El botón copia la petición ya redactada.</p><button class="btn small" data-act="copyPrompt">📋 Copiar la petición para el asistente</button></section>`;
   return h;
 }
+// 028: con cuentas, quien no está en ninguna noche (recién aceptado, o sala nueva).
+const sinNoches=()=>!!auth&&mode==="firebase"&&nochesDelServidor&&migracionHecha&&!nochesLista().length;
+function vSinNoches(){
+  return`<section class="card" style="margin-top:20px"><h2>🌙 No estás en ninguna noche</h2><p class="note">Cada uno solo ve las noches en las que está. Cuando alguien te apunte en una («Quién viene»), te aparecerá aquí sola. También puedes empezar una.</p><button class="btn primary" data-act="nocheNueva" data-carpeta="c_otras">🌙 Empezar una noche</button><button class="btn small" data-act="tab" data-id="noches">Ver las carpetas</button></section>`;
+}
+// «Otras» (donde van las noches sueltas) existe siempre.
+function asegurarOtras(){if(!S.carpetas.c_otras){S.carpetas.c_otras={name:"Otras",ts:Date.now()};dbUpdate("bar/carpetas",{"carpetas.c_otras":clone(S.carpetas.c_otras)},()=>({carpetas:clone(S.carpetas)}))}}
 /* Noches (014): carpetas, y dentro sus noches de la más reciente a la más antigua. */
 function vNoches(){
   let h=`<div class="pad-head"><h2>Noches</h2><button class="mini" data-act="tab" data-id="pedir">← Volver</button></div>`;
@@ -1768,15 +1789,17 @@ function vNoches(){
   cs.sort((a,b)=>ult(b)-ult(a)||a.name.localeCompare(b.name,"es"));
   const bloque=(titulo,mias,cid)=>{
     const todas=!!(ui.carpetaTodas&&ui.carpetaTodas[cid||"-"]),vis=todas?mias:mias.slice(0,5);
-    // 🗑 solo en carpetas vacías (y nunca en «Otras», que es donde van las noches sueltas).
-    const borrable=cid&&cid!=="c_otras"&&!mias.length;
+    // 🗑 solo en carpetas vacías (y nunca en «Otras», que es donde van las noches sueltas). Con
+    // cuentas (028), solo un administrador: la carpeta puede tener noches de otros que no ves.
+    const borrable=cid&&cid!=="c_otras"&&!mias.length&&(!auth||esAdmin());
     let b=`<section class="card"><h2 style="display:flex;align-items:center;gap:8px"><span style="flex:1">📁 ${esc(titulo)}</span>${cid?`<button class="linkish" data-act="carpetaRenombrar" data-id="${cid}" aria-label="Renombrar carpeta">✏️</button>`:""}${borrable?`<button class="linkish rm" data-act="carpetaBorrar" data-id="${cid}" aria-label="Borrar carpeta vacía">🗑</button>`:""}</h2>`;
     b+=vis.length?vis.map(vNocheFila).join(""):`<p class="note">Sin noches todavía.</p>`;
     if(mias.length>5)b+=`<button class="linkish" data-act="carpetaTodas" data-id="${cid||"-"}">${todas?"Ver solo las últimas":"Ver las "+mias.length}</button>`;
     if(cid&&cid!=="c_recuperadas")b+=`<button class="btn small" data-act="nocheNueva" data-carpeta="${cid}">＋ Nueva noche en ${esc(titulo)}</button>`;
     return b+'</section>';
   };
-  cs.forEach(c=>{h+=bloque(c.name,ns.filter(n=>n.carpeta===c.id),c.id)});
+  // 028: con cuentas, solo las carpetas en las que tienes alguna noche, «Otras» y las que creaste tú.
+  cs.forEach(c=>{const mias=ns.filter(n=>n.carpeta===c.id);if(auth&&!mias.length&&c.id!=="c_otras"&&c.por!==me)return;h+=bloque(c.name,mias,c.id)});
   const sueltas=ns.filter(n=>!S.carpetas[n.carpeta]);
   if(sueltas.length)h+=bloque("Sin carpeta",sueltas,"");
   return h+`<button class="btn" data-act="carpetaNueva">＋ Nueva carpeta</button>`;
@@ -2131,8 +2154,9 @@ function render(force){
   let html;
   // Sin noche elegida todavía no se puede apuntar: lo apuntado no tendría dónde guardarse.
   const esperandoNoche=mode==="firebase"&&SALA&&!NOCHE&&["pedir","comanda","reparto","cuentas","stats","ronda"].includes(ui.tab);
+  if(conNoches&&!NOCHE&&sinNoches())nb.innerHTML=`${enSala}🌙 No estás en ninguna noche <span aria-hidden="true">▾</span>`;
   if(conNoches&&avisoReglas)nb.textContent="⚠️ Faltan las reglas nuevas";
-  try{html=avisoReglas&&esperandoNoche?`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoReglas)}</p>`:esperandoNoche?`<p class="hint">Cargando las noches…</p>`:VIEWS[ui.tab]()}catch(err){console.error(err);html=`<p class="hint">⚠️ Error en esta pestaña: ${esc(err.message)}</p>`}
+  try{html=avisoReglas&&esperandoNoche?`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoReglas)}</p>`:esperandoNoche&&sinNoches()?vSinNoches():esperandoNoche?`<p class="hint">Cargando las noches…</p>`:VIEWS[ui.tab]()}catch(err){console.error(err);html=`<p class="hint">⚠️ Error en esta pestaña: ${esc(err.message)}</p>`}
   $("#view").innerHTML=html;
   $("#modal").innerHTML=vModal();
 }
@@ -2456,8 +2480,9 @@ document.addEventListener("click",e=>{
     /* --- noches y carpetas --- */
     case"carpetaBorrar":{
       const c=S.carpetas[id];if(!c||id==="c_otras")return;
+      if(auth&&!esAdmin())return;
       if(Object.values(S.noches).some(n=>n.carpeta===id)){flash("Solo se pueden borrar carpetas vacías");return}
-      if(!confirm(`¿Borrar la carpeta «${c.name}»? Está vacía.`))return;
+      if(!confirm(auth?`¿Borrar la carpeta «${c.name}»? Para ti está vacía, pero puede tener noches de otros que no ves: si las tiene, pasarán a «Sin carpeta».`:`¿Borrar la carpeta «${c.name}»? Está vacía.`))return;
       delete S.carpetas[id];
       if(mode==="firebase")dbUpdate("bar/carpetas",{["carpetas."+id]:DEL()},()=>({carpetas:clone(S.carpetas)}));
       flash("Carpeta borrada");break;
@@ -2466,6 +2491,7 @@ document.addEventListener("click",e=>{
     case"nocheNueva":{
       const c=b.dataset.carpeta||"c_otras",def=`${nombreCarpeta(c)} · ${fechaCorta(Date.now())}`;
       const t=prompt("Nombre de la noche nueva:",def);if(t===null)return;
+      if(!S.carpetas[c])asegurarOtras();
       // Al empezar la noche, a elegir quién viene (de partida, los de la última noche de esa carpeta).
       crearNoche(S.carpetas[c]?c:"c_otras",(t.trim()||def));ui.tab="pedir";ui.partsEdit=true;window.scrollTo(0,0);flash("Noche nueva: "+S.noches[NOCHE].titulo);break;
     }
@@ -2508,7 +2534,7 @@ document.addEventListener("click",e=>{
       if(personUsed(id)){flash("Ya ha participado esta noche: ponlo en pausa");return}
       if(people().length<2)return;
       if(!requirePin())return;
-      if(!confirm(`¿Quitar a ${pname(id)} de la cuadrilla?`))return;
+      if(!confirm(`¿Quitar a ${pname(id)} de la cuadrilla?${auth?" Ojo: puede estar en noches que tú no ves; en ellas saldría como «?».":""}`))return;
       editConfig(c=>{c.people=c.people.filter(p=>p.id!==id)});return;
     }
     case"assignerOn":if(me&&!S.config.assignerMode)editConfig(c=>{c.assignerMode=me});return;
@@ -3026,6 +3052,7 @@ function escucharMiembro(){
     if(esDentro()){
       me=MIEMBRO.persona||null;
       if(!datosArrancados){datosArrancados=true;arrancarDatos();escucharMiembros()}
+      else escucharNoches();   // 028: si cambia quién eres, tus noches son otras
     }else if(datosArrancados){location.reload();return}
     else if(!MIEMBRO)comprobarSala();
     sincronizarMiSala();
@@ -3074,16 +3101,7 @@ function arrancarDatos(){
     if(!snap.exists)dbSet("bar/config",clone(S.config));
     render();
   },goLocal);
-  // Todas las noches (su ficha y su ronda en curso). La elegida alimenta S.current.
-  colRef("noches").onSnapshot(META,qs=>{
-    const md=qs.metadata||{};netCache=!!md.fromCache;netPending=!!md.hasPendingWrites;
-    const ns={},datos={};
-    qs.docs.forEach(x=>{const d=x.data()||{};ns[x.id]=normNoche(d);datos[x.id]=d});
-    S.noches=ns;NOCHES_DATA=datos;
-    if(!md.fromCache)nochesDelServidor=true;
-    if(NOCHE&&datos[NOCHE])S.current=Object.assign(normCurrent(datos[NOCHE]),{night:NOCHE});
-    avisoReglas="";asegurarNoche();render();
-  },errorNoches);
+  escucharNoches();
   colRef("bar").doc("carpetas").onSnapshot(snap=>{
     S.carpetas=normCarpetas(snap.exists?(snap.data()||{}).carpetas:{});render();
   },e=>console.warn("carpetas:",e));
@@ -3100,15 +3118,46 @@ function arrancarDatos(){
   prepararNoches();
   setTimeout(()=>{if(mode==="connecting")goLocal()},10000);
 }
-let nochesDelServidor=false,unsubRondas=null,rondasDe="",avisoReglas="",rondasCargadas=false;
+let nochesDelServidor=false,unsubRondas=null,rondasDe="",avisoReglas="",rondasCargadas=false,unsubNoches=null,nochesDe=null,quienRevisado=false;
+// Las noches (su ficha y su ronda en curso); la elegida alimenta S.current. Con cuentas (028), solo
+// aquellas en las que estás (quien contiene tu persona): es lo que dejan leer las reglas. Si cambia
+// quién eres, se vuelve a escuchar con la persona nueva.
+function escucharNoches(){
+  const clave=auth?(me||""):"*";
+  if(nochesDe===clave)return;
+  if(typeof unsubNoches==="function")unsubNoches();
+  nochesDe=clave;S.noches={};NOCHES_DATA={};nochesDelServidor=false;
+  if(auth&&!me){render();return}
+  const q=auth?colRef("noches").where("quien","array-contains",me):colRef("noches");
+  unsubNoches=q.onSnapshot({includeMetadataChanges:true},qs=>{
+    const md=qs.metadata||{};netCache=!!md.fromCache;netPending=!!md.hasPendingWrites;
+    const ns={},datos={};
+    qs.docs.forEach(x=>{const d=x.data()||{};ns[x.id]=normNoche(d);datos[x.id]=d});
+    S.noches=ns;NOCHES_DATA=datos;
+    if(!md.fromCache)nochesDelServidor=true;
+    if(NOCHE&&datos[NOCHE])S.current=Object.assign(normCurrent(datos[NOCHE]),{night:NOCHE});
+    avisoReglas="";asegurarNoche();render();
+  },errorNoches);
+}
+// 028: las noches de antes no tienen «quien». Se pone una vez, con sus participantes (o, si no los
+// tienen, con toda la cuadrilla, como hasta ahora). Solo se puede mientras las reglas de Firestore
+// dejan leer todas las noches (las de la 027); con las de la 028 la lectura falla y ya no hace falta.
+function asegurarQuien(){
+  if(quienRevisado||!auth||mode!=="firebase")return;quienRevisado=true;
+  colRef("noches").get().then(qs=>qs.docs.forEach(x=>{
+    const d=x.data()||{};if(Array.isArray(d.quien))return;
+    const ps=d.participantes&&typeof d.participantes==="object"?listaQuien(d.participantes):[];
+    colRef("noches").doc(x.id).update({quien:ps.length?ps:people().map(p=>p.id)}).catch(e=>console.warn("quien:",e));
+  })).catch(()=>{});
+}
 // Si se publica la app antes de pegar las reglas de la 014, Firebase no deja leer las noches:
 // decirlo claro en vez de «ese código de sala no vale».
 function errorNoches(e){
   console.warn("noches:",e);
-  if(String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0){avisoReglas="Faltan las reglas nuevas de Firestore (versión 014): sin ellas no se pueden leer ni guardar las noches. Hay que pegarlas en la consola de Firebase y después volver a abrir la app. No se ha perdido nada.";render();return}
+  if(String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0){avisoReglas="Faltan las reglas nuevas de Firestore: sin ellas no se pueden leer ni guardar las noches. Hay que pegarlas en la consola de Firebase y después volver a abrir la app. No se ha perdido nada.";render();return}
   goLocal(e);
 }
-const normCarpetas=m=>{const o={};Object.keys(m||{}).forEach(id=>{const c=m[id];if(c&&c.name)o[id]={name:String(c.name).slice(0,40),ts:Number(c.ts)||0}});return o};
+const normCarpetas=m=>{const o={};Object.keys(m||{}).forEach(id=>{const c=m[id];if(c&&c.name){o[id]={name:String(c.name).slice(0,40),ts:Number(c.ts)||0};if(typeof c.por==="string"&&c.por)o[id].por=c.por}});return o};
 // Rondas cerradas de la noche elegida; al cambiar de noche se deja de escuchar la anterior.
 function escucharRondas(){
   escucharPagos();
@@ -3125,7 +3174,7 @@ function escucharRondas(){
     actualizarResumen();
     if(!(qs.metadata&&qs.metadata.fromCache))asegurarListaParticipantes();
     render();
-  },errorNoches);
+  },e=>{if(id!==NOCHE||(auth&&!S.noches[id])){console.warn("rondas:",e);return}errorNoches(e)});   // 028: ídem
 }
 // Que siempre haya una noche elegida: la recordada, si no la más reciente; si no hay ninguna
 // (sala nueva, o se borraron todas desde Firebase), se crea una en «Otras».
@@ -3135,7 +3184,10 @@ function asegurarNoche(){
   const l=nochesLista();
   if(l.length){cambiarNoche(l[0].id);return}
   if(!nochesDelServidor)return;
-  if(!S.carpetas.c_otras){S.carpetas.c_otras={name:"Otras",ts:Date.now()};dbUpdate("bar/carpetas",{"carpetas.c_otras":clone(S.carpetas.c_otras)},()=>({carpetas:clone(S.carpetas)}))}
+  // 028: con cuentas no se crea una noche sola: quien no está en ninguna lo ve dicho, y empieza
+  // una si quiere (si no, a alguien recién aceptado se le crearía una noche con toda la cuadrilla).
+  if(auth){if(NOCHE){NOCHE="";S.current=normCurrent({});S.rounds=[]}return}
+  asegurarOtras();
   crearNoche("c_otras","Noche · "+fechaCorta(Date.now()));
 }
 // La conversión de lo de antes de la 014 se hace una sola vez por sala (marca bar/migracion014),
@@ -3147,8 +3199,8 @@ async function prepararNoches(){
     await esperarConexion();
     const mk=await colRef("bar").doc("migracion014").get({source:"server"});
     if(!mk.exists)await migrar014();
-    else comprobarViejo(Number((mk.data()||{}).ts)||0);
-    migracionHecha=true;asegurarNoche();render();
+    else if(!auth)comprobarViejo(Number((mk.data()||{}).ts)||0);   // 028: con cuentas, lo de antes de la 014 no se puede leer
+    migracionHecha=true;asegurarNoche();asegurarQuien();render();
   }catch(e){
     console.warn("noches:",e);
     if(NOCHE&&S.noches[NOCHE]){migracionHecha=true;asegurarNoche();render()}   // sin conexión, pero ya se usaba
@@ -3157,7 +3209,9 @@ async function prepararNoches(){
 }
 async function migrar014(){
   const srv={source:"server"},ahora=Date.now();
-  const [cur,rs,ar,cp]=await Promise.all([colRef("bar").doc("current").get(srv),colRef("rounds").get(srv),
+  // 028: con las reglas de las noches privadas, lo de antes de la 014 (bar/current, rounds y el
+  // archivo) no se puede leer desde la app; en una sala nueva no hay nada que leer.
+  const [cur,rs,ar,cp]=await Promise.all([colRef("bar").doc("current").get(srv).catch(()=>({exists:false})),colRef("rounds").get(srv).catch(()=>({docs:[]})),
     colRef("archive").get(srv).catch(()=>({docs:[]})),colRef("bar").doc("carpetas").get(srv)]);
   const viejo=cur.exists?normCurrent(cur.data()):null;
   const rondas=rs.docs.map(x=>Object.assign({id:x.id},x.data()));
@@ -3179,6 +3233,7 @@ async function migrar014(){
   // marca y la conversión se reintentará; si no, se quedaría a medias para siempre.
   const pend=[];
   const guardar=(nid,datos,rr)=>{
+    if(!Array.isArray(datos.quien))datos.quien=people().map(p=>p.id);   // 028: sin participantes, toda la cuadrilla
     pend.push(docRef("noches/"+nid).set(clone(datos)));
     rr.forEach(r=>{const d=Object.assign({},r),rid=d.id;delete d.id;pend.push(docRef("noches/"+nid+"/rounds/"+rid).set(clone(d)))});
     S.noches[nid]=normNoche(datos);NOCHES_DATA[nid]=datos;
