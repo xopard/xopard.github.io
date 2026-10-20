@@ -140,6 +140,14 @@ textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1p
 .miembro{border-bottom:1px solid var(--line);padding:8px 0}
 .miembro select{display:block;width:100%;margin-top:6px}
 .miembro .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.persona{border-bottom:1px solid var(--line);padding:2px 0 4px}
+.persona:last-child{border-bottom:0}
+.persona .set-row{margin-bottom:2px}
+.cuenta-de{margin:0 0 4px 38px}
+.cuenta-de .fila{display:flex;align-items:center;gap:6px}
+.cuenta-de .fila .note{flex:1;min-width:0;overflow-wrap:anywhere}
+.cuenta-de select{display:block;width:100%;margin-top:4px}
+.cuenta-de .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .x{background:none;border:0;color:var(--muted);font-size:1.2rem;padding:6px;flex-shrink:0}
 .catbox{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:2px 10px 2px 6px;margin:8px 0}
 .catbox.open{padding-bottom:10px}
@@ -417,7 +425,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="029";
+const APP_VERSION="031";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -464,7 +472,7 @@ function curSet(){
 }
 let me=lsGet("ronda.me");
 let askNote=lsGet("ronda.ask")==="1";
-const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null,rbarPlan:null,rAprende:true,cuEmail:"",cuMsg:"",cuError:false,cuOcupado:false,mbNombre:"",miembroError:""};
+const ui={tab:"pedir",salaError:false,mixFor:null,sel:null,path:[],lastAdd:null,editMix:null,modal:null,cat:null,payer:null,confirmReset:false,confirmClear:false,multi:false,group:[],repView:"persona",editRound:null,flow:"personas",pending:null,cartaCat:null,cartaGrp:null,cartaQ:"",barQ:"",barOpen:null,share:false,sharePending:null,shareEdit:null,rsWho:null,rsGroup:[],carpetaTodas:{},moverNoche:null,pagoForm:null,partsEdit:false,rAdd:null,rbarPlan:null,rAprende:true,cuEmail:"",cuMsg:"",cuError:false,cuOcupado:false,mbNombre:"",miembroError:"",mbAbierta:null};
 
 function saveLocal(){if(mode!=="firebase")lsSet("ronda.state."+SALA,JSON.stringify(S))}
 const people=()=>S.config.people;
@@ -992,7 +1000,7 @@ function guardarRonda(r,what,sinRecalcular){
   if(mode!=="firebase"){saveLocal();return}
   const doc=clone(Object.assign({},r));delete doc.id;
   dbSet(roundPath(r.id),doc);
-  if(S.current.night)dbUpdate("archive/"+archiveKey(S.current.night,r.id),{bar:doc.bar||"",name:doc.name||"",orders:doc.orders,shared:doc.shared||{},prices:doc.prices||{},total:doc.total,payer:doc.payer||"",ticket:doc.ticket!=null?doc.ticket:DEL(),log:doc.log||[],savedTs:Date.now()});
+  if(S.current.night)dbUpdate("archive/"+archiveKey(S.current.night,r.id),{titulo:(S.noches[S.current.night]||{}).titulo||"",bar:doc.bar||"",name:doc.name||"",orders:doc.orders,shared:doc.shared||{},prices:doc.prices||{},total:doc.total,payer:doc.payer||"",ticket:doc.ticket!=null?doc.ticket:DEL(),log:doc.log||[],savedTs:Date.now()});
 }
 function gruposRonda(r){
   const gs={},order=[];
@@ -1120,7 +1128,8 @@ function archiveKey(night,rid){return night+"-"+rid}
 function archiveRound(night,rid,round){
   if(mode!=="firebase")return;
   const names={};people().forEach(p=>{names[p.id]=p.name});
-  dbSet("archive/"+archiveKey(night,rid),Object.assign({},clone(round),{night,roundId:rid,people:names,savedTs:Date.now(),savedBy:me||""}));
+  // 031: también el nombre de la quedada, para reconocerla en la consola (el archivo no lo guardaba).
+  dbSet("archive/"+archiveKey(night,rid),Object.assign({},clone(round),{night,roundId:rid,titulo:(S.noches[night]||{}).titulo||"",people:names,savedTs:Date.now(),savedBy:me||""}));
 }
 function archiveNote(rid,what){
   if(mode!=="firebase"||!S.current.night)return;
@@ -1149,13 +1158,17 @@ function closeRound(payer){
 function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.current.bar||"",ticket:null,night:S.current.night||"",orders:{},delivered:{},shared:{}};if(mode==="firebase")curSet();else saveLocal()}
 
 /* --- Noches y carpetas --- */
-const nochesLista=()=>Object.keys(S.noches).map(id=>Object.assign({id},S.noches[id])).sort((a,b)=>(b.fecha||0)-(a.fecha||0)||(b.creada||0)-(a.creada||0));
+// Las quedadas en la papelera (031) no salen en las listas ni se pueden abrir; solo en la papelera.
+const ordenNoches=(a,b)=>(b.fecha||0)-(a.fecha||0)||(b.creada||0)-(a.creada||0);
+const nochesLista=()=>Object.keys(S.noches).filter(id=>!S.noches[id].papelera).map(id=>Object.assign({id},S.noches[id])).sort(ordenNoches);
+const papeleraLista=()=>Object.keys(S.noches).filter(id=>S.noches[id].papelera).map(id=>Object.assign({id},S.noches[id])).sort(ordenNoches);
 const carpetasLista=()=>Object.keys(S.carpetas).map(id=>Object.assign({id},S.carpetas[id]));
 const nombreCarpeta=id=>(S.carpetas[id]&&S.carpetas[id].name)||"Sin carpeta";
 const fechaCorta=ts=>{if(!ts)return"";const d=new Date(ts);return["dom","lun","mar","mié","jue","vie","sáb"][d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)+(d.getFullYear()!==new Date().getFullYear()?"/"+d.getFullYear():"")};
 function normNoche(d){d=d||{};const m={titulo:String(d.titulo||"Noche").slice(0,60),fecha:Number(d.fecha)||0,carpeta:typeof d.carpeta==="string"?d.carpeta:"",creada:Number(d.creada)||0,por:d.por||""};if(d.rondas!=null)m.rondas=Number(d.rondas)||0;if(d.total!=null)m.total=Number(d.total)||0;
   if(d.participantes&&typeof d.participantes==="object"){m.participantes={};Object.keys(d.participantes).forEach(k=>{const x=d.participantes[k]||{};m.participantes[k]=x.ido?{ts:Number(x.ts)||0,ido:true}:{ts:Number(x.ts)||0}})}
   if(Array.isArray(d.quien))m.quien=d.quien.filter(x=>typeof x==="string");
+  if(d.papelera&&typeof d.papelera==="object")m.papelera={ts:Number(d.papelera.ts)||0,por:String(d.papelera.por||"")};
   return m}
 // Los participantes con los que empieza una noche nueva: los de la última noche de esa carpeta
 // (todos «aquí»); si no hay, los de la cuadrilla que no estaban en pausa.
@@ -1378,7 +1391,7 @@ const gLabel=o=>label(o)+(o.clarification?" · "+o.clarification:"");
 /* ===== Vistas ===== */
 function vMe(){
   // Con cuentas (025), quién eres no se elige en el móvil: lo dice tu ficha de miembro.
-  if(auth&&MIEMBRO)return`<p>Eres <b>${esc(me?pname(me):"(sin elegir)")}</b>${esAdmin()?" · administrador del grupo":""}.</p><p class="note">${esAdmin()?"Se cambia en Miembros, más abajo.":"Si no eres tú, pídeselo a un administrador."}</p>`;
+  if(auth&&MIEMBRO)return`<p>Eres <b>${esc(me?pname(me):"(sin elegir)")}</b>${esAdmin()?" · administrador del grupo":""}.</p><p class="note">${esAdmin()?"Se cambia en Miembros del grupo, más abajo, con ⚙️.":"Si no eres tú, pídeselo a un administrador."}</p>`;
   return `<div class="selector-box${me?"":" need"}"><label for="selectMe">Eres:</label><select id="selectMe"><option value="">Elige quién eres…</option>${people().map(p=>`<option value="${p.id}"${p.id===me?" selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`;
 }
 function nodeAt(){
@@ -1726,15 +1739,8 @@ function vBaresAjustes(){
 }
 function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
-  let h=vTuCuenta()+vMiembros()+`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
-
-  h+='<section class="card"><h2>Gente del grupo</h2><p class="note">Arrastra por ⠿ para cambiar el orden.</p><div data-droplist="people">';
-  ps.forEach(p=>{
-    const u=personUsed(p.id);
-    h+=`<div class="set-row" data-key="${p.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" value="${esc(p.name)}" data-pname="${p.id}">${u?'<span class="lock" title="Ha estado en alguna quedada">🔒</span>':`<button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar">×</button>`}</div>`;
-  });
-  h+='</div>';
-  h+='<p class="note">Aquí está toda la gente del grupo. Quién viene a cada quedada (o se ha ido un rato) se elige en Pedir › «👥 Quién viene a esta quedada». 🔒 = ha estado en alguna quedada, así que no se puede borrar.</p><button class="btn" data-act="addPerson">+ Añadir persona</button></section>';
+  let h=vTuCuenta()+`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
+  h+=vGente();
 
   h+='<section class="card"><h2>Modo asignador</h2><p class="note">Mientras está activo, solo esa persona puede apuntar o quitar bebidas en todos los móviles.</p>';
   if(!me)h+='<p class="note">Elige primero quién eres.</p>';
@@ -1785,6 +1791,21 @@ const sinNoches=()=>!!auth&&mode==="firebase"&&nochesDelServidor&&migracionHecha
 function vSinNoches(){
   return`<section class="card" style="margin-top:20px"><h2>🍻 No estás en ninguna quedada</h2><p class="note">Cada uno solo ve las quedadas en las que está. Cuando alguien te apunte en una («Quién viene»), te aparecerá aquí sola. También puedes empezar una.</p><button class="btn primary" data-act="nocheNueva" data-carpeta="c_otras">🍻 Empezar una quedada</button><button class="btn small" data-act="tab" data-id="noches">Ver las carpetas</button></section>`;
 }
+// Borrar para siempre una quedada de la papelera (031, solo administradores). El archivo se queda
+// (decisión de Aitor): a cada ronda archivada solo se le apunta el nombre de la quedada y que se
+// borró, para reconocerla en la consola. Primero las rondas y los pagos y al final la quedada,
+// porque las reglas dejan borrarlos mientras la quedada existe; si algo falla a medias, la quedada
+// sigue en la papelera y se puede volver a intentar.
+async function borrarParaSiempre(id){
+  const n=S.noches[id];if(!n||!n.papelera||!auth||!esAdmin())return;
+  const ref=colRef("noches").doc(id),ahora=Date.now();
+  const [rs,ps]=await Promise.all([ref.collection("rounds").get(),ref.collection("pagos").get()]);
+  await Promise.all(rs.docs.map(x=>colRef("archive").doc(archiveKey(id,x.id)).update({titulo:n.titulo,borrada:{ts:ahora,por:me||""}}).catch(e=>console.warn("archivo:",e))));
+  for(const x of rs.docs)await ref.collection("rounds").doc(x.id).delete();
+  for(const x of ps.docs)await ref.collection("pagos").doc(x.id).delete();
+  await ref.delete();
+  delete S.noches[id];delete NOCHES_DATA[id];render();
+}
 // «Otras» (donde van las noches sueltas) existe siempre.
 function asegurarOtras(){if(!S.carpetas.c_otras){S.carpetas.c_otras={name:"Otras",ts:Date.now()};dbUpdate("bar/carpetas",{"carpetas.c_otras":clone(S.carpetas.c_otras)},()=>({carpetas:clone(S.carpetas)}))}}
 /* Noches (014): carpetas, y dentro sus noches de la más reciente a la más antigua. */
@@ -1792,7 +1813,7 @@ function vNoches(){
   let h=`<div class="pad-head"><h2>Quedadas</h2><button class="mini" data-act="tab" data-id="pedir">← Volver</button></div>`;
   if(mode!=="firebase")return h+`<p class="hint">Las quedadas necesitan conexión con la base de datos.</p>`;
   h+=vCambiarSala();
-  h+=`<p class="note">Toca una quedada para entrar en ella. Las quedadas no se borran: puedes volver a cualquiera para apuntar una ronda olvidada o corregir.</p>`;
+  h+=`<p class="note">Toca una quedada para entrar en ella. Puedes volver a cualquiera para apuntar una ronda olvidada o corregir.${auth&&esAdmin()?" 🗑 = mandarla a la papelera (se puede recuperar).":""}</p>`;
   const ns=nochesLista(),cs=carpetasLista(),ult=c=>Math.max(0,...ns.filter(n=>n.carpeta===c.id).map(n=>n.fecha||0));
   cs.sort((a,b)=>ult(b)-ult(a)||a.name.localeCompare(b.name,"es"));
   const bloque=(titulo,mias,cid)=>{
@@ -1810,11 +1831,19 @@ function vNoches(){
   cs.forEach(c=>{const mias=ns.filter(n=>n.carpeta===c.id);if(auth&&!mias.length&&c.id!=="c_otras"&&c.por!==me)return;h+=bloque(c.name,mias,c.id)});
   const sueltas=ns.filter(n=>!S.carpetas[n.carpeta]);
   if(sueltas.length)h+=bloque("Sin carpeta",sueltas,"");
-  return h+`<button class="btn" data-act="carpetaNueva">＋ Nueva carpeta</button>`;
+  h+=`<button class="btn" data-act="carpetaNueva">＋ Nueva carpeta</button>`;
+  // 031: la papelera, solo para administradores (y solo con las quedadas en las que están).
+  const pap=auth&&esAdmin()?papeleraLista():[];
+  if(pap.length){
+    h+=`<section class="card" style="margin-top:14px"><h2>🗑 Papelera</h2><p class="note">Nadie las ve en las listas. «Recuperar» las devuelve a su carpeta; «Borrar para siempre» borra la quedada, sus rondas y sus pagos para todos (las rondas se quedan en el archivo, que solo se ve desde la consola de Firebase).</p>`;
+    pap.forEach(n=>{h+=`<div class="miembro"><div><b>${esc(n.titulo)}</b></div><div class="note">${esc(nombreCarpeta(n.carpeta))} · ${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""} · a la papelera el ${fechaCorta(n.papelera.ts)}${n.papelera.por&&findP(n.papelera.por)?" por "+esc(pname(n.papelera.por)):""}</div><div class="acts"><button class="mini on" data-act="nocheRecuperar" data-id="${n.id}">Recuperar</button><button class="mini" data-act="nocheBorrar" data-id="${n.id}">Borrar para siempre</button></div></div>`});
+    h+=`</section>`;
+  }
+  return h;
 }
 function vNocheFila(n){
   const aqui=n.id===NOCHE;
-  let h=`<div class="noche${aqui?" aqui":""}"><button class="ir" data-act="nocheIr" data-id="${n.id}"><b>${esc(n.titulo)}</b><span class="note">${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""}</span></button><button class="linkish" data-act="nocheRenombrar" data-id="${n.id}" aria-label="Renombrar quedada">✏️</button><button class="linkish" data-act="nocheMover" data-id="${n.id}" aria-label="Mover a otra carpeta">📁</button></div>`;
+  let h=`<div class="noche${aqui?" aqui":""}"><button class="ir" data-act="nocheIr" data-id="${n.id}"><b>${esc(n.titulo)}</b><span class="note">${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""}</span></button><button class="linkish" data-act="nocheRenombrar" data-id="${n.id}" aria-label="Renombrar quedada">✏️</button><button class="linkish" data-act="nocheMover" data-id="${n.id}" aria-label="Mover a otra carpeta">📁</button>${auth&&esAdmin()?`<button class="linkish rm" data-act="nochePapelera" data-id="${n.id}" aria-label="Mandar a la papelera">🗑</button>`:""}</div>`;
   if(ui.moverNoche===n.id){
     const otras=carpetasLista().filter(c=>c.id!==n.carpeta);
     h+=`<div class="chips" style="margin:4px 0 10px">${otras.length?otras.map(c=>`<button class="chip" data-act="nocheMoverA" data-id="${n.id}" data-carpeta="${c.id}">→ ${esc(c.name)}</button>`).join(""):'<span class="note">No hay otras carpetas.</span>'}</div>`;
@@ -2013,19 +2042,50 @@ function vEntrar(){
 // Miembro sin persona (quien reclama una sala): elegir quién es de la cuadrilla.
 function vQuienEres(){
   const libres=people().filter(p=>!Object.keys(MIEMBROS).some(u=>u!==(USER&&USER.uid)&&MIEMBROS[u].persona===p.id));
-  return`<section class="card" style="margin-top:20px"><h2>¿Quién eres?</h2><p class="note">Elige quién eres en este grupo. Solo se pregunta una vez; si te equivocas, se cambia en Ajustes › Miembros.</p><div class="chips">${libres.map(p=>`<button class="chip" data-act="mbSoy" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div><button class="btn small" data-act="mbSoyNuevo">No estoy en la lista: añadirme</button></section>`;
+  return`<section class="card" style="margin-top:20px"><h2>¿Quién eres?</h2><p class="note">Elige quién eres en este grupo. Solo se pregunta una vez; si te equivocas, se cambia en Ajustes › Miembros del grupo.</p><div class="chips">${libres.map(p=>`<button class="chip" data-act="mbSoy" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div><button class="btn small" data-act="mbSoyNuevo">No estoy en la lista: añadirme</button></section>`;
 }
 const pendientes=()=>Object.keys(MIEMBROS).filter(u=>MIEMBROS[u].rol==="pendiente");
 function vAvisoPendientes(){
   const ps=pendientes();if(!ps.length)return"";
   return`<p class="status">🔔 ${esc(ps.map(u=>MIEMBROS[u].nombre||"Alguien").join(", "))} ${ps.length===1?"quiere":"quieren"} entrar en el grupo. <button class="linkish" data-act="mbVer">Ver</button></p>`;
 }
-function vMiembros(){
-  if(!auth||!MIEMBRO)return"";
-  const yo=USER&&USER.uid,admin=esAdmin();
-  const ids=Object.keys(MIEMBROS).sort((a,b)=>(MIEMBROS[a].ts||0)-(MIEMBROS[b].ts||0));
-  const pend=ids.filter(u=>MIEMBROS[u].rol==="pendiente"),den=ids.filter(u=>MIEMBROS[u].rol!=="pendiente");
-  let h=`<section class="card" id="miembros"><h2>Miembros del grupo</h2>`;
+/* Gente del grupo (030): una sola lista. Hasta la 029 había dos (la gente, para apuntar, y los
+   miembros, cuentas con acceso). Arriba, quien pide entrar; después, cada persona con sus cuentas
+   (📱) debajo. Las opciones de cada cuenta (quién es, administrador, quitar acceso) las abre un
+   administrador con ⚙️ (ui.mbAbierta). Sin cuentas (sin Firebase Auth), solo la lista de personas. */
+function vGente(){
+  const ps=people(),conCuentas=!!auth&&!!MIEMBRO,admin=conCuentas&&esAdmin();
+  const ids=conCuentas?Object.keys(MIEMBROS).sort((a,b)=>(MIEMBROS[a].ts||0)-(MIEMBROS[b].ts||0)):[];
+  const den=ids.filter(u=>MIEMBROS[u].rol!=="pendiente");
+  const huerfanas=den.filter(u=>!MIEMBROS[u].persona||!findP(MIEMBROS[u].persona));
+  let h=`<section class="card" id="miembros"><h2>Miembros del grupo</h2>`+vPeticiones(ids);   // 031: «Miembros», a gusto de Aitor (en la 030, «Gente del grupo»)
+  h+=`<p class="note">Arrastra por ⠿ para cambiar el orden.${conCuentas?" 📱 = tiene cuenta y entra en el grupo con ella.":""}</p><div data-droplist="people">`;
+  ps.forEach(p=>{
+    const u=personUsed(p.id);
+    h+=`<div class="persona" data-key="${p.id}"><div class="set-row"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" value="${esc(p.name)}" data-pname="${p.id}">${u?'<span class="lock" title="Ha estado en alguna quedada o tiene cuenta">🔒</span>':`<button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar">×</button>`}</div>`;
+    den.filter(x=>MIEMBROS[x].persona===p.id).forEach(x=>{h+=vCuentaDe(x,admin)});
+    h+=`</div>`;
+  });
+  h+='</div>';
+  if(huerfanas.length)h+=`<p class="note" style="margin-top:8px">Cuentas que aún no son nadie de la lista:</p>`+huerfanas.map(x=>vCuentaDe(x,admin)).join("");
+  h+=`<p class="note">Quién viene a cada quedada (o se ha ido un rato) se elige en Pedir › «👥 Quién viene a esta quedada». 🔒 = ha estado en alguna quedada${conCuentas?" o tiene cuenta":""}, así que no se puede borrar.</p><button class="btn" data-act="addPerson">+ Añadir persona</button>`;
+  if(conCuentas)h+=`<p class="note">Cualquiera de dentro puede aceptar a gente nueva. ${admin?"Como administrador, con ⚙️ cambias quién es cada cuenta, nombras administradores o le quitas el acceso a alguien.":"Los administradores pueden además quitar el acceso a alguien o cambiar quién es."}</p>`;
+  return h+`</section>`;
+}
+// Una cuenta debajo de su persona: email, dispositivo y papel; con ⚙️, sus opciones (administradores).
+function vCuentaDe(u,admin){
+  const m=MIEMBROS[u],yo=USER&&USER.uid,abierta=admin&&ui.mbAbierta===u;
+  let h=`<div class="cuenta-de"><div class="fila"><span class="note">📱 ${esc([m.email||"sin cuenta",m.dispositivo].filter(Boolean).join(" · "))}${m.rol==="admin"?" · <b>administrador</b>":""}${u===yo?" · tú":""}</span>${admin?`<button class="linkish${abierta?" on":""}" data-act="mbEditar" data-id="${u}" aria-label="Opciones de esta cuenta">⚙️</button>`:""}</div>`;
+  if(abierta){
+    h+=`<select data-mbcambia="${u}" aria-label="Quién es">${people().map(p=>`<option value="${p.id}"${p.id===m.persona?" selected":""}>Es ${esc(p.name)}</option>`).join("")}${m.persona&&findP(m.persona)?"":`<option value="" selected>(sin elegir)</option>`}</select>`;
+    if(u!==yo)h+=`<div class="acts"><button class="mini" data-act="mbAdmin" data-id="${u}">${m.rol==="admin"?"Quitar admin":"Hacer admin"}</button><button class="mini" data-act="mbQuitar" data-id="${u}">Quitar acceso</button></div>`;
+  }
+  return h+`</div>`;
+}
+// Quien pide entrar: elegir quién es (o añadirle) y aceptar, o rechazar.
+function vPeticiones(ids){
+  const pend=ids.filter(u=>MIEMBROS[u].rol==="pendiente");
+  let h="";
   if(pend.length){
     h+=`<p class="note">Quieren entrar. Elige quién es cada uno del grupo (o añádelo) y acéptalo:</p>`;
     pend.forEach(u=>{
@@ -2035,16 +2095,8 @@ function vMiembros(){
         `<select data-mbpersona="${u}" aria-label="Quién es">${people().map(p=>`<option value="${p.id}"${igual&&igual.id===p.id?" selected":""}>Es ${esc(p.name)}</option>`).join("")}<option value="nuevo"${igual?"":" selected"}>➕ Añadirle al grupo como «${esc(m.nombre||"Nuevo")}»</option></select>`+
         `<div class="acts"><button class="mini on" data-act="mbAceptar" data-id="${u}">Aceptar</button><button class="mini" data-act="mbRechazar" data-id="${u}">Rechazar</button></div></div>`;
     });
+    h+=`<div style="height:10px"></div>`;
   }
-  den.forEach(u=>{
-    const m=MIEMBROS[u],quien=m.persona&&findP(m.persona)?pname(m.persona):"(sin elegir)";
-    let acts="";
-    if(admin&&u!==yo)acts=`<button class="mini" data-act="mbAdmin" data-id="${u}">${m.rol==="admin"?"Quitar admin":"Hacer admin"}</button><button class="mini" data-act="mbQuitar" data-id="${u}">Quitar</button>`;
-    h+=`<div class="miembro"><div><b>${esc(quien)}</b>${m.rol==="admin"?" · administrador":""}${u===yo?" · tú":""}</div><div class="note">${esc([m.email||"sin cuenta",m.dispositivo].filter(Boolean).join(" · "))}</div>`+
-      (admin?`<select data-mbcambia="${u}" aria-label="Cambiar quién es">${people().map(p=>`<option value="${p.id}"${p.id===m.persona?" selected":""}>Es ${esc(p.name)}</option>`).join("")}${m.persona&&findP(m.persona)?"":`<option value="" selected>(sin elegir)</option>`}</select>`:"")+
-      `${acts?`<div class="acts">${acts}</div>`:""}</div>`;
-  });
-  h+=`<p class="note">Cualquiera de dentro puede aceptar a gente nueva. ${admin?"Como administrador, también puedes cambiar quién es cada uno, nombrar a otros administradores y quitar a alguien del grupo.":"Los administradores pueden además quitar a alguien o cambiar quién es."}</p></section>`;
   return h;
 }
 function vSala(){
@@ -2514,6 +2566,28 @@ document.addEventListener("click",e=>{
       n.titulo=t.slice(0,60);dbUpdate("noches/"+id,{titulo:n.titulo});break;
     }
     case"nocheMover":ui.moverNoche=ui.moverNoche===id?null:id;break;
+    /* --- papelera (031): solo administradores --- */
+    case"nochePapelera":{
+      const n=S.noches[id];if(!n||!auth||!esAdmin())return;
+      if(!confirm(`¿Mandar «${n.titulo}» a la papelera? Desaparece de la lista de todos los que están en ella. Se puede recuperar desde la papelera, al final de Quedadas.`))return;
+      if(!requirePin())return;
+      n.papelera={ts:Date.now(),por:me||""};
+      dbUpdate("noches/"+id,{papelera:clone(n.papelera)}).then(()=>{if(id===NOCHE)asegurarNoche();render()});
+      if(id===NOCHE)asegurarNoche();
+      flash("En la papelera: "+n.titulo);break;
+    }
+    case"nocheRecuperar":{
+      const n=S.noches[id];if(!n||!n.papelera||!auth||!esAdmin())return;
+      delete n.papelera;dbUpdate("noches/"+id,{papelera:DEL()});flash("Recuperada: "+n.titulo);break;
+    }
+    case"nocheBorrar":{
+      const n=S.noches[id];if(!n||!n.papelera||!auth||!esAdmin())return;
+      if(!confirm(`¿Borrar para siempre «${n.titulo}»? Se borran la quedada, sus rondas y sus pagos, para todos, y no se puede deshacer. Solo quedará la copia de sus rondas en el archivo, que se ve desde la consola de Firebase.`))return;
+      if(((prompt("Para confirmarlo, escribe BORRAR:","")||"").trim().toUpperCase())!=="BORRAR"){flash("No se ha borrado nada");return}
+      if(!requirePin())return;
+      borrarParaSiempre(id).then(()=>flash("Borrada para siempre: "+n.titulo)).catch(e=>{console.warn(e);alert("No se ha podido borrar del todo. Lo que falte sigue en la papelera: vuelve a probar.")});
+      return;
+    }
     case"nocheMoverA":{
       const n=S.noches[id],c=b.dataset.carpeta;if(!n||!S.carpetas[c])return;
       n.carpeta=c;dbUpdate("noches/"+id,{carpeta:c});ui.moverNoche=null;flash("Movida a "+nombreCarpeta(c));break;
@@ -2643,6 +2717,7 @@ document.addEventListener("click",e=>{
       root().collection("miembros").doc(USER.uid).update({persona:pid}).catch(e=>{console.warn(e);alert("No se ha podido guardar.")});
       return;
     }
+    case"mbEditar":ui.mbAbierta=ui.mbAbierta===id?null:id;break;
     case"mbVer":ui.tab="ajustes";render();setTimeout(()=>{const el=document.getElementById("miembros");if(el&&el.scrollIntoView)el.scrollIntoView({block:"start"})},0);return;
     case"mbAceptar":{
       const m=MIEMBROS[id];if(!m||m.rol!=="pendiente"||!esDentro())return;
@@ -3197,7 +3272,7 @@ function escucharRondas(){
 // Que siempre haya una noche elegida: la recordada, si no la más reciente; si no hay ninguna
 // (sala nueva, o se borraron todas desde Firebase), se crea una en «Otras».
 function asegurarNoche(){
-  if(NOCHE&&S.noches[NOCHE]){escucharRondas();return}
+  if(NOCHE&&S.noches[NOCHE]&&!S.noches[NOCHE].papelera){escucharRondas();return}   // 031: la que se manda a la papelera se deja
   if(!migracionHecha)return;
   const l=nochesLista();
   if(l.length){cambiarNoche(l[0].id);return}
