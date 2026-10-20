@@ -402,6 +402,10 @@ try{if(db&&firebase.auth){auth=firebase.auth();auth.languageCode="es"}}catch(e){
    dispositivo, por/aceptado (quién le aceptó y cuándo) }. Solo los miembros leen y escriben la
    sala (reglas). Quien crea la sala, o la reclama con la contraseña de crear salas, es admin. */
 let MIEMBRO=null,miembroListo=false,MIEMBROS={},datosArrancados=false;
+/* Mis salas (027): usuarios/{uid} = { salas: { idSala: { nombre (el fácil, si lo tiene), estado:
+   "dentro"|"pendiente", ts } } }. Solo la lee y escribe su dueño. La app la mantiene sola al abrir
+   cada sala: la añade al entrar o pedir entrar y la quita si ya no eres de ella. */
+let MIS_SALAS={},misSalasListas=false;
 const esDentro=()=>!auth||(!!MIEMBRO&&(MIEMBRO.rol==="admin"||MIEMBRO.rol==="miembro"));
 const esAdmin=()=>!!MIEMBRO&&MIEMBRO.rol==="admin";
 const normMiembro=d=>({rol:["admin","miembro","pendiente"].includes(d&&d.rol)?d.rol:"pendiente",persona:String((d&&d.persona)||""),nombre:String((d&&d.nombre)||"").slice(0,30),email:String((d&&d.email)||""),ts:Number(d&&d.ts)||0,dispositivo:String((d&&d.dispositivo)||"")});
@@ -413,7 +417,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="026";
+const APP_VERSION="027";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -1758,6 +1762,7 @@ function vImport(){
 function vNoches(){
   let h=`<div class="pad-head"><h2>Noches</h2><button class="mini" data-act="tab" data-id="pedir">← Volver</button></div>`;
   if(mode!=="firebase")return h+`<p class="hint">Las noches necesitan conexión con la base de datos.</p>`;
+  h+=vCambiarSala();
   h+=`<p class="note">Toca una noche para entrar en ella. Las noches no se borran: puedes volver a cualquiera para apuntar una ronda olvidada o corregir.</p>`;
   const ns=nochesLista(),cs=carpetasLista(),ult=c=>Math.max(0,...ns.filter(n=>n.carpeta===c.id).map(n=>n.fecha||0));
   cs.sort((a,b)=>ult(b)-ult(a)||a.name.localeCompare(b.name,"es"));
@@ -1945,6 +1950,20 @@ function vTuCuenta(){
   else h+=`<p>Has entrado como <b>${esc(USER.email||"")}</b>.</p>`+msgCuenta();
   return h+`<button class="btn small" data-act="cuSalir">Cerrar sesión en este navegador</button></section>`;
 }
+/* --- Mis salas (027) --- */
+const otrasSalas=()=>Object.keys(MIS_SALAS).filter(id=>id!==SALA).sort((a,b)=>(MIS_SALAS[b].ts||0)-(MIS_SALAS[a].ts||0));
+const chipSala=id=>{const s=MIS_SALAS[id]||{},n=s.nombre||id;return`<button class="chip" data-act="salaIr" data-id="${esc(n)}">${s.estado==="pendiente"?"⏳ ":""}${esc(n)}</button>`};
+// Sin sala abierta, o fuera de ella: tus salas, para entrar de un toque.
+function vTusSalas(titulo){
+  const ids=otrasSalas();if(!auth||!USER||!ids.length)return"";
+  return`<section class="card"${titulo?' style="margin-top:20px"':""}><h2>${titulo||"Tus salas"}</h2><div class="chips">${ids.map(chipSala).join("")}</div>${ids.some(id=>MIS_SALAS[id].estado==="pendiente")?`<p class="note" style="margin-top:6px">⏳ = has pedido entrar y aún no te han aceptado.</p>`:""}</section>`;
+}
+// En Noches (se llega tocando la barra de arriba): la sala en la que estás y cambiar a otra.
+function vCambiarSala(){
+  if(!auth||!USER)return"";
+  const ids=otrasSalas();
+  return`<section class="card"><h2>🏠 ${esc(NOMBRE_SALA||SALA)}</h2>${ids.length?`<p class="note">Cambiar a otra de tus salas:</p><div class="chips">${ids.map(chipSala).join("")}</div>`:`<p class="note">Es tu única sala.</p>`}<div class="row2" style="margin-top:8px"><button class="btn small" data-act="salaChange">↪ Entrar en otra sala</button>${USER.isAnonymous?"":`<button class="btn small" data-act="salaNew">+ Crear una sala</button>`}</div></section>`;
+}
 /* --- Miembros (025) --- */
 const otraSala=()=>`<section class="card"><h2>Otra sala</h2><div class="set-row"><input type="text" id="salaInput" placeholder="código de la sala" autocapitalize="off" autocorrect="off"></div><button class="btn small" data-act="salaEnter">Entrar en otra sala</button><button class="btn small" data-act="salaNew">+ Crear una sala</button></section>`;
 // Con sesión pero sin ser de la sala: pedir entrar, esperar a que te acepten o reclamarla.
@@ -1958,7 +1977,7 @@ function vEntrar(){
     h+=`<section class="card" style="margin-top:20px"><h2>Pedir entrar</h2><p class="note">La sala <b>${esc(NOMBRE_SALA||SALA)}</b> es privada: pide entrar y alguien de dentro te aceptará.</p><input class="campo" type="text" id="mbNombre" value="${esc(ui.mbNombre||"")}" placeholder="¿Cómo te llaman en la cuadrilla?" autocomplete="nickname" aria-label="Tu nombre"><button class="btn primary" data-act="mbPedir">Pedir entrar</button></section>`;
     if(USER&&!USER.isAnonymous)h+=`<section class="card"><h2>¿Administras la app?</h2><p class="note">Si esta sala es de antes de la versión 025 y todavía no tiene administrador, puedes reclamarla con la contraseña de crear salas. Solo se puede una vez.</p><button class="btn small" data-act="mbReclamar">Reclamar esta sala</button></section>`;
   }
-  return h+otraSala()+vTuCuenta();
+  return h+vTusSalas()+otraSala()+vTuCuenta();
 }
 // Miembro sin persona (quien reclama una sala): elegir quién es de la cuadrilla.
 function vQuienEres(){
@@ -1999,7 +2018,7 @@ function vMiembros(){
 }
 function vSala(){
   const aviso=ui.salaError?`<section class="card" style="border-color:var(--bad)"><h2>⚠️ Ese código no vale</h2><p>La sala <b>${esc(SALA)}</b> no existe o no está autorizada. Comprueba el enlace que te han pasado.</p></section>`:"";
-  return aviso+`<section class="card" style="margin-top:20px"><h2>Entrar en una sala</h2>
+  return aviso+vTusSalas(ui.salaError?"":"Tus salas")+`<section class="card" style="margin-top:20px"><h2>Entrar en una sala</h2>
     <p class="note">La app funciona por salas: cada cuadrilla tiene la suya, con sus pedidos y sus cuentas. Necesitas el enlace o el código que te hayan pasado.</p>
     <div class="set-row"><input type="text" id="salaInput" placeholder="código de la sala" autocapitalize="off" autocorrect="off"></div>
     <button class="btn primary" data-act="salaEnter">Entrar</button></section>
@@ -2106,7 +2125,9 @@ function render(force){
   // Barra con la noche en la que estás, siempre a la vista (con conexión).
   const nb=$("#nocheBtn"),conNoches=dentro&&mode==="firebase";
   nb.style.display=conNoches?"":"none";
-  if(conNoches)nb.innerHTML=NOCHE&&S.noches[NOCHE]?`📁 ${esc(nombreCarpeta(S.noches[NOCHE].carpeta))} › <b>${esc(S.noches[NOCHE].titulo)}</b> <span aria-hidden="true">▾</span>`:"Cargando las noches…";
+  // Con más de una sala (027), delante va en cuál estás.
+  const enSala=auth&&Object.keys(MIS_SALAS).length>1?`🏠 ${esc(NOMBRE_SALA||SALA)} › `:"";
+  if(conNoches)nb.innerHTML=NOCHE&&S.noches[NOCHE]?`${enSala}📁 ${esc(nombreCarpeta(S.noches[NOCHE].carpeta))} › <b>${esc(S.noches[NOCHE].titulo)}</b> <span aria-hidden="true">▾</span>`:"Cargando las noches…";
   let html;
   // Sin noche elegida todavía no se puede apuntar: lo apuntado no tendría dónde guardarse.
   const esperandoNoche=mode==="firebase"&&SALA&&!NOCHE&&["pedir","comanda","reparto","cuentas","stats","ronda"].includes(ui.tab);
@@ -2516,6 +2537,7 @@ document.addEventListener("click",e=>{
       if(!salaOk(v)){alert("Ese nombre no vale: entre 2 y 24 letras, números o guiones.");return}
       ponerNombreSala(v);return;
     }
+    case"salaIr":if(salaOk(id)&&id!==SALA&&id!==NOMBRE_SALA)irASala(id);return;
     case"salaChange":{
       const v=(prompt("Código de la sala a la que quieres entrar:",SALA)||"").trim().toLowerCase();
       if(!v||v===SALA)return;
@@ -2991,7 +3013,7 @@ async function ponerNombreSala(v){
     if(antes&&antes!==v)b.delete(db.collection("nombres").doc(antes));
     b.set(colRef("bar").doc("nombre"),{nombre:v,ts:ahora,por:USER.uid});
     await b.commit();
-    NOMBRE_SALA=v;lsSet("ronda.sala",v);
+    NOMBRE_SALA=v;lsSet("ronda.sala",v);sincronizarMiSala();
     try{history.replaceState(null,"",location.pathname+"?sala="+v)}catch(e){}
     flash("La sala se llama ahora "+v);render();
   }catch(e){console.warn(e);alert("No se ha podido poner el nombre. Mira la conexión y vuelve a probar.")}
@@ -3006,6 +3028,7 @@ function escucharMiembro(){
       if(!datosArrancados){datosArrancados=true;arrancarDatos();escucharMiembros()}
     }else if(datosArrancados){location.reload();return}
     else if(!MIEMBRO)comprobarSala();
+    sincronizarMiSala();
     render();
   },e=>{
     console.warn("miembro:",e);miembroListo=true;
@@ -3014,6 +3037,24 @@ function escucharMiembro(){
       :"No se ha podido comprobar si eres de esta sala. Mira la conexión y vuelve a abrir la app.";
     render();
   });
+}
+// Tu lista de salas (027), con o sin sala abierta.
+function escucharMisSalas(){
+  db.collection("usuarios").doc(USER.uid).onSnapshot(snap=>{
+    const d=snap.exists&&snap.data()?snap.data().salas:null,o={};
+    if(d&&typeof d==="object")Object.keys(d).forEach(id=>{const s=d[id];if(salaOk(id)&&s)o[id]={nombre:salaOk(s.nombre)?s.nombre:"",estado:s.estado==="pendiente"?"pendiente":"dentro",ts:Number(s.ts)||0}});
+    MIS_SALAS=o;misSalasListas=true;sincronizarMiSala();render();
+  },e=>console.warn("mis salas:",e));
+}
+// Que la sala abierta figure en tu lista como está de verdad: dentro, pendiente o fuera (se quita).
+function sincronizarMiSala(){
+  if(!auth||!USER||!SALA||!db||!miembroListo||!misSalasListas||ui.miembroError)return;
+  const yo=MIS_SALAS[SALA],estado=esDentro()?"dentro":(MIEMBRO&&MIEMBRO.rol==="pendiente"?"pendiente":""),ref=db.collection("usuarios").doc(USER.uid);
+  if(!estado){if(yo)ref.update({["salas."+SALA]:DEL()}).catch(e=>console.warn("mis salas:",e));return}
+  const nombre=NOMBRE_SALA||"";
+  if(yo&&yo.estado===estado&&yo.nombre===nombre)return;
+  const v={nombre,estado,ts:Date.now()};
+  ref.update({["salas."+SALA]:v}).catch(()=>ref.set({salas:{[SALA]:v}}).catch(e=>console.warn("mis salas:",e)));
 }
 // Quien no es de la sala solo puede saber si existe (para decir «ese código no vale»).
 function comprobarSala(){
@@ -3049,7 +3090,7 @@ function arrancarDatos(){
   // 026: el nombre fácil de la sala, para enseñarlo y para el enlace que se comparte.
   colRef("bar").doc("nombre").onSnapshot(snap=>{
     const v=snap.exists&&snap.data()?String(snap.data().nombre||""):"";
-    if(v!==NOMBRE_SALA&&(salaOk(v)||!v)){NOMBRE_SALA=v;render()}
+    if(v!==NOMBRE_SALA&&(salaOk(v)||!v)){NOMBRE_SALA=v;sincronizarMiSala();render()}
   },e=>console.warn("nombre:",e));
   // Los precios por bar van aparte de la config (que se reescribe entera) para no pisarse.
   colRef("bar").doc("precios").onSnapshot(snap=>{
@@ -3177,7 +3218,7 @@ render();
 if(auth)auth.onAuthStateChanged(u=>{
   const antes=USER;USER=u;authListo=true;
   if(!u&&antes){location.reload();return}
-  if(u&&!arrancado){arrancado=true;ui.cuMsg="";initFirebase()}
+  if(u&&!arrancado){arrancado=true;ui.cuMsg="";if(db)escucharMisSalas();initFirebase()}
   render();
 });
 else initFirebase();
