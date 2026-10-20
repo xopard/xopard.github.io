@@ -417,7 +417,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="028";
+const APP_VERSION="029";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -511,7 +511,7 @@ const listaQuien=ps=>Object.keys(ps||{});
 function ponEstado(pid,e){
   const m=S.noches[NOCHE];if(!m||!findP(pid))return;
   // Con cuentas, uno no puede quitarse de la noche: dejaría de verla.
-  if(e==="no"&&auth&&pid===me){flash("No puedes quitarte de la noche: dejarías de verla");return}
+  if(e==="no"&&auth&&pid===me){flash("No puedes quitarte de la quedada: dejarías de verla");return}
   if(!m.participantes){m.participantes=derivarParticipantes();m.quien=listaQuien(m.participantes);guardarParticipantes({participantes:clone(m.participantes),quien:m.quien.slice()})}
   if(e==="no"){
     if(tieneAlgo(pid))return;delete m.participantes[pid];m.quien=listaQuien(m.participantes);
@@ -1253,17 +1253,25 @@ S.pagos=[];
 let unsubPagos=null,pagosDe="",avisoPagos="";
 const pagoPath=id=>"noches/"+NOCHE+"/pagos/"+id;
 function normPago(id,d){d=d||{};const v=r2(Number(d.importe)||0);if(!d.de||!d.a||d.de===d.a||!(v>0))return null;return{id,de:d.de,a:d.a,importe:v,ts:Number(d.ts)||0,by:d.by||""}}
+// 029: un error de permiso puede ser pasajero (p. ej. una pestaña abierta mientras se cambiaban las
+// reglas: Firebase corta lo que escuchaba y no lo retoma). Se reintenta una vez a los 3 s antes de
+// avisar; si después va bien, se puede volver a reintentar más adelante.
+const esPermiso=e=>String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0;
+const reintentado={};
+function reintentar(clave,fn){if(reintentado[clave])return false;reintentado[clave]=true;setTimeout(fn,3000);return true}
 function escucharPagos(){
   if(!db||!SALA||!NOCHE||pagosDe===NOCHE)return;
   if(typeof unsubPagos==="function")unsubPagos();
   const id=NOCHE;pagosDe=id;S.pagos=[];
   unsubPagos=colRef("noches").doc(id).collection("pagos").onSnapshot(qs=>{
     if(id!==NOCHE)return;
+    delete reintentado["pagos:"+id];
     S.pagos=qs.docs.map(x=>normPago(x.id,x.data())).filter(Boolean).sort((a,b)=>a.ts-b.ts);avisoPagos="";render();
   },e=>{
     console.warn("pagos:",e);
     if(id!==NOCHE||(auth&&!S.noches[id]))return;   // 028: una noche en la que ya no estás (te han quitado)
-    if(String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0)avisoPagos="Faltan las reglas nuevas de Firestore para los pagos (versión 015). Lo demás funciona; los pagos no se pueden apuntar hasta pegarlas en la consola de Firebase y volver a abrir la app.";
+    if(esPermiso(e)&&reintentar("pagos:"+id,()=>{if(id===NOCHE){pagosDe="";escucharPagos()}}))return;
+    if(esPermiso(e))avisoPagos="No se han podido leer los pagos de esta quedada (Firebase no da permiso). Recarga la app (Ctrl + F5 en el ordenador; en el móvil, ciérrala del todo y vuelve a abrirla). Si sigue, avisa a quien administra el grupo: puede que falten las reglas de Firestore de esta versión.";
     render();
   });
 }
@@ -1370,7 +1378,7 @@ const gLabel=o=>label(o)+(o.clarification?" · "+o.clarification:"");
 /* ===== Vistas ===== */
 function vMe(){
   // Con cuentas (025), quién eres no se elige en el móvil: lo dice tu ficha de miembro.
-  if(auth&&MIEMBRO)return`<p>Eres <b>${esc(me?pname(me):"(sin elegir)")}</b>${esAdmin()?" · administrador de la sala":""}.</p><p class="note">${esAdmin()?"Se cambia en Miembros, más abajo.":"Si no eres tú, pídeselo a un administrador."}</p>`;
+  if(auth&&MIEMBRO)return`<p>Eres <b>${esc(me?pname(me):"(sin elegir)")}</b>${esAdmin()?" · administrador del grupo":""}.</p><p class="note">${esAdmin()?"Se cambia en Miembros, más abajo.":"Si no eres tú, pídeselo a un administrador."}</p>`;
   return `<div class="selector-box${me?"":" need"}"><label for="selectMe">Eres:</label><select id="selectMe"><option value="">Elige quién eres…</option>${people().map(p=>`<option value="${p.id}"${p.id===me?" selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`;
 }
 function nodeAt(){
@@ -1454,12 +1462,12 @@ function vIdos(lista){
 function vParticipantes(){
   const t=S.noches[NOCHE]?S.noches[NOCHE].titulo:"";
   let h=`<div class="pad-head"><h2>👥 ¿Quién viene?</h2><button class="mini on" data-act="partsCerrar">✓ Listo</button></div>`;
-  h+=`<p class="note" style="margin:0 2px 10px">${esc(t)}. Solo los que están «aquí» salen en Pedir y en los repartos. Quien se va un rato o a casa, «se ha ido»: sigue en la noche con lo suyo.${auth?" Esta noche solo la ven los que están en ella (aquí o se han ido).":""}</p><div class="mine">`;
+  h+=`<p class="note" style="margin:0 2px 10px">${esc(t)}. Solo los que están «aquí» salen en Pedir y en los repartos. Quien se va un rato o a casa, «se ha ido»: sigue en la quedada con lo suyo.${auth?" Esta quedada solo la ven los que están en ella (aquí o se han ido).":""}</p><div class="mine">`;
   people().forEach(p=>{
     const e=estadoEn(p.id),fijo=tieneAlgo(p.id),yo=!!auth&&p.id===me;
-    h+=`<div class="drow"><b>${esc(p.name)}</b><div class="acts">`+[["aqui","Aquí"],["ido","🚶 Se ha ido"],["no","No vino"]].map(([k,txt])=>`<button class="mini${e===k?" on":""}" data-act="partsPon" data-id="${p.id}" data-e="${k}"${k==="no"&&(fijo||yo)?` disabled title="${yo?"Dejarías de ver la noche":"Tiene algo apuntado esta noche"}"`:""}>${txt}</button>`).join("")+`</div></div>`;
+    h+=`<div class="drow"><b>${esc(p.name)}</b><div class="acts">`+[["aqui","Aquí"],["ido","🚶 Se ha ido"],["no","No vino"]].map(([k,txt])=>`<button class="mini${e===k?" on":""}" data-act="partsPon" data-id="${p.id}" data-e="${k}"${k==="no"&&(fijo||yo)?` disabled title="${yo?"Dejarías de ver la noche":"Tiene algo apuntado en esta quedada"}"`:""}>${txt}</button>`).join("")+`</div></div>`;
   });
-  h+=`</div><button class="btn small" data-act="addPerson">＋ Alguien nuevo en la cuadrilla</button>`;
+  h+=`</div><button class="btn small" data-act="addPerson">＋ Alguien nuevo en el grupo</button>`;
   return h;
 }
 function vPedir(){
@@ -1476,7 +1484,7 @@ function vPedir(){
   if(ui.share||ui.sharePending||ui.shareEdit){const paso=vCompartirPaso(ps,paused);if(paso)return h+paso}
 
   if(!locked)h+=`<div class="row2" style="margin-bottom:10px"><button class="mini${ui.flow==="personas"?" on":""}" data-act="flow" data-id="personas">1º persona</button><button class="mini${ui.flow==="bebida"?" on":""}" data-act="flow" data-id="bebida">1º bebida</button></div>`;
-  if(!locked&&S.noches[NOCHE])h+=`<button class="mini" data-act="partsEdit" style="width:100%;margin-bottom:10px">👥 Quién viene esta noche · ${ps.length}${paused.length?` · 🚶 ${paused.length} se ha${paused.length===1?"":"n"} ido`:""}</button>`;
+  if(!locked&&S.noches[NOCHE])h+=`<button class="mini" data-act="partsEdit" style="width:100%;margin-bottom:10px">👥 Quién viene a esta quedada · ${ps.length}${paused.length?` · 🚶 ${paused.length} se ha${paused.length===1?"":"n"} ido`:""}</button>`;
 
   /* --- flujo: primero la bebida, luego a quién --- */
   if(!locked&&ui.flow==="bebida"){
@@ -1648,7 +1656,7 @@ function vCuentas(){
     h+="</tbody></table></section>";
     // Para quedar en paz: cada línea se salda de un toque; «＋ Apuntar un pago» para cualquier otro importe.
     if(st.length)h+=`<section class="card"><h2>Para quedar en paz</h2>${st.map(s=>`<div class="drow"><div>${esc(pname(s.from))} → ${esc(pname(s.to))}: <b>${eur(s.v)}</b></div>${avisoPagos?"":`<div class="acts"><button class="mini" data-act="pagoSaldar" data-de="${s.from}" data-a="${s.to}" data-v="${s.v}">✓ Pagado</button></div>`}</div>`).join("")}</section>`;
-    else if(S.rounds.length)h+=`<section class="card"><h2 class="pos">✓ Todo en paz</h2><p class="note">Nadie debe nada a nadie en esta noche.</p></section>`;
+    else if(S.rounds.length)h+=`<section class="card"><h2 class="pos">✓ Todo en paz</h2><p class="note">Nadie debe nada a nadie en esta quedada.</p></section>`;
   }
   if(S.rounds.length||S.pagos.length||avisoPagos){
     h+=`<section class="card"><h2>Pagos entre vosotros</h2>`;
@@ -1677,7 +1685,7 @@ function vCuentas(){
   }
   if(mode==="firebase"&&NOCHE&&S.noches[NOCHE]){
     const c=S.noches[NOCHE].carpeta==="c_recuperadas"?"c_otras":S.noches[NOCHE].carpeta;
-    h+=`<button class="btn" data-act="nocheNueva" data-carpeta="${esc(c)}">🌙 Nueva noche en «${esc(nombreCarpeta(c))}»</button><p class="note">Esta noche se queda guardada tal cual, con sus rondas y sus saldos. Puedes volver a ella desde la barra de arriba.</p>`;
+    h+=`<button class="btn" data-act="nocheNueva" data-carpeta="${esc(c)}">🍻 Nueva quedada en «${esc(nombreCarpeta(c))}»</button><p class="note">Esta quedada se queda guardada tal cual, con sus rondas y sus saldos. Puedes volver a ella desde la barra de arriba.</p>`;
   }
   return h;
 }
@@ -1720,13 +1728,13 @@ function vAjustes(){
   const ps=people(),am=S.config.assignerMode,used=usedIds();
   let h=vTuCuenta()+vMiembros()+`<section class="card"><h2>Este móvil</h2>${vMe()}<button class="btn small${askNote?" primary":""}" data-act="toggleAsk">${askNote?"✓":"○"} Preguntar aclaración al apuntar cada bebida</button><p class="note">Con esto apagado se apunta de un toque; la aclaración se añade después con "+ nota" en la lista de la persona.</p></section>`;
 
-  h+='<section class="card"><h2>Cuadrilla</h2><p class="note">Arrastra por ⠿ para cambiar el orden.</p><div data-droplist="people">';
+  h+='<section class="card"><h2>Gente del grupo</h2><p class="note">Arrastra por ⠿ para cambiar el orden.</p><div data-droplist="people">';
   ps.forEach(p=>{
     const u=personUsed(p.id);
-    h+=`<div class="set-row" data-key="${p.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" value="${esc(p.name)}" data-pname="${p.id}">${u?'<span class="lock" title="Ha participado en alguna noche">🔒</span>':`<button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar">×</button>`}</div>`;
+    h+=`<div class="set-row" data-key="${p.id}"><button class="grip" data-grip aria-label="Mover">⠿</button><input type="text" value="${esc(p.name)}" data-pname="${p.id}">${u?'<span class="lock" title="Ha estado en alguna quedada">🔒</span>':`<button class="x" data-act="rmPerson" data-id="${p.id}" aria-label="Quitar">×</button>`}</div>`;
   });
   h+='</div>';
-  h+='<p class="note">Aquí está toda la cuadrilla. Quién viene cada noche (o se ha ido un rato) se elige en Pedir › «👥 Quién viene esta noche». 🔒 = ha participado en alguna noche, así que no se puede borrar.</p><button class="btn" data-act="addPerson">+ Añadir persona</button></section>';
+  h+='<p class="note">Aquí está toda la gente del grupo. Quién viene a cada quedada (o se ha ido un rato) se elige en Pedir › «👥 Quién viene a esta quedada». 🔒 = ha estado en alguna quedada, así que no se puede borrar.</p><button class="btn" data-act="addPerson">+ Añadir persona</button></section>';
 
   h+='<section class="card"><h2>Modo asignador</h2><p class="note">Mientras está activo, solo esa persona puede apuntar o quitar bebidas en todos los móviles.</p>';
   if(!me)h+='<p class="note">Elige primero quién eres.</p>';
@@ -1735,19 +1743,19 @@ function vAjustes(){
   else h+=`<p>Lo tiene <b>${esc(pname(am))}</b>.</p><button class="btn warn" data-act="assignerOff">Forzar desactivación</button>`;
   h+='</section>';
 
-  h+=`<section class="card"><h2>Sala de la cuadrilla</h2><p class="note">Cada sala tiene sus pedidos, su cuadrilla, sus cartas y sus cuentas, sin mezclarse con las demás. ${auth?"Quien abra el enlace tendrá que pedir entrar, y alguien de dentro le aceptará.":"Comparte el enlace solo con los tuyos."}</p><p><b>Sala actual:</b> ${esc(NOMBRE_SALA||SALA)}${NOMBRE_SALA?` <span class="note">(código interno: ${esc(SALA)})</span>`:""}</p>${auth&&esAdmin()?`<button class="btn small" data-act="salaNombre">✏️ ${NOMBRE_SALA?"Cambiar el nombre de la sala":"Ponerle un nombre fácil a la sala"}</button>${NOMBRE_SALA?`<p class="note">Si lo cambias, el enlace con el nombre de ahora deja de valer (el del código interno sigue valiendo).</p>`:""}`:""}<button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de esta sala</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otra sala</button><button class="btn small" data-act="salaChange">↪ Entrar en otra sala</button></div><button class="btn small" data-act="salaClone">⧉ Copiar esta sala a un código nuevo</button><p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
+  h+=`<section class="card"><h2>El grupo</h2><p class="note">Cada grupo tiene su gente, sus quedadas, sus cartas y sus cuentas, sin mezclarse con los demás. ${auth?"Quien abra el enlace tendrá que pedir entrar, y alguien de dentro le aceptará.":"Comparte el enlace solo con los tuyos."}</p><p><b>Grupo actual:</b> ${esc(NOMBRE_SALA||SALA)}${NOMBRE_SALA?` <span class="note">(código interno: ${esc(SALA)})</span>`:""}</p>${auth&&esAdmin()?`<button class="btn small" data-act="salaNombre">✏️ ${NOMBRE_SALA?"Cambiar el nombre del grupo":"Ponerle un nombre fácil al grupo"}</button>${NOMBRE_SALA?`<p class="note">Si lo cambias, el enlace con el nombre de ahora deja de valer (el del código interno sigue valiendo).</p>`:""}`:""}<button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de este grupo</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otro grupo</button><button class="btn small" data-act="salaChange">↪ Entrar en otro grupo</button></div><button class="btn small" data-act="salaClone">⧉ Copiar este grupo a un código nuevo</button><p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
   h+=`<button class="btn primary" data-act="tab" data-id="carta">✏️ Editar «${esc(curMenu().name)}» · ${countProducts(catalog())} productos</button>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
   h+=`<button class="btn small${hasDefaultMenu()?"":" primary"}" data-act="menuFromDefault">+ Añadir la carta ${esc(DEFAULT_NAME)} (${countProducts(DEFAULT_CATALOG)} productos)</button>`;
   h+=`<button class="btn small primary" data-act="tab" data-id="importar">⬇️ Importar productos (Excel, Word, foto…)</button>`;
   h+=`<div class="row2"><button class="btn small" data-act="expTable">⬆️ Copiar como tabla</button><button class="btn small" data-act="expJson">⬆️ Copia de seguridad</button></div>`;
-  h+=`<p class="note">Las cartas se guardan en la base de datos compartida (bar/config → menus), así que las ve toda la cuadrilla y se editan desde cualquier móvil. "Copiar como tabla" da un texto que se pega tal cual en Excel.</p>`;
+  h+=`<p class="note">Las cartas se guardan en la base de datos compartida (bar/config → menus), así que las ve todo el grupo y se editan desde cualquier móvil. "Copiar como tabla" da un texto que se pega tal cual en Excel.</p>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuRename">✏️ Renombrar</button><button class="btn small warn" data-act="menuDel"${menus().length>1?"":" disabled"}>🗑 Borrar carta</button></div>`;
   h+=`<button class="btn small warn" data-act="menuDefaults">↻ Restaurar esta carta a la de por defecto</button><p class="note">Al restaurar se guarda antes una copia de seguridad de la carta actual, así que no se pierde nada.</p></section>`;
   h+=vBaresAjustes();
 
-  h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: noche nueva, vaciar la ronda en curso, corregir una ronda cerrada, borrar personas o cartas y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
+  h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: quedada nueva, vaciar la ronda en curso, corregir una ronda cerrada, borrar personas o cartas y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
   return h;
 }
 
@@ -1775,16 +1783,16 @@ function vImport(){
 // 028: con cuentas, quien no está en ninguna noche (recién aceptado, o sala nueva).
 const sinNoches=()=>!!auth&&mode==="firebase"&&nochesDelServidor&&migracionHecha&&!nochesLista().length;
 function vSinNoches(){
-  return`<section class="card" style="margin-top:20px"><h2>🌙 No estás en ninguna noche</h2><p class="note">Cada uno solo ve las noches en las que está. Cuando alguien te apunte en una («Quién viene»), te aparecerá aquí sola. También puedes empezar una.</p><button class="btn primary" data-act="nocheNueva" data-carpeta="c_otras">🌙 Empezar una noche</button><button class="btn small" data-act="tab" data-id="noches">Ver las carpetas</button></section>`;
+  return`<section class="card" style="margin-top:20px"><h2>🍻 No estás en ninguna quedada</h2><p class="note">Cada uno solo ve las quedadas en las que está. Cuando alguien te apunte en una («Quién viene»), te aparecerá aquí sola. También puedes empezar una.</p><button class="btn primary" data-act="nocheNueva" data-carpeta="c_otras">🍻 Empezar una quedada</button><button class="btn small" data-act="tab" data-id="noches">Ver las carpetas</button></section>`;
 }
 // «Otras» (donde van las noches sueltas) existe siempre.
 function asegurarOtras(){if(!S.carpetas.c_otras){S.carpetas.c_otras={name:"Otras",ts:Date.now()};dbUpdate("bar/carpetas",{"carpetas.c_otras":clone(S.carpetas.c_otras)},()=>({carpetas:clone(S.carpetas)}))}}
 /* Noches (014): carpetas, y dentro sus noches de la más reciente a la más antigua. */
 function vNoches(){
-  let h=`<div class="pad-head"><h2>Noches</h2><button class="mini" data-act="tab" data-id="pedir">← Volver</button></div>`;
-  if(mode!=="firebase")return h+`<p class="hint">Las noches necesitan conexión con la base de datos.</p>`;
+  let h=`<div class="pad-head"><h2>Quedadas</h2><button class="mini" data-act="tab" data-id="pedir">← Volver</button></div>`;
+  if(mode!=="firebase")return h+`<p class="hint">Las quedadas necesitan conexión con la base de datos.</p>`;
   h+=vCambiarSala();
-  h+=`<p class="note">Toca una noche para entrar en ella. Las noches no se borran: puedes volver a cualquiera para apuntar una ronda olvidada o corregir.</p>`;
+  h+=`<p class="note">Toca una quedada para entrar en ella. Las quedadas no se borran: puedes volver a cualquiera para apuntar una ronda olvidada o corregir.</p>`;
   const ns=nochesLista(),cs=carpetasLista(),ult=c=>Math.max(0,...ns.filter(n=>n.carpeta===c.id).map(n=>n.fecha||0));
   cs.sort((a,b)=>ult(b)-ult(a)||a.name.localeCompare(b.name,"es"));
   const bloque=(titulo,mias,cid)=>{
@@ -1793,9 +1801,9 @@ function vNoches(){
     // cuentas (028), solo un administrador: la carpeta puede tener noches de otros que no ves.
     const borrable=cid&&cid!=="c_otras"&&!mias.length&&(!auth||esAdmin());
     let b=`<section class="card"><h2 style="display:flex;align-items:center;gap:8px"><span style="flex:1">📁 ${esc(titulo)}</span>${cid?`<button class="linkish" data-act="carpetaRenombrar" data-id="${cid}" aria-label="Renombrar carpeta">✏️</button>`:""}${borrable?`<button class="linkish rm" data-act="carpetaBorrar" data-id="${cid}" aria-label="Borrar carpeta vacía">🗑</button>`:""}</h2>`;
-    b+=vis.length?vis.map(vNocheFila).join(""):`<p class="note">Sin noches todavía.</p>`;
+    b+=vis.length?vis.map(vNocheFila).join(""):`<p class="note">Sin quedadas todavía.</p>`;
     if(mias.length>5)b+=`<button class="linkish" data-act="carpetaTodas" data-id="${cid||"-"}">${todas?"Ver solo las últimas":"Ver las "+mias.length}</button>`;
-    if(cid&&cid!=="c_recuperadas")b+=`<button class="btn small" data-act="nocheNueva" data-carpeta="${cid}">＋ Nueva noche en ${esc(titulo)}</button>`;
+    if(cid&&cid!=="c_recuperadas")b+=`<button class="btn small" data-act="nocheNueva" data-carpeta="${cid}">＋ Nueva quedada en ${esc(titulo)}</button>`;
     return b+'</section>';
   };
   // 028: con cuentas, solo las carpetas en las que tienes alguna noche, «Otras» y las que creaste tú.
@@ -1806,7 +1814,7 @@ function vNoches(){
 }
 function vNocheFila(n){
   const aqui=n.id===NOCHE;
-  let h=`<div class="noche${aqui?" aqui":""}"><button class="ir" data-act="nocheIr" data-id="${n.id}"><b>${esc(n.titulo)}</b><span class="note">${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""}</span></button><button class="linkish" data-act="nocheRenombrar" data-id="${n.id}" aria-label="Renombrar noche">✏️</button><button class="linkish" data-act="nocheMover" data-id="${n.id}" aria-label="Mover a otra carpeta">📁</button></div>`;
+  let h=`<div class="noche${aqui?" aqui":""}"><button class="ir" data-act="nocheIr" data-id="${n.id}"><b>${esc(n.titulo)}</b><span class="note">${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""}</span></button><button class="linkish" data-act="nocheRenombrar" data-id="${n.id}" aria-label="Renombrar quedada">✏️</button><button class="linkish" data-act="nocheMover" data-id="${n.id}" aria-label="Mover a otra carpeta">📁</button></div>`;
   if(ui.moverNoche===n.id){
     const otras=carpetasLista().filter(c=>c.id!==n.carpeta);
     h+=`<div class="chips" style="margin:4px 0 10px">${otras.length?otras.map(c=>`<button class="chip" data-act="nocheMoverA" data-id="${n.id}" data-carpeta="${c.id}">→ ${esc(c.name)}</button>`).join(""):'<span class="note">No hay otras carpetas.</span>'}</div>`;
@@ -1894,7 +1902,7 @@ const mixTxt=m=>m?esc(m.options.map(o=>o.name+(o.extra?" +"+eur(o.extra):"")).jo
 function vCartaLista(){
   const used=usedIds(),q=canon(ui.cartaQ||"");
   if(q)return vCartaBusqueda(q,used);
-  let h=`<p class="note">Toca una categoría para abrirla. ⠿ = arrastrar para ordenar. ⧉ = duplicar. 🔒 = ya pedido esta noche: se puede cambiar el precio, pero no el nombre ni borrarlo.</p>`;
+  let h=`<p class="note">Toca una categoría para abrirla. ⠿ = arrastrar para ordenar. ⧉ = duplicar. 🔒 = ya pedido en esta quedada: se puede cambiar el precio, pero no el nombre ni borrarlo.</p>`;
   h+='<div data-droplist="cats">';
   catalog().forEach(c=>{
     const open=ui.cartaCat===c.id,cUsed=groupUsed(c,used),n=countProducts([c]);
@@ -1979,52 +1987,52 @@ const chipSala=id=>{const s=MIS_SALAS[id]||{},n=s.nombre||id;return`<button clas
 // Sin sala abierta, o fuera de ella: tus salas, para entrar de un toque.
 function vTusSalas(titulo){
   const ids=otrasSalas();if(!auth||!USER||!ids.length)return"";
-  return`<section class="card"${titulo?' style="margin-top:20px"':""}><h2>${titulo||"Tus salas"}</h2><div class="chips">${ids.map(chipSala).join("")}</div>${ids.some(id=>MIS_SALAS[id].estado==="pendiente")?`<p class="note" style="margin-top:6px">⏳ = has pedido entrar y aún no te han aceptado.</p>`:""}</section>`;
+  return`<section class="card"${titulo?' style="margin-top:20px"':""}><h2>${titulo||"Tus grupos"}</h2><div class="chips">${ids.map(chipSala).join("")}</div>${ids.some(id=>MIS_SALAS[id].estado==="pendiente")?`<p class="note" style="margin-top:6px">⏳ = has pedido entrar y aún no te han aceptado.</p>`:""}</section>`;
 }
 // En Noches (se llega tocando la barra de arriba): la sala en la que estás y cambiar a otra.
 function vCambiarSala(){
   if(!auth||!USER)return"";
   const ids=otrasSalas();
-  return`<section class="card"><h2>🏠 ${esc(NOMBRE_SALA||SALA)}</h2>${ids.length?`<p class="note">Cambiar a otra de tus salas:</p><div class="chips">${ids.map(chipSala).join("")}</div>`:`<p class="note">Es tu única sala.</p>`}<div class="row2" style="margin-top:8px"><button class="btn small" data-act="salaChange">↪ Entrar en otra sala</button>${USER.isAnonymous?"":`<button class="btn small" data-act="salaNew">+ Crear una sala</button>`}</div></section>`;
+  return`<section class="card"><h2>🏠 ${esc(NOMBRE_SALA||SALA)}</h2>${ids.length?`<p class="note">Cambiar a otro de tus grupos:</p><div class="chips">${ids.map(chipSala).join("")}</div>`:`<p class="note">Es tu único grupo.</p>`}<div class="row2" style="margin-top:8px"><button class="btn small" data-act="salaChange">↪ Entrar en otro grupo</button>${USER.isAnonymous?"":`<button class="btn small" data-act="salaNew">+ Crear un grupo</button>`}</div></section>`;
 }
 /* --- Miembros (025) --- */
-const otraSala=()=>`<section class="card"><h2>Otra sala</h2><div class="set-row"><input type="text" id="salaInput" placeholder="código de la sala" autocapitalize="off" autocorrect="off"></div><button class="btn small" data-act="salaEnter">Entrar en otra sala</button><button class="btn small" data-act="salaNew">+ Crear una sala</button></section>`;
+const otraSala=()=>`<section class="card"><h2>Otro grupo</h2><div class="set-row"><input type="text" id="salaInput" placeholder="código del grupo" autocapitalize="off" autocorrect="off"></div><button class="btn small" data-act="salaEnter">Entrar en otro grupo</button><button class="btn small" data-act="salaNew">+ Crear un grupo</button></section>`;
 // Con sesión pero sin ser de la sala: pedir entrar, esperar a que te acepten o reclamarla.
 function vEntrar(){
   if(ui.miembroError)return`<p class="status" style="color:var(--bad);margin-top:20px">⚠️ ${esc(ui.miembroError)}</p>`+vTuCuenta();
-  if(!miembroListo)return`<p class="hint">Comprobando la sala…</p>`;
+  if(!miembroListo)return`<p class="hint">Comprobando el grupo…</p>`;
   let h="";
   if(MIEMBRO&&MIEMBRO.rol==="pendiente")
-    h+=`<section class="card" style="margin-top:20px"><h2>⏳ Esperando a que te acepten</h2><p>Has pedido entrar en la sala <b>${esc(NOMBRE_SALA||SALA)}</b> como «${esc(MIEMBRO.nombre)}». En cuanto alguien de dentro te acepte, entrarás solo; no hace falta que cierres la app.</p><button class="btn small" data-act="mbCancelar">Cancelar la petición</button></section>`;
+    h+=`<section class="card" style="margin-top:20px"><h2>⏳ Esperando a que te acepten</h2><p>Has pedido entrar en el grupo <b>${esc(NOMBRE_SALA||SALA)}</b> como «${esc(MIEMBRO.nombre)}». En cuanto alguien de dentro te acepte, entrarás solo; no hace falta que cierres la app.</p><button class="btn small" data-act="mbCancelar">Cancelar la petición</button></section>`;
   else{
-    h+=`<section class="card" style="margin-top:20px"><h2>Pedir entrar</h2><p class="note">La sala <b>${esc(NOMBRE_SALA||SALA)}</b> es privada: pide entrar y alguien de dentro te aceptará.</p><input class="campo" type="text" id="mbNombre" value="${esc(ui.mbNombre||"")}" placeholder="¿Cómo te llaman en la cuadrilla?" autocomplete="nickname" aria-label="Tu nombre"><button class="btn primary" data-act="mbPedir">Pedir entrar</button></section>`;
-    if(USER&&!USER.isAnonymous)h+=`<section class="card"><h2>¿Administras la app?</h2><p class="note">Si esta sala es de antes de la versión 025 y todavía no tiene administrador, puedes reclamarla con la contraseña de crear salas. Solo se puede una vez.</p><button class="btn small" data-act="mbReclamar">Reclamar esta sala</button></section>`;
+    h+=`<section class="card" style="margin-top:20px"><h2>Pedir entrar</h2><p class="note">El grupo <b>${esc(NOMBRE_SALA||SALA)}</b> es privado: pide entrar y alguien de dentro te aceptará.</p><input class="campo" type="text" id="mbNombre" value="${esc(ui.mbNombre||"")}" placeholder="¿Cómo te llaman en el grupo?" autocomplete="nickname" aria-label="Tu nombre"><button class="btn primary" data-act="mbPedir">Pedir entrar</button></section>`;
+    if(USER&&!USER.isAnonymous)h+=`<section class="card"><h2>¿Administras la app?</h2><p class="note">Si este grupo es de antes de la versión 025 y todavía no tiene administrador, puedes reclamarlo con la contraseña de crear grupos. Solo se puede una vez.</p><button class="btn small" data-act="mbReclamar">Reclamar este grupo</button></section>`;
   }
   return h+vTusSalas()+otraSala()+vTuCuenta();
 }
 // Miembro sin persona (quien reclama una sala): elegir quién es de la cuadrilla.
 function vQuienEres(){
   const libres=people().filter(p=>!Object.keys(MIEMBROS).some(u=>u!==(USER&&USER.uid)&&MIEMBROS[u].persona===p.id));
-  return`<section class="card" style="margin-top:20px"><h2>¿Quién eres?</h2><p class="note">Elige quién eres en la cuadrilla de esta sala. Solo se pregunta una vez; si te equivocas, se cambia en Ajustes › Miembros.</p><div class="chips">${libres.map(p=>`<button class="chip" data-act="mbSoy" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div><button class="btn small" data-act="mbSoyNuevo">No estoy en la lista: añadirme</button></section>`;
+  return`<section class="card" style="margin-top:20px"><h2>¿Quién eres?</h2><p class="note">Elige quién eres en este grupo. Solo se pregunta una vez; si te equivocas, se cambia en Ajustes › Miembros.</p><div class="chips">${libres.map(p=>`<button class="chip" data-act="mbSoy" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div><button class="btn small" data-act="mbSoyNuevo">No estoy en la lista: añadirme</button></section>`;
 }
 const pendientes=()=>Object.keys(MIEMBROS).filter(u=>MIEMBROS[u].rol==="pendiente");
 function vAvisoPendientes(){
   const ps=pendientes();if(!ps.length)return"";
-  return`<p class="status">🔔 ${esc(ps.map(u=>MIEMBROS[u].nombre||"Alguien").join(", "))} ${ps.length===1?"quiere":"quieren"} entrar en la sala. <button class="linkish" data-act="mbVer">Ver</button></p>`;
+  return`<p class="status">🔔 ${esc(ps.map(u=>MIEMBROS[u].nombre||"Alguien").join(", "))} ${ps.length===1?"quiere":"quieren"} entrar en el grupo. <button class="linkish" data-act="mbVer">Ver</button></p>`;
 }
 function vMiembros(){
   if(!auth||!MIEMBRO)return"";
   const yo=USER&&USER.uid,admin=esAdmin();
   const ids=Object.keys(MIEMBROS).sort((a,b)=>(MIEMBROS[a].ts||0)-(MIEMBROS[b].ts||0));
   const pend=ids.filter(u=>MIEMBROS[u].rol==="pendiente"),den=ids.filter(u=>MIEMBROS[u].rol!=="pendiente");
-  let h=`<section class="card" id="miembros"><h2>Miembros de la sala</h2>`;
+  let h=`<section class="card" id="miembros"><h2>Miembros del grupo</h2>`;
   if(pend.length){
-    h+=`<p class="note">Quieren entrar. Elige quién es cada uno de la cuadrilla (o añádelo) y acéptalo:</p>`;
+    h+=`<p class="note">Quieren entrar. Elige quién es cada uno del grupo (o añádelo) y acéptalo:</p>`;
     pend.forEach(u=>{
       const m=MIEMBROS[u],igual=people().find(p=>canon(p.name)===canon(m.nombre));
       // En el móvil no caben en una fila: nombre, desplegable y botones, uno debajo de otro.
       h+=`<div class="miembro"><div><b>«${esc(m.nombre||"?")}»</b></div><div class="note">${esc([m.email||"sin cuenta",m.dispositivo].filter(Boolean).join(" · "))}</div>`+
-        `<select data-mbpersona="${u}" aria-label="Quién es">${people().map(p=>`<option value="${p.id}"${igual&&igual.id===p.id?" selected":""}>Es ${esc(p.name)}</option>`).join("")}<option value="nuevo"${igual?"":" selected"}>➕ Añadirle a la cuadrilla como «${esc(m.nombre||"Nuevo")}»</option></select>`+
+        `<select data-mbpersona="${u}" aria-label="Quién es">${people().map(p=>`<option value="${p.id}"${igual&&igual.id===p.id?" selected":""}>Es ${esc(p.name)}</option>`).join("")}<option value="nuevo"${igual?"":" selected"}>➕ Añadirle al grupo como «${esc(m.nombre||"Nuevo")}»</option></select>`+
         `<div class="acts"><button class="mini on" data-act="mbAceptar" data-id="${u}">Aceptar</button><button class="mini" data-act="mbRechazar" data-id="${u}">Rechazar</button></div></div>`;
     });
   }
@@ -2036,17 +2044,17 @@ function vMiembros(){
       (admin?`<select data-mbcambia="${u}" aria-label="Cambiar quién es">${people().map(p=>`<option value="${p.id}"${p.id===m.persona?" selected":""}>Es ${esc(p.name)}</option>`).join("")}${m.persona&&findP(m.persona)?"":`<option value="" selected>(sin elegir)</option>`}</select>`:"")+
       `${acts?`<div class="acts">${acts}</div>`:""}</div>`;
   });
-  h+=`<p class="note">Cualquiera de dentro puede aceptar a gente nueva. ${admin?"Como administrador, también puedes cambiar quién es cada uno, nombrar a otros administradores y quitar a alguien de la sala.":"Los administradores pueden además quitar a alguien o cambiar quién es."}</p></section>`;
+  h+=`<p class="note">Cualquiera de dentro puede aceptar a gente nueva. ${admin?"Como administrador, también puedes cambiar quién es cada uno, nombrar a otros administradores y quitar a alguien del grupo.":"Los administradores pueden además quitar a alguien o cambiar quién es."}</p></section>`;
   return h;
 }
 function vSala(){
-  const aviso=ui.salaError?`<section class="card" style="border-color:var(--bad)"><h2>⚠️ Ese código no vale</h2><p>La sala <b>${esc(SALA)}</b> no existe o no está autorizada. Comprueba el enlace que te han pasado.</p></section>`:"";
-  return aviso+vTusSalas(ui.salaError?"":"Tus salas")+`<section class="card" style="margin-top:20px"><h2>Entrar en una sala</h2>
-    <p class="note">La app funciona por salas: cada cuadrilla tiene la suya, con sus pedidos y sus cuentas. Necesitas el enlace o el código que te hayan pasado.</p>
-    <div class="set-row"><input type="text" id="salaInput" placeholder="código de la sala" autocapitalize="off" autocorrect="off"></div>
+  const aviso=ui.salaError?`<section class="card" style="border-color:var(--bad)"><h2>⚠️ Ese código no vale</h2><p>El grupo <b>${esc(SALA)}</b> no existe o no está autorizado. Comprueba el enlace que te han pasado.</p></section>`:"";
+  return aviso+vTusSalas(ui.salaError?"":"Tus grupos")+`<section class="card" style="margin-top:20px"><h2>Entrar en un grupo</h2>
+    <p class="note">La app funciona por grupos: cada cuadrilla de amigos tiene el suyo, con sus quedadas y sus cuentas. Necesitas el enlace o el código que te hayan pasado.</p>
+    <div class="set-row"><input type="text" id="salaInput" placeholder="código del grupo" autocapitalize="off" autocorrect="off"></div>
     <button class="btn primary" data-act="salaEnter">Entrar</button></section>
-    <section class="card"><h2>¿Administras la app?</h2><p class="note">Crear salas nuevas requiere la contraseña de crear salas${auth?" y una cuenta con email; quien la crea queda de administrador":""}.</p>
-    <button class="btn small" data-act="salaNew">+ Crear una sala</button></section>`+vTuCuenta();
+    <section class="card"><h2>¿Administras la app?</h2><p class="note">Crear grupos nuevos requiere la contraseña de crear grupos${auth?" y una cuenta con email; quien lo crea queda de administrador":""}.</p>
+    <button class="btn small" data-act="salaNew">+ Crear un grupo</button></section>`+vTuCuenta();
 }
 function vMezclas(){
   const f=findNode(catalog(),ui.mixFor);
@@ -2116,7 +2124,7 @@ function vModal(){
   if(ui.modal==="rbar")
     return sheet(`<h2>¿En qué bar fue esta ronda?</h2><p class="note">Si con ese bar cambiaría algún precio, verás cuáles y decides si usar los suyos o dejar los de la ronda. Después corrige con el ticket lo que no cuadre: el bar lo aprende. La ronda en curso no cambia.</p><input type="text" id="barInput" value="${esc(ui.barQ||"")}" placeholder="Escribe el bar…" autocomplete="off" aria-label="Bar"><div id="barLista" style="margin-top:10px">${vBarLista()}</div><div class="row2" style="margin-top:12px"><button class="btn small" data-act="barNone">Sin bar</button><button class="btn small" data-act="modalClose">Cancelar</button></div>`);
   if(ui.modal==="estado")
-    return sheet(`<h2>Estado</h2><p>${mode==="firebase"?((netCache||netPending)?"📴 Sin cobertura: apuntas igual y se envía al recuperarla.":"🟢 Compartida con toda la cuadrilla, al instante."):mode==="connecting"?"Conectando…":"⚠️ Sin conexión con la base de datos: solo se guarda en este móvil."}</p><p class="note">Sala <b>${esc(SALA)}</b> · ronda ${S.current.n}${S.current.name?" · "+esc(S.current.name):""} · ${S.rounds.length} cerrada${S.rounds.length===1?"":"s"} · versión ${APP_VERSION}${USER?` · ${USER.isAnonymous?"sin cuenta":esc(USER.email||"")}`:""}</p><button class="btn small" data-act="modalClose">Cerrar</button>`);
+    return sheet(`<h2>Estado</h2><p>${mode==="firebase"?((netCache||netPending)?"📴 Sin cobertura: apuntas igual y se envía al recuperarla.":"🟢 Compartida con todo el grupo, al instante."):mode==="connecting"?"Conectando…":"⚠️ Sin conexión con la base de datos: solo se guarda en este móvil."}</p><p class="note">Grupo <b>${esc(SALA)}</b> · ronda ${S.current.n}${S.current.name?" · "+esc(S.current.name):""} · ${S.rounds.length} cerrada${S.rounds.length===1?"":"s"} · versión ${APP_VERSION}${USER?` · ${USER.isAnonymous?"sin cuenta":esc(USER.email||"")}`:""}</p><button class="btn small" data-act="modalClose">Cerrar</button>`);
   return"";
 }
 function render(force){
@@ -2150,13 +2158,13 @@ function render(force){
   nb.style.display=conNoches?"":"none";
   // Con más de una sala (027), delante va en cuál estás.
   const enSala=auth&&Object.keys(MIS_SALAS).length>1?`🏠 ${esc(NOMBRE_SALA||SALA)} › `:"";
-  if(conNoches)nb.innerHTML=NOCHE&&S.noches[NOCHE]?`${enSala}📁 ${esc(nombreCarpeta(S.noches[NOCHE].carpeta))} › <b>${esc(S.noches[NOCHE].titulo)}</b> <span aria-hidden="true">▾</span>`:"Cargando las noches…";
+  if(conNoches)nb.innerHTML=NOCHE&&S.noches[NOCHE]?`${enSala}📁 ${esc(nombreCarpeta(S.noches[NOCHE].carpeta))} › <b>${esc(S.noches[NOCHE].titulo)}</b> <span aria-hidden="true">▾</span>`:"Cargando las quedadas…";
   let html;
   // Sin noche elegida todavía no se puede apuntar: lo apuntado no tendría dónde guardarse.
   const esperandoNoche=mode==="firebase"&&SALA&&!NOCHE&&["pedir","comanda","reparto","cuentas","stats","ronda"].includes(ui.tab);
-  if(conNoches&&!NOCHE&&sinNoches())nb.innerHTML=`${enSala}🌙 No estás en ninguna noche <span aria-hidden="true">▾</span>`;
-  if(conNoches&&avisoReglas)nb.textContent="⚠️ Faltan las reglas nuevas";
-  try{html=avisoReglas&&esperandoNoche?`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoReglas)}</p>`:esperandoNoche&&sinNoches()?vSinNoches():esperandoNoche?`<p class="hint">Cargando las noches…</p>`:VIEWS[ui.tab]()}catch(err){console.error(err);html=`<p class="hint">⚠️ Error en esta pestaña: ${esc(err.message)}</p>`}
+  if(conNoches&&!NOCHE&&sinNoches())nb.innerHTML=`${enSala}🍻 No estás en ninguna quedada <span aria-hidden="true">▾</span>`;
+  if(conNoches&&avisoReglas)nb.textContent="⚠️ No se pueden leer las quedadas";
+  try{html=avisoReglas&&esperandoNoche?`<p class="status" style="color:var(--bad)">⚠️ ${esc(avisoReglas)}</p>`:esperandoNoche&&sinNoches()?vSinNoches():esperandoNoche?`<p class="hint">Cargando las quedadas…</p>`:VIEWS[ui.tab]()}catch(err){console.error(err);html=`<p class="hint">⚠️ Error en esta pestaña: ${esc(err.message)}</p>`}
   $("#view").innerHTML=html;
   $("#modal").innerHTML=vModal();
 }
@@ -2452,7 +2460,7 @@ document.addEventListener("click",e=>{
     /* --- participantes de la noche (017) --- */
     case"partsEdit":if(isLocked())return;ui.partsEdit=true;ui.multi=false;ui.pending=null;ui.path=[];window.scrollTo(0,0);break;
     case"partsCerrar":ui.partsEdit=false;break;
-    case"partsPon":if(isLocked())return;if(b.dataset.e==="no"&&tieneAlgo(id)){flash("Tiene algo apuntado esta noche");return}ponEstado(id,b.dataset.e);break;
+    case"partsPon":if(isLocked())return;if(b.dataset.e==="no"&&tieneAlgo(id)){flash("Tiene algo apuntado en esta quedada");return}ponEstado(id,b.dataset.e);break;
     case"volver":if(isLocked())return;ponEstado(id,"aqui");flash("Ha vuelto: "+pname(id));break;
     /* --- pagos entre personas (015) --- */
     case"pagoSaldar":{
@@ -2482,7 +2490,7 @@ document.addEventListener("click",e=>{
       const c=S.carpetas[id];if(!c||id==="c_otras")return;
       if(auth&&!esAdmin())return;
       if(Object.values(S.noches).some(n=>n.carpeta===id)){flash("Solo se pueden borrar carpetas vacías");return}
-      if(!confirm(auth?`¿Borrar la carpeta «${c.name}»? Para ti está vacía, pero puede tener noches de otros que no ves: si las tiene, pasarán a «Sin carpeta».`:`¿Borrar la carpeta «${c.name}»? Está vacía.`))return;
+      if(!confirm(auth?`¿Borrar la carpeta «${c.name}»? Para ti está vacía, pero puede tener quedadas de otros que no ves: si las tiene, pasarán a «Sin carpeta».`:`¿Borrar la carpeta «${c.name}»? Está vacía.`))return;
       delete S.carpetas[id];
       if(mode==="firebase")dbUpdate("bar/carpetas",{["carpetas."+id]:DEL()},()=>({carpetas:clone(S.carpetas)}));
       flash("Carpeta borrada");break;
@@ -2490,10 +2498,10 @@ document.addEventListener("click",e=>{
     case"nocheIr":if(!S.noches[id])return;if(id!==NOCHE)cambiarNoche(id);ui.tab="pedir";window.scrollTo(0,0);flash("Estás en "+S.noches[id].titulo);break;
     case"nocheNueva":{
       const c=b.dataset.carpeta||"c_otras",def=`${nombreCarpeta(c)} · ${fechaCorta(Date.now())}`;
-      const t=prompt("Nombre de la noche nueva:",def);if(t===null)return;
+      const t=prompt("Nombre de la quedada nueva:",def);if(t===null)return;
       if(!S.carpetas[c])asegurarOtras();
       // Al empezar la noche, a elegir quién viene (de partida, los de la última noche de esa carpeta).
-      crearNoche(S.carpetas[c]?c:"c_otras",(t.trim()||def));ui.tab="pedir";ui.partsEdit=true;window.scrollTo(0,0);flash("Noche nueva: "+S.noches[NOCHE].titulo);break;
+      crearNoche(S.carpetas[c]?c:"c_otras",(t.trim()||def));ui.tab="pedir";ui.partsEdit=true;window.scrollTo(0,0);flash("Quedada nueva: "+S.noches[NOCHE].titulo);break;
     }
     case"carpetaNueva":{const t=(prompt("Nombre de la carpeta (p. ej. Fiestas del pueblo 2026):")||"").trim();if(!t)return;crearCarpeta(t);flash("Carpeta creada: "+t);break}
     case"carpetaRenombrar":{
@@ -2502,7 +2510,7 @@ document.addEventListener("click",e=>{
     }
     case"carpetaTodas":ui.carpetaTodas=Object.assign({},ui.carpetaTodas,{[id]:!(ui.carpetaTodas&&ui.carpetaTodas[id])});break;
     case"nocheRenombrar":{
-      const n=S.noches[id];if(!n)return;const t=(prompt("Nombre de la noche:",n.titulo)||"").trim();if(!t||t===n.titulo)return;
+      const n=S.noches[id];if(!n)return;const t=(prompt("Nombre de la quedada:",n.titulo)||"").trim();if(!t||t===n.titulo)return;
       n.titulo=t.slice(0,60);dbUpdate("noches/"+id,{titulo:n.titulo});break;
     }
     case"nocheMover":ui.moverNoche=ui.moverNoche===id?null:id;break;
@@ -2531,10 +2539,10 @@ document.addEventListener("click",e=>{
       flash(String(v).trim()?"PIN guardado":"PIN quitado");return;
     }
     case"rmPerson":{
-      if(personUsed(id)){flash("Ya ha participado esta noche: ponlo en pausa");return}
+      if(personUsed(id)){flash("Ya ha estado en alguna quedada: no se puede quitar del grupo");return}
       if(people().length<2)return;
       if(!requirePin())return;
-      if(!confirm(`¿Quitar a ${pname(id)} de la cuadrilla?${auth?" Ojo: puede estar en noches que tú no ves; en ellas saldría como «?».":""}`))return;
+      if(!confirm(`¿Quitar a ${pname(id)} del grupo?${auth?" Ojo: puede estar en quedadas que tú no ves; en ellas saldría como «?».":""}`))return;
       editConfig(c=>{c.people=c.people.filter(p=>p.id!==id)});return;
     }
     case"assignerOn":if(me&&!S.config.assignerMode)editConfig(c=>{c.assignerMode=me});return;
@@ -2558,17 +2566,17 @@ document.addEventListener("click",e=>{
     case"salaCopy":copyOut(salaLink(),"Enlace copiado: ya puedes compartirlo");return;
     case"salaNombre":{
       if(!auth||!esAdmin())return;
-      const v=limpiaNombre(prompt("Nombre fácil para el enlace de la sala (p. ej. portugalete). Letras sin acentos, números o guiones:",NOMBRE_SALA||"")||"");
+      const v=limpiaNombre(prompt("Nombre fácil para el enlace del grupo (p. ej. portugalete). Letras sin acentos, números o guiones:",NOMBRE_SALA||"")||"");
       if(!v||v===NOMBRE_SALA)return;
       if(!salaOk(v)){alert("Ese nombre no vale: entre 2 y 24 letras, números o guiones.");return}
       ponerNombreSala(v);return;
     }
     case"salaIr":if(salaOk(id)&&id!==SALA&&id!==NOMBRE_SALA)irASala(id);return;
     case"salaChange":{
-      const v=(prompt("Código de la sala a la que quieres entrar:",SALA)||"").trim().toLowerCase();
+      const v=(prompt("Código del grupo en el que quieres entrar:",SALA)||"").trim().toLowerCase();
       if(!v||v===SALA)return;
       if(!salaOk(v)){alert("Código no válido: entre 2 y 24 letras, números o guiones, sin espacios ni acentos.");return}
-      if(!confirm(`Vas a entrar en la sala "${v}". Se recargará la app y verás los datos de esa cuadrilla.`))return;
+      if(!confirm(`Vas a entrar en el grupo "${v}". Se recargará la app y verás los datos de ese grupo.`))return;
       irASala(v);return;
     }
     /* --- cuenta (024) --- */
@@ -2615,20 +2623,20 @@ document.addEventListener("click",e=>{
     case"mbCancelar":if(auth&&USER)root().collection("miembros").doc(USER.uid).delete();return;
     case"mbReclamar":{
       if(!auth||!USER||USER.isAnonymous)return;
-      const clave=(prompt("Contraseña de crear salas:","")||"").trim();if(!clave)return;
+      const clave=(prompt("Contraseña de crear grupos:","")||"").trim();if(!clave)return;
       // En un solo lote: la marca de que se ha reclamado (una vez) y tu ficha de administrador.
       const bt=db.batch(),ahora=Date.now();
       bt.set(db.collection("reclamos").doc(SALA),{clave,uid:USER.uid,ts:ahora});
       bt.set(root().collection("miembros").doc(USER.uid),{rol:"admin",persona:"",nombre:"",email:USER.email||"",ts:ahora,dispositivo:dispositivo()});
-      bt.commit().then(()=>flash("Ya eres administrador de esta sala"))
-        .catch(e=>{console.warn(e);alert("No se ha podido reclamar: o la contraseña no es correcta, o esta sala ya tenía administrador.")});
+      bt.commit().then(()=>flash("Ya eres administrador de este grupo"))
+        .catch(e=>{console.warn(e);alert("No se ha podido reclamar: o la contraseña no es correcta, o este grupo ya tenía administrador.")});
       return;
     }
     case"mbSoy":case"mbSoyNuevo":{
       if(!auth||!USER||!MIEMBRO)return;
       let pid=id;
       if(b.dataset.act==="mbSoyNuevo"){
-        const n=(prompt("¿Cómo te llaman en la cuadrilla?",ui.mbNombre||"")||"").trim().slice(0,30);if(!n)return;
+        const n=(prompt("¿Cómo te llaman en el grupo?",ui.mbNombre||"")||"").trim().slice(0,30);if(!n)return;
         pid=uid("p");editConfig(c=>c.people.push({id:pid,name:n,paused:false}));
       }
       if(!findP(pid))return;
@@ -2657,7 +2665,7 @@ document.addEventListener("click",e=>{
     }
     case"mbQuitar":{
       const m=MIEMBROS[id];if(!m||!esAdmin()||id===USER.uid)return;
-      if(!confirm(`¿Quitar de la sala a ${m.persona&&findP(m.persona)?pname(m.persona):"«"+m.nombre+"»"}${m.email?" ("+m.email+")":""}? Dejará de ver la sala; lo apuntado se queda.`))return;
+      if(!confirm(`¿Quitar del grupo a ${m.persona&&findP(m.persona)?pname(m.persona):"«"+m.nombre+"»"}${m.email?" ("+m.email+")":""}? Dejará de ver el grupo; lo apuntado se queda.`))return;
       root().collection("miembros").doc(id).delete();return;
     }
     case"salaEnter":{
@@ -2668,26 +2676,26 @@ document.addEventListener("click",e=>{
       irASala(v);return;
     }
     case"salaNew":{
-      if(auth&&(!USER||USER.isAnonymous)){alert("Para crear una sala necesitas una cuenta con email. Puedes ponérsela a esta sesión en «Tu cuenta».");return}
-      const base=(prompt("Nombre de la sala nueva (p. ej. cuadrilla-txus). Será también su código:","")||"").trim().toLowerCase()
+      if(auth&&(!USER||USER.isAnonymous)){alert("Para crear un grupo necesitas una cuenta con email. Puedes ponérsela a esta sesión en «Tu cuenta».");return}
+      const base=(prompt("Nombre del grupo nuevo (p. ej. cuadrilla-txus). Será también su código:","")||"").trim().toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
       if(!base)return;
       const code=codigoSala(base);
       if(!salaOk(code)){alert("Ese nombre no vale: entre 2 y 24 letras, números o guiones.");return}
       let nombre="";
-      if(auth){nombre=(prompt("¿Cómo te llaman en la cuadrilla?",(USER.email||"").split("@")[0])||"").trim().slice(0,30);if(!nombre)return}
-      const clave=(prompt("Contraseña de crear salas:","")||"").trim();
+      if(auth){nombre=(prompt("¿Cómo te llaman en el grupo?",(USER.email||"").split("@")[0])||"").trim().slice(0,30);if(!nombre)return}
+      const clave=(prompt("Contraseña de crear grupos:","")||"").trim();
       if(!clave)return;
       crearSala(code,clave,false,"p1",nombre);return;
     }
     case"salaClone":{
-      if(auth&&(!USER||USER.isAnonymous)){alert("Para crear una sala necesitas una cuenta con email.");return}
-      const base=(prompt("Código nuevo para copiar esta sala:",SALA.replace(/-[a-z0-9]{5}$/,""))||"").trim().toLowerCase()
+      if(auth&&(!USER||USER.isAnonymous)){alert("Para crear un grupo necesitas una cuenta con email.");return}
+      const base=(prompt("Código nuevo para copiar este grupo:",SALA.replace(/-[a-z0-9]{5}$/,""))||"").trim().toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
       if(!base)return;
       const code=codigoSala(base);
       if(!salaOk(code)){alert("Ese código no vale: entre 2 y 24 letras, números o guiones.");return}
-      const clave=(prompt("Contraseña de crear salas:","")||"").trim();
+      const clave=(prompt("Contraseña de crear grupos:","")||"").trim();
       if(!clave)return;
       copiarSala(code,clave);return;
     }
@@ -2720,7 +2728,7 @@ document.addEventListener("click",e=>{
       if(menus().length<2)return;
       if(!requirePin())return;
       const used=usedIds(),m=curMenu();
-      if(m.catalog.some(c=>c.items.some(it=>used.has(it.id)))){flash("Tiene bebidas pedidas esta noche");return}
+      if(m.catalog.some(c=>c.items.some(it=>used.has(it.id)))){flash("Tiene bebidas pedidas en esta quedada");return}
       if(!confirm(`¿Borrar la carta "${m.name}"?`))return;
       editConfig(c=>{c.menus=c.menus.filter(x=>x.id!==m.id);c.menu=c.menus[0].id});ui.path=[];return;
     }
@@ -2785,7 +2793,7 @@ document.addEventListener("click",e=>{
     }
     case"rmCat":{
       const f=findNode(catalog(),id);if(!f)return;
-      if(groupUsed(f.node,usedIds())){flash("Contiene productos pedidos esta noche");return}
+      if(groupUsed(f.node,usedIds())){flash("Contiene productos pedidos en esta quedada");return}
       const cuantos=(f.node.items||[]).length;
       if(!confirm(`¿Borrar "${f.node.name}"${cuantos?` y sus ${cuantos} elementos`:""}?`))return;
       ui.path=[];
@@ -2814,7 +2822,7 @@ document.addEventListener("click",e=>{
       flash("Duplicado: "+n.trim());return;
     }
     case"rmItem":{
-      if(usedIds().has(id)){flash("Ya se ha pedido esta noche");return}
+      if(usedIds().has(id)){flash("Ya se ha pedido en esta quedada");return}
       if(!confirm(`¿Borrar "${IDX[id]?IDX[id].name:""}" de la carta?`))return;
       editMenu(m=>{const g=findNode(m.catalog,id);if(g)g.list.splice(g.list.indexOf(g.node),1)});return;
     }
@@ -2974,7 +2982,7 @@ async function crearSala(code,clave,silencio,persona,nombre){
   try{
     const ref=db.collection("salas").doc(code);
     const [ya,nom]=await Promise.all([ref.get(),db.collection("nombres").doc(code).get()]);
-    if(ya.exists||nom.exists){alert("Ya hay una sala con ese nombre. Elige otro.");return false}
+    if(ya.exists||nom.exists){alert("Ya hay un grupo con ese nombre. Elige otro.");return false}
     // La clave va a un documento aparte que las reglas no dejan leer; la sala no la guarda.
     // Con cuentas (025), en el mismo lote quien la crea queda de administrador.
     const b=db.batch(),ahora=Date.now();
@@ -2987,7 +2995,7 @@ async function crearSala(code,clave,silencio,persona,nombre){
     return true;
   }catch(e){
     console.warn(e);
-    alert("No se ha podido crear la sala. Si la contraseña de crear salas no es correcta, la base de datos rechaza la creación.");
+    alert("No se ha podido crear el grupo. Si la contraseña de crear grupos no es correcta, la base de datos rechaza la creación.");
     return false;
   }
 }
@@ -3005,7 +3013,7 @@ async function copiarSala(code,clave){
     }
     await destino.collection("bar").doc("migracion014").set({ts:Date.now(),por:me||"",copiaDe:SALA});
     irASala(code);
-  }catch(e){console.error(e);alert("La sala se creó, pero no se pudieron copiar todos los datos.")}
+  }catch(e){console.error(e);alert("El grupo se creó, pero no se pudieron copiar todos los datos.")}
 }
 function goLocal(err){
   if(err)console.error(err);
@@ -3033,7 +3041,7 @@ async function resolverNombre(){
 async function ponerNombreSala(v){
   try{
     const [n,s]=await Promise.all([db.collection("nombres").doc(v).get(),db.collection("salas").doc(v).get()]);
-    if(n.exists||s.exists){alert(v===SALA?"Ese ya es el código de esta sala.":"Ese nombre ya lo usa otra sala. Elige otro.");return}
+    if(n.exists||s.exists){alert(v===SALA?"Ese ya es el código de este grupo.":"Ese nombre ya lo usa otro grupo. Elige otro.");return}
     const b=db.batch(),antes=NOMBRE_SALA,ahora=Date.now();
     b.set(db.collection("nombres").doc(v),{sala:SALA,ts:ahora,por:USER.uid});
     if(antes&&antes!==v)b.delete(db.collection("nombres").doc(antes));
@@ -3041,7 +3049,7 @@ async function ponerNombreSala(v){
     await b.commit();
     NOMBRE_SALA=v;lsSet("ronda.sala",v);sincronizarMiSala();
     try{history.replaceState(null,"",location.pathname+"?sala="+v)}catch(e){}
-    flash("La sala se llama ahora "+v);render();
+    flash("El grupo se llama ahora "+v);render();
   }catch(e){console.warn(e);alert("No se ha podido poner el nombre. Mira la conexión y vuelve a probar.")}
 }
 // Tu ficha de miembro de esta sala. Si eres miembro, arrancan los datos; si no, «Pedir entrar».
@@ -3058,10 +3066,12 @@ function escucharMiembro(){
     sincronizarMiSala();
     render();
   },e=>{
-    console.warn("miembro:",e);miembroListo=true;
+    console.warn("miembro:",e);
+    if(esPermiso(e)&&reintentar("miembro",escucharMiembro))return;   // 029: un reintento antes de avisar
+    miembroListo=true;
     ui.miembroError=String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0
-      ?"Faltan las reglas nuevas de Firestore (versión 025): sin ellas no se puede comprobar quién es de la sala. Hay que pegarlas en la consola de Firebase y volver a abrir la app."
-      :"No se ha podido comprobar si eres de esta sala. Mira la conexión y vuelve a abrir la app.";
+      ?"No se ha podido comprobar si eres de este grupo (Firebase no da permiso). Recarga la app (Ctrl + F5 en el ordenador; en el móvil, ciérrala del todo y vuelve a abrirla). Si sigue, puede que falten las reglas de Firestore de esta versión."
+      :"No se ha podido comprobar si eres de este grupo. Mira la conexión y vuelve a abrir la app.";
     render();
   });
 }
@@ -3136,8 +3146,12 @@ function escucharNoches(){
     S.noches=ns;NOCHES_DATA=datos;
     if(!md.fromCache)nochesDelServidor=true;
     if(NOCHE&&datos[NOCHE])S.current=Object.assign(normCurrent(datos[NOCHE]),{night:NOCHE});
+    delete reintentado["noches:"+clave];
     avisoReglas="";asegurarNoche();render();
-  },errorNoches);
+  },e=>{
+    if(esPermiso(e)&&reintentar("noches:"+clave,()=>{if(nochesDe===clave){nochesDe=null;escucharNoches()}})){console.warn("noches:",e);return}
+    errorNoches(e);
+  });
 }
 // 028: las noches de antes no tienen «quien». Se pone una vez, con sus participantes (o, si no los
 // tienen, con toda la cuadrilla, como hasta ahora). Solo se puede mientras las reglas de Firestore
@@ -3154,7 +3168,7 @@ function asegurarQuien(){
 // decirlo claro en vez de «ese código de sala no vale».
 function errorNoches(e){
   console.warn("noches:",e);
-  if(String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0){avisoReglas="Faltan las reglas nuevas de Firestore: sin ellas no se pueden leer ni guardar las noches. Hay que pegarlas en la consola de Firebase y después volver a abrir la app. No se ha perdido nada.";render();return}
+  if(String(e&&(e.code||e.message)||"").toLowerCase().indexOf("permission")>=0){avisoReglas="No se han podido leer las quedadas (Firebase no da permiso). Recarga la app (Ctrl + F5 en el ordenador; en el móvil, ciérrala del todo y vuelve a abrirla). Si sigue, puede que falten las reglas de Firestore de esta versión. No se ha perdido nada.";render();return}
   goLocal(e);
 }
 const normCarpetas=m=>{const o={};Object.keys(m||{}).forEach(id=>{const c=m[id];if(c&&c.name){o[id]={name:String(c.name).slice(0,40),ts:Number(c.ts)||0};if(typeof c.por==="string"&&c.por)o[id].por=c.por}});return o};
@@ -3169,12 +3183,16 @@ function escucharRondas(){
   // las noches de antes nunca llegaban a guardar sus participantes).
   unsubRondas=colRef("noches").doc(id).collection("rounds").onSnapshot({includeMetadataChanges:true},qs=>{
     if(id!==NOCHE)return;
-    rondasCargadas=true;
+    rondasCargadas=true;delete reintentado["rondas:"+id];
     S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,normRonda(d))});
     actualizarResumen();
     if(!(qs.metadata&&qs.metadata.fromCache))asegurarListaParticipantes();
     render();
-  },e=>{if(id!==NOCHE||(auth&&!S.noches[id])){console.warn("rondas:",e);return}errorNoches(e)});   // 028: ídem
+  },e=>{
+    if(id!==NOCHE||(auth&&!S.noches[id])){console.warn("rondas:",e);return}   // 028: ídem
+    if(esPermiso(e)&&reintentar("rondas:"+id,()=>{if(id===NOCHE){rondasDe="";escucharRondas()}})){console.warn("rondas:",e);return}
+    errorNoches(e);
+  });
 }
 // Que siempre haya una noche elegida: la recordada, si no la más reciente; si no hay ninguna
 // (sala nueva, o se borraron todas desde Firebase), se crea una en «Otras».
@@ -3188,7 +3206,7 @@ function asegurarNoche(){
   // una si quiere (si no, a alguien recién aceptado se le crearía una noche con toda la cuadrilla).
   if(auth){if(NOCHE){NOCHE="";S.current=normCurrent({});S.rounds=[]}return}
   asegurarOtras();
-  crearNoche("c_otras","Noche · "+fechaCorta(Date.now()));
+  crearNoche("c_otras","Quedada · "+fechaCorta(Date.now()));
 }
 // La conversión de lo de antes de la 014 se hace una sola vez por sala (marca bar/migracion014),
 // y solo leyendo del servidor: decidirlo con lo guardado en el móvil podría pisar datos.
@@ -3241,14 +3259,14 @@ async function migrar014(){
   // Lo de ahora (ronda en curso y rondas cerradas) pasa a ser la primera noche, en «Pintxopote».
   const fAct=fechaDe(rondas)||ahora;
   guardar(idAct,Object.assign({n:1,name:"",bar:"",orders:{},delivered:{},shared:{}},viejo||{},{night:idAct,
-    titulo:(hayAlgo?"Pintxopote · ":"Noche · ")+fechaCorta(fAct),fecha:fAct,carpeta:hayAlgo?"c_pintxopote":"c_otras",
+    titulo:(hayAlgo?"Pintxopote · ":"Quedada · ")+fechaCorta(fAct),fecha:fAct,carpeta:hayAlgo?"c_pintxopote":"c_otras",
     creada:ahora,por:me||"",rondas:rondas.length,total:sumar(rondas)}),rondas);
   // Las noches del archivo, en «Recuperadas del archivo», sin ronda en curso.
   Object.keys(porNoche).forEach(nid=>{
     const rr=porNoche[nid].map(d=>{const o=Object.assign({},d);["night","roundId","people","savedTs","savedBy"].forEach(k=>delete o[k]);return o});
     const f=fechaDe(rr),ult=rr.slice().sort((a,b)=>(Number(b.n)||0)-(Number(a.n)||0))[0]||{};
     guardar(nid,{n:(Number(ult.n)||0)+1,name:ult.name||"",bar:ult.bar||"",night:nid,orders:{},delivered:{},shared:{},
-      titulo:"Noche del "+fechaCorta(f||ahora),fecha:f||ahora,carpeta:"c_recuperadas",creada:ahora,por:me||"",rondas:rr.length,total:sumar(rr)},rr);
+      titulo:"Quedada del "+fechaCorta(f||ahora),fecha:f||ahora,carpeta:"c_recuperadas",creada:ahora,por:me||"",rondas:rr.length,total:sumar(rr)},rr);
   });
   await Promise.all(pend);
   await docRef("bar/migracion014").set({ts:ahora,por:me||"",noche:idAct,recuperadas:Object.keys(porNoche).length});
@@ -3263,7 +3281,7 @@ async function comprobarViejo(tsMarca){
     let ult=0;
     if(cur.exists){const c=normCurrent(cur.data());Object.keys(c.orders).forEach(p=>(c.orders[p]||[]).forEach(o=>{ult=Math.max(ult,Number(o.ts)||0)}))}
     rs.docs.forEach(x=>{ult=Math.max(ult,Number((x.data()||{}).ts)||0)});
-    avisoViejo=ult>tsMarca?"Alguien ha apuntado con una versión anterior de Eskari, y eso no sale en las noches. Que actualice la app (si la tiene instalada, cerrarla del todo y volver a abrirla).":"";
+    avisoViejo=ult>tsMarca?"Alguien ha apuntado con una versión anterior de Eskari, y eso no sale en las quedadas. Que actualice la app (si la tiene instalada, cerrarla del todo y volver a abrirla).":"";
     render();
   }catch(e){}
 }
