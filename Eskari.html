@@ -425,7 +425,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="031";
+const APP_VERSION="032";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -452,10 +452,19 @@ let S=loadLocal(), IDX={}, mode=db?"connecting":"local", pending=false;
    cerradas van en noches/{id}/rounds. Cada móvil recuerda en qué noche está (ronda.noche.<sala>). --- */
 let NOCHE=lsGet("ronda.noche."+SALA)||"";
 S.noches={};S.carpetas={};
+// 032: las rondas de la quedada en la papelera van aparte de S.rounds, así no cuentan en saldos,
+// historial ni estadísticas sin tener que tocar cada cálculo.
+S.papRondas=[];
 let NOCHES_DATA={};            // datos completos de cada noche, tal como llegan de la base de datos
 let migracionHecha=false;      // se sabe que existe bar/migracion014
 let avisoViejo="";             // pedidos apuntados con una versión anterior a la 014
-const META_NOCHE=["titulo","fecha","carpeta","creada","por","rondas","total","participantes","quien"];
+const META_NOCHE=["titulo","fecha","carpeta","creada","por","rondas","total","participantes","quien","organizadores"];
+/* Organizadores (032): quienes mandan en una quedada. De partida, quien la creó (`por`); cualquier
+   organizador nombra a otros (⭐ en «Quién viene»), pero nadie se quita a sí mismo. Un organizador
+   borra para siempre las rondas de la papelera de su quedada. Los administradores (el nivel de
+   arriba) pueden lo mismo en las quedadas en las que están. Sin cuentas, todos pueden todo. */
+const organizadoresDe=n=>!n?[]:Array.isArray(n.organizadores)?n.organizadores:(n.por?[n.por]:[]);
+const esOrganizador=id=>!auth||(!!me&&(organizadoresDe(S.noches[id||NOCHE]).includes(me)||esAdmin()));
 const nocheMeta=id=>{const m=S.noches[id||NOCHE]||{};const o={};META_NOCHE.forEach(k=>{if(m[k]!=null)o[k]=m[k]});return o};
 const curPath=()=>"noches/"+NOCHE;
 const roundPath=id=>"noches/"+NOCHE+"/rounds/"+id;
@@ -1133,7 +1142,7 @@ function archiveRound(night,rid,round){
 }
 function archiveNote(rid,what){
   if(mode!=="firebase"||!S.current.night)return;
-  const r=S.rounds.find(x=>x.id===rid)||{};
+  const r=S.rounds.find(x=>x.id===rid)||(S.papRondas||[]).find(x=>x.id===rid)||{};   // 032: también las de la papelera
   dbUpdate("archive/"+archiveKey(S.current.night,rid),{log:clone((r&&r.log)||[]).concat([logLine(what)]),payer:(r&&r.payer)||"",savedTs:Date.now()});
 }
 function closeRound(payer){
@@ -1165,10 +1174,11 @@ const papeleraLista=()=>Object.keys(S.noches).filter(id=>S.noches[id].papelera).
 const carpetasLista=()=>Object.keys(S.carpetas).map(id=>Object.assign({id},S.carpetas[id]));
 const nombreCarpeta=id=>(S.carpetas[id]&&S.carpetas[id].name)||"Sin carpeta";
 const fechaCorta=ts=>{if(!ts)return"";const d=new Date(ts);return["dom","lun","mar","mié","jue","vie","sáb"][d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)+(d.getFullYear()!==new Date().getFullYear()?"/"+d.getFullYear():"")};
-function normNoche(d){d=d||{};const m={titulo:String(d.titulo||"Noche").slice(0,60),fecha:Number(d.fecha)||0,carpeta:typeof d.carpeta==="string"?d.carpeta:"",creada:Number(d.creada)||0,por:d.por||""};if(d.rondas!=null)m.rondas=Number(d.rondas)||0;if(d.total!=null)m.total=Number(d.total)||0;
+function normNoche(d){d=d||{};const m={titulo:String(d.titulo||"Quedada").slice(0,60),fecha:Number(d.fecha)||0,carpeta:typeof d.carpeta==="string"?d.carpeta:"",creada:Number(d.creada)||0,por:d.por||""};if(d.rondas!=null)m.rondas=Number(d.rondas)||0;if(d.total!=null)m.total=Number(d.total)||0;
   if(d.participantes&&typeof d.participantes==="object"){m.participantes={};Object.keys(d.participantes).forEach(k=>{const x=d.participantes[k]||{};m.participantes[k]=x.ido?{ts:Number(x.ts)||0,ido:true}:{ts:Number(x.ts)||0}})}
   if(Array.isArray(d.quien))m.quien=d.quien.filter(x=>typeof x==="string");
   if(d.papelera&&typeof d.papelera==="object")m.papelera={ts:Number(d.papelera.ts)||0,por:String(d.papelera.por||"")};
+  if(Array.isArray(d.organizadores))m.organizadores=d.organizadores.filter(x=>typeof x==="string");
   return m}
 // Los participantes con los que empieza una noche nueva: los de la última noche de esa carpeta
 // (todos «aquí»); si no hay, los de la cuadrilla que no estaban en pausa.
@@ -1194,7 +1204,7 @@ function crearCarpeta(nombre){
 function crearNoche(carpeta,titulo){
   const id=uid("n"),ahora=Date.now(),ps=participantesDeSalida(carpeta);
   if(auth&&me&&!ps[me])ps[me]={ts:ahora};   // 028: quien la crea siempre está (si no, no la vería)
-  const meta={titulo:titulo.trim().slice(0,60),fecha:ahora,carpeta,creada:ahora,por:me||"",rondas:0,total:0,participantes:ps,quien:listaQuien(ps)};
+  const meta={titulo:titulo.trim().slice(0,60),fecha:ahora,carpeta,creada:ahora,por:me||"",rondas:0,total:0,participantes:ps,quien:listaQuien(ps),organizadores:me?[me]:[]};
   const datos=Object.assign({n:1,name:"",bar:"",night:id,orders:{},delivered:{},shared:{}},meta);
   S.noches[id]=normNoche(meta);NOCHES_DATA[id]=datos;
   if(mode==="firebase")dbSet("noches/"+id,datos);
@@ -1204,7 +1214,7 @@ function crearNoche(carpeta,titulo){
 function cambiarNoche(id){
   if(!S.noches[id])return;
   NOCHE=id;lsSet("ronda.noche."+SALA,id);
-  S.current=Object.assign(normCurrent(NOCHES_DATA[id]||{}),{night:id});S.rounds=[];
+  S.current=Object.assign(normCurrent(NOCHES_DATA[id]||{}),{night:id});S.rounds=[];S.papRondas=[];
   ui.sel=null;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.multi=false;ui.group=[];ui.pending=null;ui.payer=null;
   ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.editRound=null;ui.pagoForm=null;ui.partsEdit=false;ui.rAdd=null;
   escucharRondas();
@@ -1476,10 +1486,14 @@ function vParticipantes(){
   const t=S.noches[NOCHE]?S.noches[NOCHE].titulo:"";
   let h=`<div class="pad-head"><h2>👥 ¿Quién viene?</h2><button class="mini on" data-act="partsCerrar">✓ Listo</button></div>`;
   h+=`<p class="note" style="margin:0 2px 10px">${esc(t)}. Solo los que están «aquí» salen en Pedir y en los repartos. Quien se va un rato o a casa, «se ha ido»: sigue en la quedada con lo suyo.${auth?" Esta quedada solo la ven los que están en ella (aquí o se han ido).":""}</p><div class="mine">`;
+  // 032: ⭐ = organiza esta quedada. Solo la cambian sus organizadores (o un administrador), y nadie se la quita a sí mismo.
+  const orgs=organizadoresDe(S.noches[NOCHE]),puedeOrg=!!auth&&esOrganizador();
   people().forEach(p=>{
-    const e=estadoEn(p.id),fijo=tieneAlgo(p.id),yo=!!auth&&p.id===me;
-    h+=`<div class="drow"><b>${esc(p.name)}</b><div class="acts">`+[["aqui","Aquí"],["ido","🚶 Se ha ido"],["no","No vino"]].map(([k,txt])=>`<button class="mini${e===k?" on":""}" data-act="partsPon" data-id="${p.id}" data-e="${k}"${k==="no"&&(fijo||yo)?` disabled title="${yo?"Dejarías de ver la noche":"Tiene algo apuntado en esta quedada"}"`:""}>${txt}</button>`).join("")+`</div></div>`;
+    const e=estadoEn(p.id),fijo=tieneAlgo(p.id),yo=!!auth&&p.id===me,org=orgs.includes(p.id);
+    const estrella=auth?`<button class="mini${org?" on":""}" data-act="orgPon" data-id="${p.id}" aria-label="Organiza esta quedada" title="${org?"Organiza esta quedada":"No organiza"}"${!puedeOrg||e==="no"||(yo&&org)?" disabled":""}>⭐</button>`:"";
+    h+=`<div class="drow"><b>${esc(p.name)}</b><div class="acts">`+[["aqui","Aquí"],["ido","🚶 Se ha ido"],["no","No vino"]].map(([k,txt])=>`<button class="mini${e===k?" on":""}" data-act="partsPon" data-id="${p.id}" data-e="${k}"${k==="no"&&(fijo||yo)?` disabled title="${yo?"Dejarías de ver la quedada":"Tiene algo apuntado en esta quedada"}"`:""}>${txt}</button>`).join("")+estrella+`</div></div>`;
   });
+  if(auth)h+=`<p class="note" style="margin:6px 2px 0">⭐ = organiza esta quedada: puede nombrar a otros organizadores y borrar para siempre las rondas de su papelera.${puedeOrg?"":" Solo lo cambian quienes la organizan."}</p>`;
   h+=`</div><button class="btn small" data-act="addPerson">＋ Alguien nuevo en el grupo</button>`;
   return h;
 }
@@ -1691,11 +1705,12 @@ function vCuentas(){
       const tk=ticketOk(r.ticket),avisos=[];
       if(tk!=null)avisos.push(Math.abs(tk-r.total)<0.005?"✓ cuadra con el ticket":`⚠️ no cuadra con el ticket (${eur(tk)})`);
       if(rondaDescuadrada(r))avisos.push("⚠️ revisar precios");
-      h+=`<div class="drow"><div><div>${esc(roundLabel(r))} · ${hhmm(r.ts)} · <b>${eur(r.total)}</b></div><div class="note">${r.payer?"pagó "+esc(pname(r.payer)):"⚠️ sin pagar"}${avisos.length?" · "+avisos.join(" · "):""}</div></div><div class="acts"><button class="linkish" data-act="editRound" data-id="${r.id}">✏️ corregir</button></div></div>`;
+      h+=`<div class="drow"><div><div>${esc(roundLabel(r))} · ${hhmm(r.ts)} · <b>${eur(r.total)}</b></div><div class="note">${r.payer?"pagó "+esc(pname(r.payer)):"⚠️ sin pagar"}${avisos.length?" · "+avisos.join(" · "):""}</div></div><div class="acts"><button class="linkish" data-act="editRound" data-id="${r.id}">✏️ corregir</button>${mode==="firebase"?`<button class="linkish rm" data-act="rondaPapelera" data-id="${r.id}" aria-label="Mandar a la papelera">🗑</button>`:""}</div></div>`;
       if((r.log||[]).length)h+=`<div class="note" style="margin:-2px 0 8px">${r.log.slice(-4).map(l=>`${hhmm(l.ts)} · ${esc(byName(l.by))}: ${esc(l.what)}`).join("<br>")}</div>`;
     });
     h+=`</section>`;
   }
+  h+=vPapeleraRondas();
   if(mode==="firebase"&&NOCHE&&S.noches[NOCHE]){
     const c=S.noches[NOCHE].carpeta==="c_recuperadas"?"c_otras":S.noches[NOCHE].carpeta;
     h+=`<button class="btn" data-act="nocheNueva" data-carpeta="${esc(c)}">🍻 Nueva quedada en «${esc(nombreCarpeta(c))}»</button><p class="note">Esta quedada se queda guardada tal cual, con sus rondas y sus saldos. Puedes volver a ella desde la barra de arriba.</p>`;
@@ -1805,6 +1820,25 @@ async function borrarParaSiempre(id){
   for(const x of ps.docs)await ref.collection("pagos").doc(x.id).delete();
   await ref.delete();
   delete S.noches[id];delete NOCHES_DATA[id];render();
+}
+// Papelera de rondas de la quedada (032): cualquiera de la quedada manda una ronda y la recupera;
+// la borran para siempre sus organizadores (o un administrador que esté en ella). En la papelera no
+// cuenta en saldos ni en el historial. Al borrarla para siempre, su copia del archivo se queda.
+function vPapeleraRondas(){
+  const ps=S.papRondas||[];if(!ps.length||mode!=="firebase")return"";
+  const org=esOrganizador();
+  let h=`<section class="card"><h2>🗑 Rondas en la papelera</h2><p class="note">No cuentan en los saldos. Cualquiera de la quedada puede recuperarlas${org?"; borrarlas para siempre, solo quien la organiza (⭐) o un administrador. Su copia se queda en el archivo, que solo se ve desde la consola.":"; borrarlas para siempre, solo quien la organiza (⭐)."}</p>`;
+  ps.forEach(r=>{
+    const pp=r.papelera||{};
+    h+=`<div class="miembro"><div><b>${esc(roundLabel(r))}</b> · ${eur(r.total)}</div><div class="note">${r.payer?"pagó "+esc(pname(r.payer))+" · ":""}a la papelera el ${fechaCorta(pp.ts)} ${hhmm(pp.ts)}${pp.por&&findP(pp.por)?" por "+esc(pname(pp.por)):""}</div><div class="acts"><button class="mini on" data-act="rondaRecuperar" data-id="${r.id}">Recuperar</button>${org?`<button class="mini" data-act="rondaBorrar" data-id="${r.id}">Borrar para siempre</button>`:""}</div></div>`;
+  });
+  return h+`</section>`;
+}
+async function borrarRonda(id){
+  const r=(S.papRondas||[]).find(x=>x.id===id);if(!r||!esOrganizador())return;
+  await colRef("archive").doc(archiveKey(NOCHE,id)).update({titulo:(S.noches[NOCHE]||{}).titulo||"",borrada:{ts:Date.now(),por:me||""}}).catch(e=>console.warn("archivo:",e));
+  await docRef(roundPath(id)).delete();
+  S.papRondas=S.papRondas.filter(x=>x.id!==id);render();
 }
 // «Otras» (donde van las noches sueltas) existe siempre.
 function asegurarOtras(){if(!S.carpetas.c_otras){S.carpetas.c_otras={name:"Otras",ts:Date.now()};dbUpdate("bar/carpetas",{"carpetas.c_otras":clone(S.carpetas.c_otras)},()=>({carpetas:clone(S.carpetas)}))}}
@@ -2566,6 +2600,38 @@ document.addEventListener("click",e=>{
       n.titulo=t.slice(0,60);dbUpdate("noches/"+id,{titulo:n.titulo});break;
     }
     case"nocheMover":ui.moverNoche=ui.moverNoche===id?null:id;break;
+    /* --- papelera de rondas (032): mandar y recuperar, cualquiera de la quedada; borrar, organizadores --- */
+    case"rondaPapelera":{
+      const r=S.rounds.find(x=>x.id===id);if(!r||mode!=="firebase")return;
+      if(!confirm(`¿Mandar la ${roundLabel(r)} (${eur(r.total)}) a la papelera? Deja de contar en los saldos. Cualquiera de la quedada puede recuperarla.`))return;
+      const pp={ts:Date.now(),por:me||""},log=(r.log||[]).concat([logLine("A la papelera")]);
+      dbUpdate(roundPath(id),{papelera:pp,log:clone(log)});archiveNote(id,"A la papelera");
+      flash(`${roundLabel(r)} en la papelera`);return;
+    }
+    case"rondaRecuperar":{
+      const r=(S.papRondas||[]).find(x=>x.id===id);if(!r)return;
+      // Quien tiene algo en ella vuelve a estar en la quedada si se le había puesto «no vino».
+      asegurarEnNoche(Object.keys(r.orders||{}).concat(r.payer?[r.payer]:[],...compartidos(r).map(s=>s.who||[])));
+      const log=(r.log||[]).concat([logLine("Recuperada de la papelera")]);
+      dbUpdate(roundPath(id),{papelera:DEL(),log:clone(log)});archiveNote(id,"Recuperada de la papelera");
+      flash(`${roundLabel(r)} recuperada`);return;
+    }
+    case"rondaBorrar":{
+      const r=(S.papRondas||[]).find(x=>x.id===id);if(!r||!esOrganizador())return;
+      if(!confirm(`¿Borrar para siempre la ${roundLabel(r)} (${eur(r.total)})? No se puede deshacer. Solo quedará su copia en el archivo, que se ve desde la consola de Firebase.`))return;
+      if(((prompt("Para confirmarlo, escribe BORRAR:","")||"").trim().toUpperCase())!=="BORRAR"){flash("No se ha borrado nada");return}
+      if(!requirePin())return;
+      borrarRonda(id).then(()=>flash(`${roundLabel(r)} borrada para siempre`)).catch(e=>{console.warn(e);alert("No se ha podido borrar. Sigue en la papelera.")});
+      return;
+    }
+    // Organizadores (032): cualquier organizador (o administrador) nombra o quita a otros; a sí mismo, no.
+    case"orgPon":{
+      const n=S.noches[NOCHE];if(!n||!auth||!esOrganizador()||estadoEn(id)==="no")return;
+      const orgs=organizadoresDe(n).slice(),k=orgs.indexOf(id);
+      if(k>=0){if(id===me){flash("No puedes quitarte de organizador");return}orgs.splice(k,1)}else orgs.push(id);
+      n.organizadores=orgs;curUpdate({organizadores:orgs.slice()});
+      flash(k>=0?`${pname(id)} ya no organiza`:`${pname(id)} organiza esta quedada`);break;
+    }
     /* --- papelera (031): solo administradores --- */
     case"nochePapelera":{
       const n=S.noches[id];if(!n||!auth||!esAdmin())return;
@@ -3259,7 +3325,8 @@ function escucharRondas(){
   unsubRondas=colRef("noches").doc(id).collection("rounds").onSnapshot({includeMetadataChanges:true},qs=>{
     if(id!==NOCHE)return;
     rondasCargadas=true;delete reintentado["rondas:"+id];
-    S.rounds=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,normRonda(d))});
+    const todas=qs.docs.map(x=>{const d=x.data();return Object.assign({id:x.id},d,normRonda(d))});
+    S.rounds=todas.filter(r=>!r.papelera);S.papRondas=todas.filter(r=>r.papelera).sort((a,b)=>a.n-b.n);   // 032
     actualizarResumen();
     if(!(qs.metadata&&qs.metadata.fromCache))asegurarListaParticipantes();
     render();
