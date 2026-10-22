@@ -148,6 +148,8 @@ textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1p
 .cuenta-de .fila .note{flex:1;min-width:0;overflow-wrap:anywhere}
 .cuenta-de select{display:block;width:100%;margin-top:4px}
 .cuenta-de .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.prog-cod{font-size:.75rem;color:var(--muted);overflow-wrap:anywhere}
+.miembro .linkish.ir{padding:2px 0;color:var(--ink);text-align:left}
 .x{background:none;border:0;color:var(--muted);font-size:1.2rem;padding:6px;flex-shrink:0}
 .catbox{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:2px 10px 2px 6px;margin:8px 0}
 .catbox.open{padding-bottom:10px}
@@ -413,6 +415,9 @@ let MIEMBRO=null,miembroListo=false,MIEMBROS={},datosArrancados=false;
 // 033: las quedadas de la papelera en las que no estás, que solo ven los administradores (para
 // recuperarlas o borrarlas para siempre). Ver escucharPapeleraAdmin().
 let PAP_ADMIN={},unsubPapAdmin=null;
+// 034: la cuenta del programador (ver comprobarProgramador()) y lo que lleva leído su explorador.
+let PROGRAMADOR=false;
+const PROG={grupos:null,g:null,n:null,arch:null,cargando:false,error:""};
 /* Mis salas (027): usuarios/{uid} = { salas: { idSala: { nombre (el fácil, si lo tiene), estado:
    "dentro"|"pendiente", ts } } }. Solo la lee y escribe su dueño. La app la mantiene sola al abrir
    cada sala: la añade al entrar o pedir entrar y la quita si ya no eres de ella. */
@@ -428,7 +433,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="033";
+const APP_VERSION="034";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -2057,7 +2062,130 @@ function vTuCuenta(){
   let h=`<section class="card"><h2>Tu cuenta</h2>`;
   if(USER.isAnonymous)h+=`<p class="note">Has entrado <b>sin cuenta</b>: solo vale en este navegador. Si borras sus datos o cambias de móvil, se pierde. Para no perderla, ponle email y contraseña:</p>`+camposCuenta("new-password")+msgCuenta()+`<button class="btn small primary" data-act="cuUnir"${ui.cuOcupado?" disabled":""}>Crear la cuenta con este email</button>`;
   else h+=`<p>Has entrado como <b>${esc(USER.email||"")}</b>.</p>`+msgCuenta();
+  if(PROGRAMADOR)h+=`<button class="btn small primary" data-act="progAbrir">🛠 Modo programador</button>`;
+  // 034: el aviso, para todos; el código, para marcar a mano la cuenta de programador en la consola.
+  h+=`<p class="note">Quien programa Eskari puede ver los datos de todos los grupos, solo para arreglar problemas. Código de esta cuenta: <span class="prog-cod">${esc(USER.uid)}</span></p>`;
   return h+`<button class="btn small" data-act="cuSalir">Cerrar sesión en este navegador</button></section>`;
+}
+/* --- Programador (034) ---
+   Una cuenta aparte, marcada a mano en la consola de Firebase (programadores/{uid}). Solo mira: un
+   explorador de todos los grupos con los nombres de verdad (en la consola todo son códigos) y, junto
+   a cada cosa, su código con un enlace a ese documento en la consola. No escribe nada (las reglas
+   tampoco se lo dejan). Lo lee al abrir cada pantalla, sin quedarse escuchando. PROGRAMADOR y PROG
+   están arriba, con los miembros. */
+function comprobarProgramador(){
+  if(!db||!USER||USER.isAnonymous)return;
+  db.collection("programadores").doc(USER.uid).get().then(s=>{PROGRAMADOR=!!s.exists;render()}).catch(()=>{});   // sin las reglas de la 034, no
+}
+const enConsola=ruta=>`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/-default-/data/`+ruta.split("/").map(x=>"~2F"+encodeURIComponent(x)).join("");
+const progCodigo=ruta=>`<a class="prog-cod" href="${esc(enConsola(ruta))}" target="_blank" rel="noopener" title="Abrir en la consola de Firebase">${esc(ruta.split("/").pop())} ↗</a>`;
+// Los nombres de las bebidas de un grupo, de todas sus cartas.
+function progProductos(cf){
+  const o={};
+  (function mira(x){if(Array.isArray(x))x.forEach(mira);else if(x&&typeof x==="object"){if(typeof x.id==="string"&&typeof x.name==="string"&&!o[x.id])o[x.id]=x.name;Object.keys(x).forEach(k=>{if(x[k]&&typeof x[k]==="object")mira(x[k])})}})((cf||{}).menus);
+  return o;
+}
+const progPersona=(g,id,extra)=>{const p=(g.people||[]).find(x=>x.id===id);return p?p.name:((extra&&extra[id])||id||"?")};
+const progPersonas=(g,ids)=>(Array.isArray(ids)?ids:[]).map(id=>esc(progPersona(g,id))).join(", ");
+const progCarpeta=(g,id)=>(g.carpetas[id]||{}).name||"Sin carpeta";
+const progBebida=(g,o)=>!o?"":o.custom?String(o.custom):o.drink==="nada"?"No toma nada":(g.prods[o.drink]||o.drink||"?");
+// «Aitor: 2 Caña, Zurito · Javi: …»
+function progPedidos(g,orders,extra){
+  return Object.keys(orders||{}).map(pid=>{
+    const c={};(Array.isArray(orders[pid])?orders[pid]:[]).forEach(o=>{const k=progBebida(g,o);c[k]=(c[k]||0)+1});
+    return`<b>${esc(progPersona(g,pid,extra))}</b>: ${Object.keys(c).map(k=>(c[k]>1?c[k]+" ":"")+esc(k)).join(", ")}`;
+  }).join(" · ")||"nada apuntado";
+}
+async function progCargar(que,id){
+  if(!db)return;
+  PROG.cargando=true;PROG.error="";render();
+  const sala=s=>db.collection("salas").doc(s);
+  try{
+    if(que==="grupos"){
+      const qs=await db.collection("salas").get();
+      PROG.grupos=(await Promise.all(qs.docs.map(async x=>{
+        const [nb,ms]=await Promise.all([sala(x.id).collection("bar").doc("nombre").get().catch(()=>null),sala(x.id).collection("miembros").get().catch(()=>null)]);
+        const mm=ms?ms.docs.map(m=>normMiembro(m.data())):[];
+        return{id:x.id,creada:Number((x.data()||{}).creada)||0,nombre:nb&&nb.exists?String((nb.data()||{}).nombre||""):"",
+          dentro:mm.filter(m=>m.rol!=="pendiente").length,pendientes:mm.filter(m=>m.rol==="pendiente").length,admins:mm.filter(m=>m.rol==="admin").map(m=>m.nombre||m.email||"?")};
+      }))).sort((a,b)=>b.creada-a.creada);
+    }else if(que==="grupo"){
+      const [bs,ms,ns]=await Promise.all([sala(id).collection("bar").get(),sala(id).collection("miembros").get(),sala(id).collection("noches").get()]);
+      const bar={};bs.docs.forEach(x=>{bar[x.id]=x.data()||{}});
+      const cf=bar.config||{};
+      PROG.g={id,bar,nombre:String((bar.nombre||{}).nombre||""),people:Array.isArray(cf.people)?cf.people:[],prods:progProductos(cf),carpetas:(bar.carpetas||{}).carpetas||{},
+        miembros:ms.docs.map(x=>Object.assign({uid:x.id},normMiembro(x.data()))),
+        noches:ns.docs.map(x=>Object.assign({id:x.id},x.data()||{})).sort((a,b)=>(Number(b.fecha)||0)-(Number(a.fecha)||0))};
+      PROG.n=null;PROG.arch=null;
+    }else if(que==="noche"&&PROG.g){
+      const r=sala(PROG.g.id).collection("noches").doc(id);
+      const [rs,ps]=await Promise.all([r.collection("rounds").get(),r.collection("pagos").get()]);
+      PROG.n={id,rondas:rs.docs.map(x=>Object.assign({id:x.id},x.data()||{})).sort((a,b)=>(Number(a.n)||0)-(Number(b.n)||0)),
+        pagos:ps.docs.map(x=>Object.assign({id:x.id},x.data()||{})).sort((a,b)=>(Number(a.ts)||0)-(Number(b.ts)||0))};
+    }else if(que==="archivo"&&PROG.g){
+      const qs=await sala(PROG.g.id).collection("archive").get();
+      PROG.arch=qs.docs.map(x=>Object.assign({id:x.id},x.data()||{}));
+    }
+  }catch(e){
+    console.warn("programador:",e);
+    PROG.error=esPermiso(e)?"Firebase no deja leerlo: faltan las reglas de la 034, o esta cuenta no está en «programadores».":"No se ha podido leer: "+((e&&e.message)||e);
+  }
+  PROG.cargando=false;render();
+}
+function vProg(){
+  if(!PROGRAMADOR)return`<p class="hint">Esta cuenta no es de programador.</p>`;
+  let h=`<div class="pad-head"><h2>🛠 Programador</h2><button class="mini" data-act="progSalir">Salir</button></div>`;
+  h+=`<p class="note" style="margin:0 2px 10px">Solo para mirar: desde aquí no se cambia nada. Cada código (↗) abre ese documento en la consola de Firebase.</p>`;
+  if(PROG.error)h+=`<p class="status" style="color:var(--bad)">⚠️ ${esc(PROG.error)}</p>`;
+  if(PROG.cargando)h+=`<p class="hint">Leyendo…</p>`;
+  const g=PROG.g;
+  if(!g){
+    if(!PROG.grupos)return h;
+    h+=`<section class="card"><h2>Grupos (${PROG.grupos.length})</h2>`;
+    PROG.grupos.forEach(x=>{h+=`<div class="miembro"><div><button class="linkish ir" data-act="progGrupo" data-id="${esc(x.id)}"><b>🏠 ${esc(x.nombre||x.id)}</b> ▸</button> ${progCodigo("salas/"+x.id)}</div><div class="note">${x.creada?"creado el "+fechaCorta(x.creada)+" · ":""}${x.dentro} miembro${x.dentro===1?"":"s"}${x.pendientes?` · ${x.pendientes} pendiente${x.pendientes===1?"":"s"}`:""} · ${x.admins.length?"administra: "+x.admins.map(esc).join(", "):"⚠️ sin administrador"}</div></div>`});
+    return h+`</section>`;
+  }
+  if(PROG.arch)return h+vProgArchivo(g);
+  if(PROG.n)return h+vProgNoche(g);
+  const base="salas/"+g.id;
+  h+=`<button class="linkish" data-act="progVolver" data-id="grupos">← Todos los grupos</button>`;
+  h+=`<section class="card"><h2>🏠 ${esc(g.nombre||g.id)}</h2><p class="note">Código ${progCodigo(base)}${g.nombre?` · nombre fácil «${esc(g.nombre)}»`:""}</p><p class="note">Documentos de <b>bar</b>: ${Object.keys(g.bar).sort().map(k=>progCodigo(base+"/bar/"+k)).join(" · ")||"ninguno"}</p></section>`;
+  h+=`<section class="card"><h2>Miembros del grupo</h2>`;
+  const cuenta=m=>`<div class="note">📱 ${esc(m.email||"sin email")} · ${m.rol}${m.dispositivo?" · "+esc(m.dispositivo):""} · ${progCodigo(base+"/miembros/"+m.uid)}</div>`;
+  g.people.forEach(p=>{h+=`<div class="miembro"><div><b>${esc(p.name||"?")}</b> <span class="prog-cod">${esc(p.id)}</span></div>${g.miembros.filter(m=>m.persona===p.id).map(cuenta).join("")}</div>`});
+  g.miembros.filter(m=>!g.people.some(p=>p.id===m.persona)).forEach(m=>{h+=`<div class="miembro"><div><b>${esc(m.nombre||m.email||"?")}</b> <span class="note">${m.persona?"es «"+esc(m.persona)+"», que no está en la lista":"aún no ha elegido quién es"}</span></div>${cuenta(m)}</div>`});
+  h+=`</section><section class="card"><h2>Quedadas (${g.noches.length})</h2><p class="note">Todas, también las de la papelera (🗑).</p>`;
+  g.noches.forEach(n=>{h+=`<div class="miembro"><div><button class="linkish ir" data-act="progNoche" data-id="${esc(n.id)}"><b>${n.papelera?"🗑 ":""}${esc(n.titulo||"(sin nombre)")}</b> ▸</button> ${progCodigo(base+"/noches/"+n.id)}</div><div class="note">${esc(progCarpeta(g,n.carpeta))} · ${fechaCorta(Number(n.fecha)||0)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(Number(n.total)||0)}`:""} · ${progPersonas(g,n.quien)||"sin «quien»"}</div></div>`});
+  return h+`</section><button class="btn small" data-act="progArchivo">📚 Ver el archivo</button>`;
+}
+function vProgNoche(g){
+  const n=g.noches.find(x=>x.id===PROG.n.id)||{},base="salas/"+g.id+"/noches/"+PROG.n.id,pp=n.papelera||null;
+  const orgs=Array.isArray(n.organizadores)?n.organizadores:(n.por?[n.por]:[]);
+  let h=`<button class="linkish" data-act="progVolver" data-id="grupo">← ${esc(g.nombre||g.id)}</button>`;
+  h+=`<section class="card"><h2>${esc(n.titulo||"(sin nombre)")}</h2><p class="note">${progCodigo(base)} · ${esc(progCarpeta(g,n.carpeta))} · ${fechaCorta(Number(n.fecha)||0)}</p>`;
+  h+=`<p class="note">Están: ${progPersonas(g,n.quien)||"sin «quien»"} · organiza: ${progPersonas(g,orgs)||"nadie"}${pp?` · 🗑 en la papelera desde el ${fechaCorta(Number(pp.ts)||0)}${pp.por?" (" +esc(progPersona(g,pp.por))+")":""}`:""}</p>`;
+  h+=`<p class="note">Ronda en curso (${Number(n.n)||1}${n.name?" · "+esc(n.name):""}): ${progPedidos(g,n.orders)}</p></section>`;
+  h+=`<section class="card"><h2>Rondas cerradas (${PROG.n.rondas.length})</h2>`;
+  PROG.n.rondas.forEach(r=>{h+=`<div class="miembro"><div><b>Ronda ${Number(r.n)||"?"}${r.name?" · "+esc(r.name):""}</b> · ${eur(Number(r.total)||0)}${r.papelera?" · 🗑 en la papelera":""} ${progCodigo(base+"/rounds/"+r.id)}</div><div class="note">${r.payer?"pagó "+esc(progPersona(g,r.payer)):"sin pagar"}${r.ts?" · "+fechaCorta(r.ts)+" "+hhmm(r.ts):""}</div><div class="note">${progPedidos(g,r.orders)}${Object.keys(r.shared||{}).length?` · y ${Object.keys(r.shared).length} para compartir`:""}</div></div>`});
+  h+=`</section>`;
+  if(PROG.n.pagos.length){
+    h+=`<section class="card"><h2>Pagos (${PROG.n.pagos.length})</h2>`;
+    PROG.n.pagos.forEach(p=>{h+=`<div class="miembro"><div>${esc(progPersona(g,p.de))} → ${esc(progPersona(g,p.a))}: <b>${eur(Number(p.importe)||0)}</b> ${progCodigo(base+"/pagos/"+p.id)}</div></div>`});
+    h+=`</section>`;
+  }
+  return h;
+}
+// El archivo, por quedadas (también las borradas: su nombre va en cada ronda desde la 031).
+function vProgArchivo(g){
+  const por={};PROG.arch.forEach(a=>{const k=a.night||a.id.split("-")[0];(por[k]=por[k]||[]).push(a)});
+  let h=`<button class="linkish" data-act="progVolver" data-id="grupo">← ${esc(g.nombre||g.id)}</button><section class="card"><h2>📚 Archivo (${PROG.arch.length} ronda${PROG.arch.length===1?"":"s"})</h2><p class="note">Una copia de cada ronda cerrada, también de las quedadas y rondas borradas para siempre. Desde la app solo se ve aquí.</p></section>`;
+  Object.keys(por).map(k=>({k,l:por[k].sort((a,b)=>(Number(a.n)||0)-(Number(b.n)||0))})).sort((a,b)=>(Number(b.l[0].ts)||0)-(Number(a.l[0].ts)||0)).forEach(({k,l})=>{
+    const n=g.noches.find(x=>x.id===k),tit=(n&&n.titulo)||l.map(a=>a.titulo).find(Boolean)||"(quedada sin nombre)";
+    h+=`<section class="card"><h2>${esc(tit)}</h2><p class="note">${n?progCodigo("salas/"+g.id+"/noches/"+k):`<span class="prog-cod">${esc(k)}</span> · ${l.some(a=>a.borrada)?"🗑 borrada para siempre":"ya no existe"}`}</p>`;
+    l.forEach(a=>{h+=`<div class="miembro"><div>Ronda ${Number(a.n)||"?"} · ${eur(Number(a.total)||0)}${a.borrada?" · borrada":""} ${progCodigo("salas/"+g.id+"/archive/"+a.id)}</div><div class="note">${a.payer?"pagó "+esc(progPersona(g,a.payer,a.people)):"sin pagar"}${a.ts?" · "+fechaCorta(Number(a.ts)):""} · ${progPedidos(g,a.orders,a.people)}</div></div>`});
+    h+=`</section>`;
+  });
+  return h;
 }
 /* --- Mis salas (027) --- */
 const otrasSalas=()=>Object.keys(MIS_SALAS).filter(id=>id!==SALA).sort((a,b)=>(MIS_SALAS[b].ts||0)-(MIS_SALAS[a].ts||0));
@@ -2150,7 +2278,8 @@ function vPeticiones(ids){
 }
 function vSala(){
   const aviso=ui.salaError?`<section class="card" style="border-color:var(--bad)"><h2>⚠️ Ese código no vale</h2><p>El grupo <b>${esc(SALA)}</b> no existe o no está autorizado. Comprueba el enlace que te han pasado.</p></section>`:"";
-  return aviso+vTusSalas(ui.salaError?"":"Tus grupos")+`<section class="card" style="margin-top:20px"><h2>Entrar en un grupo</h2>
+  const prog=PROGRAMADOR?`<section class="card" style="margin-top:20px"><h2>🛠 Programador</h2><p class="note">Todos los grupos, sus quedadas y el archivo, con los nombres de verdad.</p><button class="btn primary" data-act="progAbrir">Abrir el modo programador</button></section>`:"";
+  return aviso+prog+vTusSalas(ui.salaError?"":"Tus grupos")+`<section class="card" style="margin-top:20px"><h2>Entrar en un grupo</h2>
     <p class="note">La app funciona por grupos: cada cuadrilla de amigos tiene el suyo, con sus quedadas y sus cuentas. Necesitas el enlace o el código que te hayan pasado.</p>
     <div class="set-row"><input type="text" id="salaInput" placeholder="código del grupo" autocapitalize="off" autocorrect="off"></div>
     <button class="btn primary" data-act="salaEnter">Entrar</button></section>
@@ -2181,7 +2310,7 @@ function vMezclas(){
   h+=`<p class="note">Por defecto ahora: <b>${m&&m.def?esc(m.def):"ninguna"}</b></p>`;
   return h;
 }
-const VIEWS={cuenta:vCuenta,entrar:vEntrar,quien:vQuienEres,sala:vSala,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
+const VIEWS={cuenta:vCuenta,entrar:vEntrar,quien:vQuienEres,sala:vSala,prog:vProg,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 // Bares que coinciden con lo escrito (sin acentos); vacío = los 6 más recientes.
 function barCoincidencias(){
@@ -2241,10 +2370,14 @@ function render(force){
   // 025: con sesión pero sin ser de la sala, «Pedir entrar»; miembro sin persona, «¿Quién eres?».
   const fueraSala=!fuera&&!!auth&&!!SALA&&!ui.salaError&&!esDentro();
   const sinPersona=!fuera&&!!auth&&esDentro()&&!MIEMBRO.persona&&mode==="firebase";
+  // 034: el explorador del programador se ve igual dentro o fuera de un grupo, sin pestañas.
+  const enProg=!fuera&&PROGRAMADOR&&ui.tab==="prog";
   if(fuera)ui.tab="cuenta";
-  else if(fueraSala)ui.tab="entrar";
-  else{if(["cuenta","entrar","quien"].includes(ui.tab))ui.tab="pedir";if(!SALA||ui.salaError)ui.tab="sala";else if(sinPersona)ui.tab="quien"}
-  const dentro=!!SALA&&!ui.salaError&&!fuera&&!fueraSala&&!sinPersona;
+  else if(!enProg){
+    if(fueraSala)ui.tab="entrar";
+    else{if(["cuenta","entrar","quien","prog"].includes(ui.tab))ui.tab="pedir";if(!SALA||ui.salaError)ui.tab="sala";else if(sinPersona)ui.tab="quien"}
+  }
+  const dentro=!enProg&&!!SALA&&!ui.salaError&&!fuera&&!fueraSala&&!sinPersona;
   $("#roundBtn").style.display=dentro?"":"none";
   $("#meBtn").style.display=dentro?"":"none";
   $("#roundBtn").textContent="Ronda "+S.current.n+(S.current.name?" · "+S.current.name:"");
@@ -2275,6 +2408,13 @@ document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0)
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
+    /* --- programador (034): solo lee --- */
+    case"progAbrir":if(!PROGRAMADOR)return;ui.tab="prog";PROG.g=null;PROG.n=null;PROG.arch=null;progCargar("grupos");window.scrollTo(0,0);return;
+    case"progSalir":ui.tab=SALA?"pedir":"sala";window.scrollTo(0,0);break;
+    case"progGrupo":progCargar("grupo",id);window.scrollTo(0,0);return;
+    case"progNoche":progCargar("noche",id);window.scrollTo(0,0);return;
+    case"progArchivo":progCargar("archivo");window.scrollTo(0,0);return;
+    case"progVolver":PROG.n=null;PROG.arch=null;if(id==="grupos")PROG.g=null;window.scrollTo(0,0);break;
     case"tab":ui.tab=id;ui.path=[];ui.lastAdd=null;ui.editMix=null;ui.partsEdit=false;ui.rAdd=null;if(ui.share||ui.sharePending||ui.shareEdit){ui.share=false;ui.sharePending=null;ui.shareEdit=null;ui.group=[]}ui.rsWho=null;ui.rsGroup=[];if(id!=="carta"&&id!=="mezclas")ui.cartaQ="";window.scrollTo(0,0);break;
     case"cartaCat":ui.cartaCat=ui.cartaCat===id?null:id;ui.cartaGrp=null;alTope(id);break;
     case"cartaGrp":ui.cartaGrp=ui.cartaGrp===id?null:id;alTope(id);break;
@@ -3472,7 +3612,7 @@ render();
 if(auth)auth.onAuthStateChanged(u=>{
   const antes=USER;USER=u;authListo=true;
   if(!u&&antes){location.reload();return}
-  if(u&&!arrancado){arrancado=true;ui.cuMsg="";if(db)escucharMisSalas();initFirebase()}
+  if(u&&!arrancado){arrancado=true;ui.cuMsg="";if(db)escucharMisSalas();comprobarProgramador();initFirebase()}
   render();
 });
 else initFirebase();
