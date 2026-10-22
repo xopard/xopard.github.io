@@ -417,7 +417,9 @@ let MIEMBRO=null,miembroListo=false,MIEMBROS={},datosArrancados=false;
 let PAP_ADMIN={},unsubPapAdmin=null;
 // 034: la cuenta del programador (ver comprobarProgramador()) y lo que lleva leído su explorador.
 let PROGRAMADOR=false;
-const PROG={grupos:null,g:null,n:null,arch:null,cargando:false,error:""};
+const PROG={grupos:null,g:null,n:null,arch:null,cargando:false,error:"",borrando:""};
+// 035: si el grupo abierto está en la papelera (salas/{código}.papelera = {ts, por (cuenta), nombre}).
+let SALA_PAP=null,unsubSalaDoc=null;
 /* Mis salas (027): usuarios/{uid} = { salas: { idSala: { nombre (el fácil, si lo tiene), estado:
    "dentro"|"pendiente", ts } } }. Solo la lee y escribe su dueño. La app la mantiene sola al abrir
    cada sala: la añade al entrar o pedir entrar y la quita si ya no eres de ella. */
@@ -433,7 +435,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="034";
+const APP_VERSION="035";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -1776,7 +1778,7 @@ function vAjustes(){
   else h+=`<p>Lo tiene <b>${esc(pname(am))}</b>.</p><button class="btn warn" data-act="assignerOff">Forzar desactivación</button>`;
   h+='</section>';
 
-  h+=`<section class="card"><h2>El grupo</h2><p class="note">Cada grupo tiene su gente, sus quedadas, sus cartas y sus cuentas, sin mezclarse con los demás. ${auth?"Quien abra el enlace tendrá que pedir entrar, y alguien de dentro le aceptará.":"Comparte el enlace solo con los tuyos."}</p><p><b>Grupo actual:</b> ${esc(NOMBRE_SALA||SALA)}${NOMBRE_SALA?` <span class="note">(código interno: ${esc(SALA)})</span>`:""}</p>${auth&&esAdmin()?`<button class="btn small" data-act="salaNombre">✏️ ${NOMBRE_SALA?"Cambiar el nombre del grupo":"Ponerle un nombre fácil al grupo"}</button>${NOMBRE_SALA?`<p class="note">Si lo cambias, el enlace con el nombre de ahora deja de valer (el del código interno sigue valiendo).</p>`:""}`:""}<button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de este grupo</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otro grupo</button><button class="btn small" data-act="salaChange">↪ Entrar en otro grupo</button></div><button class="btn small" data-act="salaClone">⧉ Copiar este grupo a un código nuevo</button><p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
+  h+=`<section class="card"><h2>El grupo</h2><p class="note">Cada grupo tiene su gente, sus quedadas, sus cartas y sus cuentas, sin mezclarse con los demás. ${auth?"Quien abra el enlace tendrá que pedir entrar, y alguien de dentro le aceptará.":"Comparte el enlace solo con los tuyos."}</p><p><b>Grupo actual:</b> ${esc(NOMBRE_SALA||SALA)}${NOMBRE_SALA?` <span class="note">(código interno: ${esc(SALA)})</span>`:""}</p>${auth&&esAdmin()?`<button class="btn small" data-act="salaNombre">✏️ ${NOMBRE_SALA?"Cambiar el nombre del grupo":"Ponerle un nombre fácil al grupo"}</button>${NOMBRE_SALA?`<p class="note">Si lo cambias, el enlace con el nombre de ahora deja de valer (el del código interno sigue valiendo).</p>`:""}`:""}<button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de este grupo</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otro grupo</button><button class="btn small" data-act="salaChange">↪ Entrar en otro grupo</button></div><button class="btn small" data-act="salaClone">⧉ Copiar este grupo a un código nuevo</button>${auth&&esAdmin()?`<button class="btn small warn" data-act="salaPapelera">🗑 Mandar este grupo a la papelera</button>`:""}<p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
   h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
   h+=`<button class="btn primary" data-act="tab" data-id="carta">✏️ Editar «${esc(curMenu().name)}» · ${countProducts(catalog())} productos</button>`;
   h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
@@ -2106,14 +2108,14 @@ async function progCargar(que,id){
       PROG.grupos=(await Promise.all(qs.docs.map(async x=>{
         const [nb,ms]=await Promise.all([sala(x.id).collection("bar").doc("nombre").get().catch(()=>null),sala(x.id).collection("miembros").get().catch(()=>null)]);
         const mm=ms?ms.docs.map(m=>normMiembro(m.data())):[];
-        return{id:x.id,creada:Number((x.data()||{}).creada)||0,nombre:nb&&nb.exists?String((nb.data()||{}).nombre||""):"",
+        return{id:x.id,creada:Number((x.data()||{}).creada)||0,papelera:!!(x.data()||{}).papelera,nombre:nb&&nb.exists?String((nb.data()||{}).nombre||""):"",
           dentro:mm.filter(m=>m.rol!=="pendiente").length,pendientes:mm.filter(m=>m.rol==="pendiente").length,admins:mm.filter(m=>m.rol==="admin").map(m=>m.nombre||m.email||"?")};
       }))).sort((a,b)=>b.creada-a.creada);
     }else if(que==="grupo"){
-      const [bs,ms,ns]=await Promise.all([sala(id).collection("bar").get(),sala(id).collection("miembros").get(),sala(id).collection("noches").get()]);
+      const [sd,bs,ms,ns]=await Promise.all([sala(id).get(),sala(id).collection("bar").get(),sala(id).collection("miembros").get(),sala(id).collection("noches").get()]);
       const bar={};bs.docs.forEach(x=>{bar[x.id]=x.data()||{}});
-      const cf=bar.config||{};
-      PROG.g={id,bar,nombre:String((bar.nombre||{}).nombre||""),people:Array.isArray(cf.people)?cf.people:[],prods:progProductos(cf),carpetas:(bar.carpetas||{}).carpetas||{},
+      const cf=bar.config||{},pp=sd.exists?(sd.data()||{}).papelera:null;
+      PROG.g={id,bar,nombre:String((bar.nombre||{}).nombre||""),papelera:pp&&typeof pp==="object"?pp:null,people:Array.isArray(cf.people)?cf.people:[],prods:progProductos(cf),carpetas:(bar.carpetas||{}).carpetas||{},
         miembros:ms.docs.map(x=>Object.assign({uid:x.id},normMiembro(x.data()))),
         noches:ns.docs.map(x=>Object.assign({id:x.id},x.data()||{})).sort((a,b)=>(Number(b.fecha)||0)-(Number(a.fecha)||0))};
       PROG.n=null;PROG.arch=null;
@@ -2132,24 +2134,57 @@ async function progCargar(que,id){
   }
   PROG.cargando=false;render();
 }
+// 035: borrar para siempre un grupo de la papelera con todo lo suyo (Aitor, 2026-10-22: también el
+// archivo). El documento del grupo va el último: mientras exista (en la papelera), las reglas dejan
+// al programador borrar lo de dentro. Si algo falla a medias, lo que queda sigue en la papelera y se
+// puede volver a intentar. Su nombre fácil se borra solo si sigue llevando a este grupo.
+async function progBorrarGrupo(id){
+  const s=db.collection("salas").doc(id),col=c=>s.collection(c);
+  const d=await s.get({source:"server"});
+  if(!d.exists||!(d.data()||{}).papelera)throw new Error("El grupo no está en la papelera");
+  const [ns,bs,ms,ar,rv]=await Promise.all(["noches","bar","miembros","archive","rounds"].map(c=>col(c).get()));
+  const refs=[];
+  for(const n of ns.docs){
+    const r=col("noches").doc(n.id),[rs,ps]=await Promise.all([r.collection("rounds").get(),r.collection("pagos").get()]);
+    rs.docs.forEach(x=>refs.push(r.collection("rounds").doc(x.id)));ps.docs.forEach(x=>refs.push(r.collection("pagos").doc(x.id)));refs.push(r);
+  }
+  ar.docs.forEach(x=>refs.push(col("archive").doc(x.id)));
+  rv.docs.forEach(x=>refs.push(col("rounds").doc(x.id)));
+  bs.docs.forEach(x=>refs.push(col("bar").doc(x.id)));
+  const nb=bs.docs.find(x=>x.id==="nombre"),nombre=nb?String((nb.data()||{}).nombre||""):"";
+  if(nombre){const nd=await db.collection("nombres").doc(nombre).get();if(nd.exists&&(nd.data()||{}).sala===id)refs.push(db.collection("nombres").doc(nombre))}
+  refs.push(db.collection("claves").doc(id),db.collection("reclamos").doc(id));
+  ms.docs.forEach(x=>refs.push(col("miembros").doc(x.id)));
+  for(let i=0;i<refs.length;i+=10){
+    await Promise.all(refs.slice(i,i+10).map(r=>r.delete()));
+    PROG.borrando=`Borrando… ${Math.min(i+10,refs.length)} de ${refs.length+1}`;render();
+  }
+  await s.delete();
+}
 function vProg(){
   if(!PROGRAMADOR)return`<p class="hint">Esta cuenta no es de programador.</p>`;
   let h=`<div class="pad-head"><h2>🛠 Programador</h2><button class="mini" data-act="progSalir">Salir</button></div>`;
-  h+=`<p class="note" style="margin:0 2px 10px">Solo para mirar: desde aquí no se cambia nada. Cada código (↗) abre ese documento en la consola de Firebase.</p>`;
+  h+=`<p class="note" style="margin:0 2px 10px">Para mirar: desde aquí solo se cambia la papelera de grupos. Cada código (↗) abre ese documento en la consola de Firebase.</p>`;
   if(PROG.error)h+=`<p class="status" style="color:var(--bad)">⚠️ ${esc(PROG.error)}</p>`;
+  if(PROG.borrando)h+=`<p class="status" style="color:var(--bad)">${esc(PROG.borrando)}</p>`;
   if(PROG.cargando)h+=`<p class="hint">Leyendo…</p>`;
   const g=PROG.g;
   if(!g){
     if(!PROG.grupos)return h;
     h+=`<section class="card"><h2>Grupos (${PROG.grupos.length})</h2>`;
-    PROG.grupos.forEach(x=>{h+=`<div class="miembro"><div><button class="linkish ir" data-act="progGrupo" data-id="${esc(x.id)}"><b>🏠 ${esc(x.nombre||x.id)}</b> ▸</button> ${progCodigo("salas/"+x.id)}</div><div class="note">${x.creada?"creado el "+fechaCorta(x.creada)+" · ":""}${x.dentro} miembro${x.dentro===1?"":"s"}${x.pendientes?` · ${x.pendientes} pendiente${x.pendientes===1?"":"s"}`:""} · ${x.admins.length?"administra: "+x.admins.map(esc).join(", "):"⚠️ sin administrador"}</div></div>`});
+    PROG.grupos.forEach(x=>{h+=`<div class="miembro"><div><button class="linkish ir" data-act="progGrupo" data-id="${esc(x.id)}"><b>${x.papelera?"🗑":"🏠"} ${esc(x.nombre||x.id)}</b> ▸</button> ${progCodigo("salas/"+x.id)}</div><div class="note">${x.creada?"creado el "+fechaCorta(x.creada)+" · ":""}${x.dentro} miembro${x.dentro===1?"":"s"}${x.pendientes?` · ${x.pendientes} pendiente${x.pendientes===1?"":"s"}`:""} · ${x.admins.length?"administra: "+x.admins.map(esc).join(", "):"⚠️ sin administrador"}</div></div>`});
     return h+`</section>`;
   }
   if(PROG.arch)return h+vProgArchivo(g);
   if(PROG.n)return h+vProgNoche(g);
   const base="salas/"+g.id;
   h+=`<button class="linkish" data-act="progVolver" data-id="grupos">← Todos los grupos</button>`;
-  h+=`<section class="card"><h2>🏠 ${esc(g.nombre||g.id)}</h2><p class="note">Código ${progCodigo(base)}${g.nombre?` · nombre fácil «${esc(g.nombre)}»`:""}</p><p class="note">Documentos de <b>bar</b>: ${Object.keys(g.bar).sort().map(k=>progCodigo(base+"/bar/"+k)).join(" · ")||"ninguno"}</p></section>`;
+  h+=`<section class="card"><h2>${g.papelera?"🗑":"🏠"} ${esc(g.nombre||g.id)}</h2><p class="note">Código ${progCodigo(base)}${g.nombre?` · nombre fácil «${esc(g.nombre)}»`:""}</p><p class="note">Documentos de <b>bar</b>: ${Object.keys(g.bar).sort().map(k=>progCodigo(base+"/bar/"+k)).join(" · ")||"ninguno"}</p>`;
+  // 035: la papelera de grupos. Borrar para siempre, solo el programador y solo desde la papelera.
+  const pp=g.papelera,ocupado=PROG.borrando?" disabled":"";
+  h+=pp?`<p class="status" style="color:var(--bad)">🗑 En la papelera${pp.ts?" desde el "+fechaCorta(Number(pp.ts)||0):""}${pp.nombre?" (lo mandó "+esc(pp.nombre)+")":""}: nadie lo puede usar.</p><div class="row2"><button class="btn small" data-act="progSalaRecuperar"${ocupado}>Recuperar el grupo</button><button class="btn small warn" data-act="progSalaBorrar"${ocupado}>Borrar para siempre</button></div><p class="note">Borrarlo para siempre borra todo lo del grupo, también su archivo, y no se puede deshacer.</p>`
+    :`<button class="btn small" data-act="progSalaPapelera">🗑 Mandar a la papelera</button>`;
+  h+=`</section>`;
   h+=`<section class="card"><h2>Miembros del grupo</h2>`;
   const cuenta=m=>`<div class="note">📱 ${esc(m.email||"sin email")} · ${m.rol}${m.dispositivo?" · "+esc(m.dispositivo):""} · ${progCodigo(base+"/miembros/"+m.uid)}</div>`;
   g.people.forEach(p=>{h+=`<div class="miembro"><div><b>${esc(p.name||"?")}</b> <span class="prog-cod">${esc(p.id)}</span></div>${g.miembros.filter(m=>m.persona===p.id).map(cuenta).join("")}</div>`});
@@ -2286,6 +2321,12 @@ function vSala(){
     <section class="card"><h2>¿Administras la app?</h2><p class="note">Crear grupos nuevos requiere la contraseña de crear grupos${auth?" y una cuenta con email; quien lo crea queda de administrador":""}.</p>
     <button class="btn small" data-act="salaNew">+ Crear un grupo</button></section>`+vTuCuenta();
 }
+// 035: el grupo abierto está en la papelera: no se puede usar hasta que un administrador lo recupere.
+function vSalaPapelera(){
+  const p=SALA_PAP||{};
+  return`<section class="card" style="margin-top:20px;border-color:var(--bad)"><h2>🗑 Este grupo está en la papelera</h2><p>El grupo <b>${esc(NOMBRE_SALA||SALA)}</b> está en la papelera${p.ts?" desde el "+fechaCorta(p.ts):""}${p.nombre?" (lo mandó "+esc(p.nombre)+")":""}. Mientras esté ahí no se puede usar, pero no se ha borrado nada.</p>`+
+    (esAdmin()?`<button class="btn primary" data-act="salaRecuperar">Recuperar el grupo</button><p class="note">Para borrarlo del todo, pídeselo a quien programa Eskari.</p>`:`<p class="note">Lo puede recuperar quien lo administra.</p>`)+`</section>`+vTusSalas()+otraSala()+vTuCuenta();
+}
 function vMezclas(){
   const f=findNode(catalog(),ui.mixFor);
   if(!f)return`<p class="hint">No encuentro ese grupo.</p><button class="btn" data-act="tab" data-id="carta">← Volver a la carta</button>`;
@@ -2310,7 +2351,7 @@ function vMezclas(){
   h+=`<p class="note">Por defecto ahora: <b>${m&&m.def?esc(m.def):"ninguna"}</b></p>`;
   return h;
 }
-const VIEWS={cuenta:vCuenta,entrar:vEntrar,quien:vQuienEres,sala:vSala,prog:vProg,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
+const VIEWS={cuenta:vCuenta,entrar:vEntrar,quien:vQuienEres,sala:vSala,prog:vProg,salaPap:vSalaPapelera,noches:vNoches,ronda:vRonda,carta:vCarta,mezclas:vMezclas,pedir:vPedir,comanda:vComanda,reparto:vReparto,cuentas:vCuentas,stats:vStats,ajustes:vAjustes,importar:vImport};
 
 // Bares que coinciden con lo escrito (sin acentos); vacío = los 6 más recientes.
 function barCoincidencias(){
@@ -2372,12 +2413,15 @@ function render(force){
   const sinPersona=!fuera&&!!auth&&esDentro()&&!MIEMBRO.persona&&mode==="firebase";
   // 034: el explorador del programador se ve igual dentro o fuera de un grupo, sin pestañas.
   const enProg=!fuera&&PROGRAMADOR&&ui.tab==="prog";
+  // 035: un grupo en la papelera no se puede usar (sus administradores lo recuperan).
+  const salaPap=!fuera&&!enProg&&!fueraSala&&!!auth&&!!SALA&&!ui.salaError&&!!SALA_PAP;
   if(fuera)ui.tab="cuenta";
   else if(!enProg){
     if(fueraSala)ui.tab="entrar";
-    else{if(["cuenta","entrar","quien","prog"].includes(ui.tab))ui.tab="pedir";if(!SALA||ui.salaError)ui.tab="sala";else if(sinPersona)ui.tab="quien"}
+    else if(salaPap)ui.tab="salaPap";
+    else{if(["cuenta","entrar","quien","prog","salaPap"].includes(ui.tab))ui.tab="pedir";if(!SALA||ui.salaError)ui.tab="sala";else if(sinPersona)ui.tab="quien"}
   }
-  const dentro=!enProg&&!!SALA&&!ui.salaError&&!fuera&&!fueraSala&&!sinPersona;
+  const dentro=!enProg&&!salaPap&&!!SALA&&!ui.salaError&&!fuera&&!fueraSala&&!sinPersona;
   $("#roundBtn").style.display=dentro?"":"none";
   $("#meBtn").style.display=dentro?"":"none";
   $("#roundBtn").textContent="Ronda "+S.current.n+(S.current.name?" · "+S.current.name:"");
@@ -2408,6 +2452,36 @@ document.addEventListener("focusout",()=>setTimeout(()=>{if(pending)render()},0)
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const id=b.dataset.id;
   switch(b.dataset.act){
+    /* --- papelera de grupos (035): la mandan y la recuperan sus administradores; la borra el programador --- */
+    case"salaPapelera":{
+      if(!auth||!esAdmin()||!SALA||!db)return;
+      if(!confirm(`¿Mandar el grupo «${NOMBRE_SALA||SALA}» a la papelera? Nadie podrá usarlo hasta que lo recupere un administrador. No se borra nada: para borrarlo del todo hay que pedírselo a quien programa Eskari.`))return;
+      if(!requirePin())return;
+      db.collection("salas").doc(SALA).update({papelera:{ts:Date.now(),por:USER.uid,nombre:me?pname(me):""}}).then(()=>flash("Grupo en la papelera"))
+        .catch(e=>{console.warn(e);alert(esPermiso(e)?"Firebase no deja: puede que falten las reglas de Firestore de esta versión.":"No se ha podido mandar a la papelera.")});
+      return;
+    }
+    case"salaRecuperar":{
+      if(!auth||!esAdmin()||!SALA||!db)return;
+      db.collection("salas").doc(SALA).update({papelera:DEL()}).then(()=>flash("Grupo recuperado")).catch(e=>{console.warn(e);alert("No se ha podido recuperar.")});
+      return;
+    }
+    case"progSalaPapelera":case"progSalaRecuperar":{
+      const g=PROG.g,a=b.dataset.act==="progSalaPapelera";if(!PROGRAMADOR||!g||!!g.papelera===a)return;
+      if(a&&!confirm(`¿Mandar el grupo «${g.nombre||g.id}» a la papelera? Nadie podrá usarlo hasta que lo recupere un administrador (o tú).`))return;
+      db.collection("salas").doc(g.id).update({papelera:a?{ts:Date.now(),por:USER.uid,nombre:"quien programa Eskari"}:DEL()})
+        .then(()=>{flash(a?"Grupo en la papelera":"Grupo recuperado");progCargar("grupo",g.id)}).catch(e=>{console.warn(e);alert("No se ha podido"+(esPermiso(e)?" (Firebase no deja: ¿están las reglas de esta versión?)":"")+".")});
+      return;
+    }
+    case"progSalaBorrar":{
+      const g=PROG.g;if(!PROGRAMADOR||!g||!g.papelera||PROG.borrando)return;
+      if(!confirm(`¿Borrar para siempre el grupo «${g.nombre||g.id}»? Se borra todo: ${g.noches.length} quedada${g.noches.length===1?"":"s"} con sus rondas y pagos, ${g.miembros.length} cuenta${g.miembros.length===1?"":"s"} de miembros, sus cartas, bares y precios, y también su archivo. No se puede deshacer.`))return;
+      if(((prompt("Para confirmarlo, escribe BORRAR:","")||"").trim().toUpperCase())!=="BORRAR"){flash("No se ha borrado nada");return}
+      PROG.borrando="Borrando…";render();
+      progBorrarGrupo(g.id).then(()=>{PROG.borrando="";PROG.g=null;flash("Grupo borrado para siempre");progCargar("grupos")})
+        .catch(e=>{console.warn(e);PROG.borrando="";alert("No se ha podido borrar del todo"+(esPermiso(e)?" (Firebase no deja: ¿están las reglas de esta versión?)":"")+". Lo que falte sigue ahí, con el grupo en la papelera: vuelve a probar.");progCargar("grupo",g.id)});
+      return;
+    }
     /* --- programador (034): solo lee --- */
     case"progAbrir":if(!PROGRAMADOR)return;ui.tab="prog";PROG.g=null;PROG.n=null;PROG.arch=null;progCargar("grupos");window.scrollTo(0,0);return;
     case"progSalir":ui.tab=SALA?"pedir":"sala";window.scrollTo(0,0);break;
@@ -3361,6 +3435,7 @@ function escucharMiembro(){
       if(!datosArrancados){datosArrancados=true;arrancarDatos();escucharMiembros()}
       else escucharNoches();   // 028: si cambia quién eres, tus noches son otras
       escucharPapeleraAdmin();   // 033: si te hacen administrador o te lo quitan
+      escucharSalaDoc();   // 035: si el grupo está en la papelera
     }else if(datosArrancados){location.reload();return}
     else if(!MIEMBRO)comprobarSala();
     sincronizarMiSala();
@@ -3375,13 +3450,31 @@ function escucharMiembro(){
     render();
   });
 }
+// 035: el documento del grupo (salas/{código}, lo puede leer cualquiera): si está en la papelera,
+// no se puede usar. Si lo borran para siempre estando dentro, la ficha de miembro desaparece y se
+// recarga (escucharMiembro).
+function escucharSalaDoc(){
+  if(unsubSalaDoc||!db||!SALA)return;
+  unsubSalaDoc=db.collection("salas").doc(SALA).onSnapshot(s=>{
+    const p=s.exists&&s.data()?s.data().papelera:null;
+    SALA_PAP=p&&typeof p==="object"?{ts:Number(p.ts)||0,por:String(p.por||""),nombre:String(p.nombre||"")}:null;render();
+  },e=>console.warn("grupo:",e));
+}
 // Tu lista de salas (027), con o sin sala abierta.
 function escucharMisSalas(){
   db.collection("usuarios").doc(USER.uid).onSnapshot(snap=>{
     const d=snap.exists&&snap.data()?snap.data().salas:null,o={};
     if(d&&typeof d==="object")Object.keys(d).forEach(id=>{const s=d[id];if(salaOk(id)&&s)o[id]={nombre:salaOk(s.nombre)?s.nombre:"",estado:s.estado==="pendiente"?"pendiente":"dentro",ts:Number(s.ts)||0}});
-    MIS_SALAS=o;misSalasListas=true;sincronizarMiSala();render();
+    MIS_SALAS=o;misSalasListas=true;sincronizarMiSala();limpiarMisSalas();render();
   },e=>console.warn("mis salas:",e));
+}
+// 035: los grupos de tu lista que ya no existen (borrados para siempre por el programador) se quitan
+// de ella, una vez por sesión y solo si el servidor dice que no están.
+let misSalasRevisadas=false;
+function limpiarMisSalas(){
+  if(misSalasRevisadas||!db||!USER)return;misSalasRevisadas=true;
+  const ref=db.collection("usuarios").doc(USER.uid);
+  Object.keys(MIS_SALAS).forEach(id=>db.collection("salas").doc(id).get({source:"server"}).then(s=>{if(!s.exists)ref.update({["salas."+id]:DEL()}).catch(e=>console.warn("mis salas:",e))}).catch(()=>{}));
 }
 // Que la sala abierta figure en tu lista como está de verdad: dentro, pendiente o fuera (se quita).
 function sincronizarMiSala(){
