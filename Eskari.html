@@ -410,6 +410,9 @@ try{if(db&&firebase.auth){auth=firebase.auth();auth.languageCode="es"}}catch(e){
    dispositivo, por/aceptado (quién le aceptó y cuándo) }. Solo los miembros leen y escriben la
    sala (reglas). Quien crea la sala, o la reclama con la contraseña de crear salas, es admin. */
 let MIEMBRO=null,miembroListo=false,MIEMBROS={},datosArrancados=false;
+// 033: las quedadas de la papelera en las que no estás, que solo ven los administradores (para
+// recuperarlas o borrarlas para siempre). Ver escucharPapeleraAdmin().
+let PAP_ADMIN={},unsubPapAdmin=null;
 /* Mis salas (027): usuarios/{uid} = { salas: { idSala: { nombre (el fácil, si lo tiene), estado:
    "dentro"|"pendiente", ts } } }. Solo la lee y escribe su dueño. La app la mantiene sola al abrir
    cada sala: la añade al entrar o pedir entrar y la quita si ya no eres de ella. */
@@ -425,7 +428,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="032";
+const APP_VERSION="033";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -461,8 +464,9 @@ let avisoViejo="";             // pedidos apuntados con una versión anterior a 
 const META_NOCHE=["titulo","fecha","carpeta","creada","por","rondas","total","participantes","quien","organizadores"];
 /* Organizadores (032): quienes mandan en una quedada. De partida, quien la creó (`por`); cualquier
    organizador nombra a otros (⭐ en «Quién viene»), pero nadie se quita a sí mismo. Un organizador
-   borra para siempre las rondas de la papelera de su quedada. Los administradores (el nivel de
-   arriba) pueden lo mismo en las quedadas en las que están. Sin cuentas, todos pueden todo. */
+   borra para siempre las rondas de la papelera de su quedada y (033) manda la quedada a la papelera
+   y la recupera. Los administradores (el nivel de arriba) pueden lo mismo en las quedadas en las
+   que están, y en las de la papelera aunque no estén (033). Sin cuentas, todos pueden todo. */
 const organizadoresDe=n=>!n?[]:Array.isArray(n.organizadores)?n.organizadores:(n.por?[n.por]:[]);
 const esOrganizador=id=>!auth||(!!me&&(organizadoresDe(S.noches[id||NOCHE]).includes(me)||esAdmin()));
 const nocheMeta=id=>{const m=S.noches[id||NOCHE]||{};const o={};META_NOCHE.forEach(k=>{if(m[k]!=null)o[k]=m[k]});return o};
@@ -1170,14 +1174,17 @@ function clearRound(){S.current={n:S.current.n,name:S.current.name||"",bar:S.cur
 // Las quedadas en la papelera (031) no salen en las listas ni se pueden abrir; solo en la papelera.
 const ordenNoches=(a,b)=>(b.fecha||0)-(a.fecha||0)||(b.creada||0)-(a.creada||0);
 const nochesLista=()=>Object.keys(S.noches).filter(id=>!S.noches[id].papelera).map(id=>Object.assign({id},S.noches[id])).sort(ordenNoches);
-const papeleraLista=()=>Object.keys(S.noches).filter(id=>S.noches[id].papelera).map(id=>Object.assign({id},S.noches[id])).sort(ordenNoches);
+// 033: con las de los administradores en las que no están (ajena).
+const papeleraLista=()=>Object.keys(S.noches).filter(id=>S.noches[id].papelera).map(id=>Object.assign({id},S.noches[id]))
+  .concat(Object.keys(PAP_ADMIN).filter(id=>!S.noches[id]).map(id=>Object.assign({id,ajena:true},PAP_ADMIN[id]))).sort(ordenNoches);
+const nochePap=id=>S.noches[id]||PAP_ADMIN[id]||null;
 const carpetasLista=()=>Object.keys(S.carpetas).map(id=>Object.assign({id},S.carpetas[id]));
 const nombreCarpeta=id=>(S.carpetas[id]&&S.carpetas[id].name)||"Sin carpeta";
 const fechaCorta=ts=>{if(!ts)return"";const d=new Date(ts);return["dom","lun","mar","mié","jue","vie","sáb"][d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)+(d.getFullYear()!==new Date().getFullYear()?"/"+d.getFullYear():"")};
 function normNoche(d){d=d||{};const m={titulo:String(d.titulo||"Quedada").slice(0,60),fecha:Number(d.fecha)||0,carpeta:typeof d.carpeta==="string"?d.carpeta:"",creada:Number(d.creada)||0,por:d.por||""};if(d.rondas!=null)m.rondas=Number(d.rondas)||0;if(d.total!=null)m.total=Number(d.total)||0;
   if(d.participantes&&typeof d.participantes==="object"){m.participantes={};Object.keys(d.participantes).forEach(k=>{const x=d.participantes[k]||{};m.participantes[k]=x.ido?{ts:Number(x.ts)||0,ido:true}:{ts:Number(x.ts)||0}})}
   if(Array.isArray(d.quien))m.quien=d.quien.filter(x=>typeof x==="string");
-  if(d.papelera&&typeof d.papelera==="object")m.papelera={ts:Number(d.papelera.ts)||0,por:String(d.papelera.por||"")};
+  if(d.papelera&&typeof d.papelera==="object"){m.papelera={ts:Number(d.papelera.ts)||0,por:String(d.papelera.por||"")};if(d.papelera.esta===true)m.papelera.esta=true}
   if(Array.isArray(d.organizadores))m.organizadores=d.organizadores.filter(x=>typeof x==="string");
   return m}
 // Los participantes con los que empieza una noche nueva: los de la última noche de esa carpeta
@@ -1493,7 +1500,7 @@ function vParticipantes(){
     const estrella=auth?`<button class="mini${org?" on":""}" data-act="orgPon" data-id="${p.id}" aria-label="Organiza esta quedada" title="${org?"Organiza esta quedada":"No organiza"}"${!puedeOrg||e==="no"||(yo&&org)?" disabled":""}>⭐</button>`:"";
     h+=`<div class="drow"><b>${esc(p.name)}</b><div class="acts">`+[["aqui","Aquí"],["ido","🚶 Se ha ido"],["no","No vino"]].map(([k,txt])=>`<button class="mini${e===k?" on":""}" data-act="partsPon" data-id="${p.id}" data-e="${k}"${k==="no"&&(fijo||yo)?` disabled title="${yo?"Dejarías de ver la quedada":"Tiene algo apuntado en esta quedada"}"`:""}>${txt}</button>`).join("")+estrella+`</div></div>`;
   });
-  if(auth)h+=`<p class="note" style="margin:6px 2px 0">⭐ = organiza esta quedada: puede nombrar a otros organizadores y borrar para siempre las rondas de su papelera.${puedeOrg?"":" Solo lo cambian quienes la organizan."}</p>`;
+  if(auth)h+=`<p class="note" style="margin:6px 2px 0">⭐ = organiza esta quedada: puede nombrar a otros organizadores, mandar la quedada a la papelera y borrar para siempre las rondas de su papelera.${puedeOrg?"":" Solo lo cambian quienes la organizan."}</p>`;
   h+=`</div><button class="btn small" data-act="addPerson">＋ Alguien nuevo en el grupo</button>`;
   return h;
 }
@@ -1806,20 +1813,21 @@ const sinNoches=()=>!!auth&&mode==="firebase"&&nochesDelServidor&&migracionHecha
 function vSinNoches(){
   return`<section class="card" style="margin-top:20px"><h2>🍻 No estás en ninguna quedada</h2><p class="note">Cada uno solo ve las quedadas en las que está. Cuando alguien te apunte en una («Quién viene»), te aparecerá aquí sola. También puedes empezar una.</p><button class="btn primary" data-act="nocheNueva" data-carpeta="c_otras">🍻 Empezar una quedada</button><button class="btn small" data-act="tab" data-id="noches">Ver las carpetas</button></section>`;
 }
-// Borrar para siempre una quedada de la papelera (031, solo administradores). El archivo se queda
+// Borrar para siempre una quedada de la papelera (031, solo administradores; desde la 033, también
+// las que están en la papelera aunque no estés en ella). El archivo se queda
 // (decisión de Aitor): a cada ronda archivada solo se le apunta el nombre de la quedada y que se
 // borró, para reconocerla en la consola. Primero las rondas y los pagos y al final la quedada,
 // porque las reglas dejan borrarlos mientras la quedada existe; si algo falla a medias, la quedada
 // sigue en la papelera y se puede volver a intentar.
 async function borrarParaSiempre(id){
-  const n=S.noches[id];if(!n||!n.papelera||!auth||!esAdmin())return;
+  const n=nochePap(id);if(!n||!n.papelera||!auth||!esAdmin())return;
   const ref=colRef("noches").doc(id),ahora=Date.now();
   const [rs,ps]=await Promise.all([ref.collection("rounds").get(),ref.collection("pagos").get()]);
   await Promise.all(rs.docs.map(x=>colRef("archive").doc(archiveKey(id,x.id)).update({titulo:n.titulo,borrada:{ts:ahora,por:me||""}}).catch(e=>console.warn("archivo:",e))));
   for(const x of rs.docs)await ref.collection("rounds").doc(x.id).delete();
   for(const x of ps.docs)await ref.collection("pagos").doc(x.id).delete();
   await ref.delete();
-  delete S.noches[id];delete NOCHES_DATA[id];render();
+  delete S.noches[id];delete NOCHES_DATA[id];delete PAP_ADMIN[id];render();
 }
 // Papelera de rondas de la quedada (032): cualquiera de la quedada manda una ronda y la recupera;
 // la borran para siempre sus organizadores (o un administrador que esté en ella). En la papelera no
@@ -1847,8 +1855,8 @@ function vNoches(){
   let h=`<div class="pad-head"><h2>Quedadas</h2><button class="mini" data-act="tab" data-id="pedir">← Volver</button></div>`;
   if(mode!=="firebase")return h+`<p class="hint">Las quedadas necesitan conexión con la base de datos.</p>`;
   h+=vCambiarSala();
-  h+=`<p class="note">Toca una quedada para entrar en ella. Puedes volver a cualquiera para apuntar una ronda olvidada o corregir.${auth&&esAdmin()?" 🗑 = mandarla a la papelera (se puede recuperar).":""}</p>`;
   const ns=nochesLista(),cs=carpetasLista(),ult=c=>Math.max(0,...ns.filter(n=>n.carpeta===c.id).map(n=>n.fecha||0));
+  h+=`<p class="note">Toca una quedada para entrar en ella. Puedes volver a cualquiera para apuntar una ronda olvidada o corregir.${auth&&ns.some(n=>esOrganizador(n.id))?" 🗑 = mandarla a la papelera (se puede recuperar; solo en las que organizas).":""}</p>`;
   cs.sort((a,b)=>ult(b)-ult(a)||a.name.localeCompare(b.name,"es"));
   const bloque=(titulo,mias,cid)=>{
     const todas=!!(ui.carpetaTodas&&ui.carpetaTodas[cid||"-"]),vis=todas?mias:mias.slice(0,5);
@@ -1866,18 +1874,25 @@ function vNoches(){
   const sueltas=ns.filter(n=>!S.carpetas[n.carpeta]);
   if(sueltas.length)h+=bloque("Sin carpeta",sueltas,"");
   h+=`<button class="btn" data-act="carpetaNueva">＋ Nueva carpeta</button>`;
-  // 031: la papelera, solo para administradores (y solo con las quedadas en las que están).
-  const pap=auth&&esAdmin()?papeleraLista():[];
+  // 031: la papelera. Desde la 033 la ve cualquiera con sus quedadas de la papelera; las recuperan
+  // sus organizadores (⭐) y los administradores, que además ven las de la papelera en las que no
+  // están y son los únicos que las borran para siempre.
+  const pap=auth?papeleraLista():[],adm=esAdmin();
   if(pap.length){
-    h+=`<section class="card" style="margin-top:14px"><h2>🗑 Papelera</h2><p class="note">Nadie las ve en las listas. «Recuperar» las devuelve a su carpeta; «Borrar para siempre» borra la quedada, sus rondas y sus pagos para todos (las rondas se quedan en el archivo, que solo se ve desde la consola de Firebase).</p>`;
-    pap.forEach(n=>{h+=`<div class="miembro"><div><b>${esc(n.titulo)}</b></div><div class="note">${esc(nombreCarpeta(n.carpeta))} · ${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""} · a la papelera el ${fechaCorta(n.papelera.ts)}${n.papelera.por&&findP(n.papelera.por)?" por "+esc(pname(n.papelera.por)):""}</div><div class="acts"><button class="mini on" data-act="nocheRecuperar" data-id="${n.id}">Recuperar</button><button class="mini" data-act="nocheBorrar" data-id="${n.id}">Borrar para siempre</button></div></div>`});
+    h+=`<section class="card" style="margin-top:14px"><h2>🗑 Papelera</h2><p class="note">Nadie las ve en las listas. «Recuperar» las devuelve a su carpeta (lo hace quien la organiza ⭐ o un administrador)${adm?"; «Borrar para siempre» borra la quedada, sus rondas y sus pagos para todos (las rondas se quedan en el archivo, que solo se ve desde la consola de Firebase)":"; borrarlas para siempre, solo un administrador"}.</p>`;
+    pap.forEach(n=>{
+      const rec=esOrganizador(n.id);
+      h+=`<div class="miembro"><div><b>${esc(n.titulo)}</b></div><div class="note">${esc(nombreCarpeta(n.carpeta))} · ${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""} · a la papelera el ${fechaCorta(n.papelera.ts)}${n.papelera.por&&findP(n.papelera.por)?" por "+esc(pname(n.papelera.por)):""}${n.ajena?" · no estás en ella":""}</div>`;
+      h+=rec||adm?`<div class="acts">${rec?`<button class="mini on" data-act="nocheRecuperar" data-id="${n.id}">Recuperar</button>`:""}${adm?`<button class="mini" data-act="nocheBorrar" data-id="${n.id}">Borrar para siempre</button>`:""}</div>`:`<div class="note">La puede recuperar quien la organiza.</div>`;
+      h+=`</div>`;
+    });
     h+=`</section>`;
   }
   return h;
 }
 function vNocheFila(n){
   const aqui=n.id===NOCHE;
-  let h=`<div class="noche${aqui?" aqui":""}"><button class="ir" data-act="nocheIr" data-id="${n.id}"><b>${esc(n.titulo)}</b><span class="note">${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""}</span></button><button class="linkish" data-act="nocheRenombrar" data-id="${n.id}" aria-label="Renombrar quedada">✏️</button><button class="linkish" data-act="nocheMover" data-id="${n.id}" aria-label="Mover a otra carpeta">📁</button>${auth&&esAdmin()?`<button class="linkish rm" data-act="nochePapelera" data-id="${n.id}" aria-label="Mandar a la papelera">🗑</button>`:""}</div>`;
+  let h=`<div class="noche${aqui?" aqui":""}"><button class="ir" data-act="nocheIr" data-id="${n.id}"><b>${esc(n.titulo)}</b><span class="note">${fechaCorta(n.fecha)}${n.rondas!=null?` · ${n.rondas} ronda${n.rondas===1?"":"s"} · ${eur(n.total||0)}`:""}</span></button><button class="linkish" data-act="nocheRenombrar" data-id="${n.id}" aria-label="Renombrar quedada">✏️</button><button class="linkish" data-act="nocheMover" data-id="${n.id}" aria-label="Mover a otra carpeta">📁</button>${auth&&esOrganizador(n.id)?`<button class="linkish rm" data-act="nochePapelera" data-id="${n.id}" aria-label="Mandar a la papelera">🗑</button>`:""}</div>`;
   if(ui.moverNoche===n.id){
     const otras=carpetasLista().filter(c=>c.id!==n.carpeta);
     h+=`<div class="chips" style="margin:4px 0 10px">${otras.length?otras.map(c=>`<button class="chip" data-act="nocheMoverA" data-id="${n.id}" data-carpeta="${c.id}">→ ${esc(c.name)}</button>`).join(""):'<span class="note">No hay otras carpetas.</span>'}</div>`;
@@ -2632,22 +2647,25 @@ document.addEventListener("click",e=>{
       n.organizadores=orgs;curUpdate({organizadores:orgs.slice()});
       flash(k>=0?`${pname(id)} ya no organiza`:`${pname(id)} organiza esta quedada`);break;
     }
-    /* --- papelera (031): solo administradores --- */
+    /* --- papelera (031; desde la 033, la mandan y la recuperan sus organizadores y la borran los administradores) --- */
     case"nochePapelera":{
-      const n=S.noches[id];if(!n||!auth||!esAdmin())return;
+      const n=S.noches[id];if(!n||!auth||!esOrganizador(id))return;
       if(!confirm(`¿Mandar «${n.titulo}» a la papelera? Desaparece de la lista de todos los que están en ella. Se puede recuperar desde la papelera, al final de Quedadas.`))return;
       if(!requirePin())return;
-      n.papelera={ts:Date.now(),por:me||""};
+      // 033: «esta» es para que la puedan pedir los administradores que no están en ella (reglas).
+      n.papelera={ts:Date.now(),por:me||"",esta:true};
       dbUpdate("noches/"+id,{papelera:clone(n.papelera)}).then(()=>{if(id===NOCHE)asegurarNoche();render()});
       if(id===NOCHE)asegurarNoche();
       flash("En la papelera: "+n.titulo);break;
     }
     case"nocheRecuperar":{
-      const n=S.noches[id];if(!n||!n.papelera||!auth||!esAdmin())return;
-      delete n.papelera;dbUpdate("noches/"+id,{papelera:DEL()});flash("Recuperada: "+n.titulo);break;
+      const n=nochePap(id);if(!n||!n.papelera||!auth||!esOrganizador(id))return;
+      const ajena=!S.noches[id];
+      delete n.papelera;if(ajena)delete PAP_ADMIN[id];
+      dbUpdate("noches/"+id,{papelera:DEL()});flash("Recuperada: "+n.titulo+(ajena?" (vuelve a los que están en ella)":""));break;
     }
     case"nocheBorrar":{
-      const n=S.noches[id];if(!n||!n.papelera||!auth||!esAdmin())return;
+      const n=nochePap(id);if(!n||!n.papelera||!auth||!esAdmin())return;
       if(!confirm(`¿Borrar para siempre «${n.titulo}»? Se borran la quedada, sus rondas y sus pagos, para todos, y no se puede deshacer. Solo quedará la copia de sus rondas en el archivo, que se ve desde la consola de Firebase.`))return;
       if(((prompt("Para confirmarlo, escribe BORRAR:","")||"").trim().toUpperCase())!=="BORRAR"){flash("No se ha borrado nada");return}
       if(!requirePin())return;
@@ -3202,6 +3220,7 @@ function escucharMiembro(){
       me=MIEMBRO.persona||null;
       if(!datosArrancados){datosArrancados=true;arrancarDatos();escucharMiembros()}
       else escucharNoches();   // 028: si cambia quién eres, tus noches son otras
+      escucharPapeleraAdmin();   // 033: si te hacen administrador o te lo quitan
     }else if(datosArrancados){location.reload();return}
     else if(!MIEMBRO)comprobarSala();
     sincronizarMiSala();
@@ -3285,6 +3304,9 @@ function escucharNoches(){
     const ns={},datos={};
     qs.docs.forEach(x=>{const d=x.data()||{};ns[x.id]=normNoche(d);datos[x.id]=d});
     S.noches=ns;NOCHES_DATA=datos;
+    // 033: las mandadas a la papelera con la 031 no llevan «esta», y sin él no las ven los
+    // administradores que no están en ellas. Se lo pone quien las organiza (una vez por sesión).
+    if(auth&&!md.fromCache)Object.keys(ns).forEach(id=>{const p=ns[id].papelera;if(p&&!p.esta&&!estaPuesta[id]&&esOrganizador(id)&&mode==="firebase"){estaPuesta[id]=true;dbUpdate("noches/"+id,{"papelera.esta":true})}});
     if(!md.fromCache)nochesDelServidor=true;
     if(NOCHE&&datos[NOCHE])S.current=Object.assign(normCurrent(datos[NOCHE]),{night:NOCHE});
     delete reintentado["noches:"+clave];
@@ -3292,6 +3314,23 @@ function escucharNoches(){
   },e=>{
     if(esPermiso(e)&&reintentar("noches:"+clave,()=>{if(nochesDe===clave){nochesDe=null;escucharNoches()}})){console.warn("noches:",e);return}
     errorNoches(e);
+  });
+}
+const estaPuesta={};
+// 033: un administrador ve también las quedadas de la papelera en las que no está, para
+// recuperarlas o borrarlas para siempre. Las reglas solo le dejan pedir las que llevan
+// papelera.esta (las demás, solo los que están en ellas). Si te quitan el administrador, se deja.
+function escucharPapeleraAdmin(){
+  const quiero=!!auth&&!!db&&!!SALA&&esAdmin();
+  if(quiero===!!unsubPapAdmin)return;
+  if(unsubPapAdmin){unsubPapAdmin();unsubPapAdmin=null;PAP_ADMIN={};render();return}
+  unsubPapAdmin=colRef("noches").where("papelera.esta","==",true).onSnapshot(qs=>{
+    const o={};qs.docs.forEach(x=>{o[x.id]=normNoche(x.data()||{})});
+    PAP_ADMIN=o;delete reintentado["papelera"];render();
+  },e=>{
+    // Sin las reglas de la 033 no deja: sin aviso, solo no salen (las tuyas siguen saliendo).
+    console.warn("papelera:",e);unsubPapAdmin=null;PAP_ADMIN={};
+    if(esPermiso(e))reintentar("papelera",escucharPapeleraAdmin);
   });
 }
 // 028: las noches de antes no tienen «quien». Se pone una vez, con sus participantes (o, si no los
