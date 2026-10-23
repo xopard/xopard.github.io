@@ -436,7 +436,7 @@ function dispositivo(){
   return [so,nav].filter(Boolean).join(" · ")||"otro";
 }
 /* --- salas: cada cuadrilla, su propia base de datos --- */
-const APP_VERSION="036";
+const APP_VERSION="038";
 const salaOk=x=>/^[a-z0-9-]{2,24}$/.test(x||"");
 function salaFromUrl(){const m=String(location.search||"").match(/[?&]sala=([A-Za-z0-9-]{2,24})/);return m?m[1].toLowerCase():null}
 // SALA es la sala de verdad (su código de siempre). Desde la 026 el enlace puede llevar en su lugar
@@ -646,16 +646,6 @@ function personUsed(pid){
 
 function freshCatalog(src){return src.map(c=>({id:uid("c"),name:c.name,color:c.color,mix:cloneMix(c.mix),items:(c.items||[]).map(cloneNode)}))}
 function countProducts(cat){let n=0;eachCatalog(cat,x=>{if(!x.group)n++});return n}
-function defaultNames(){const s=new Set();eachCatalog(DEFAULT_CATALOG,n=>{if(!n.group)s.add(canon(n.name))});return s}
-function hasDefaultMenu(){
-  const def=defaultNames();if(!def.size)return true;
-  return menus().some(m=>{
-    if(m.fromDefault)return true;
-    const names=new Set();eachCatalog(m.catalog,n=>{if(!n.group)names.add(canon(n.name))});
-    let hit=0;def.forEach(n=>{if(names.has(n))hit++});
-    return hit/def.size>=0.8;
-  });
-}
 /* --- lector de tablas pegadas (Excel, Word, Sheets, texto suelto o JSON) --- */
 function parsePrice(x){
   const m=String(x==null?"":x).replace(/[^0-9,.\-]/g," ").trim().replace(",",".").match(/-?\d+(\.\d+)?/);
@@ -742,12 +732,6 @@ function mergeCatalog(src){
     });
   });
   return{added,dup};
-}
-function catsToMenu(cats,name){
-  const catalog=[];
-  cats.forEach(c=>{const dest=destFor(catalog,c.name);
-    c.items.forEach(it=>dest.items.push({id:uid("x"),name:it.name,price:r2(it.price)||0,emoji:it.emoji||""}))});
-  return{id:uid("m"),name:String(name||"Carta importada").slice(0,30),catalog};
 }
 function mergeCats(cats){
   let added=0,dup=0;
@@ -1416,7 +1400,7 @@ const gLabel=o=>label(o)+(o.clarification?" · "+o.clarification:"");
 /* ===== Vistas ===== */
 function vMe(){
   // Con cuentas (025), quién eres no se elige en el móvil: lo dice tu ficha de miembro.
-  if(auth&&MIEMBRO)return`<p>Eres <b>${esc(me?pname(me):"(sin elegir)")}</b>${esAdmin()?" · administrador del grupo":""}.</p><p class="note">${esAdmin()?"Se cambia en Miembros del grupo, más abajo, con ⚙️.":"Si no eres tú, pídeselo a un administrador."}</p>`;
+  if(auth&&MIEMBRO)return`<p>Eres <b>${esc(me?pname(me):"(sin elegir)")}</b>${esAdmin()?" · administrador del grupo":""}.</p><p class="note">${esAdmin()?"Si no eres tú, pídeselo a otro administrador o a quien programa Eskari: nadie puede cambiar quién es él mismo.":"Si no eres tú, pídeselo a un administrador."}</p>`;
   return `<div class="selector-box${me?"":" need"}"><label for="selectMe">Eres:</label><select id="selectMe"><option value="">Elige quién eres…</option>${people().map(p=>`<option value="${p.id}"${p.id===me?" selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`;
 }
 function nodeAt(){
@@ -1780,18 +1764,23 @@ function vAjustes(){
   h+='</section>';
 
   h+=`<section class="card"><h2>El grupo</h2><p class="note">Cada grupo tiene su gente, sus quedadas, sus cartas y sus cuentas, sin mezclarse con los demás. ${auth?"Quien abra el enlace tendrá que pedir entrar, y alguien de dentro le aceptará.":"Comparte el enlace solo con los tuyos."}</p><p><b>Grupo actual:</b> ${esc(NOMBRE_SALA||SALA)}${NOMBRE_SALA?` <span class="note">(código interno: ${esc(SALA)})</span>`:""}</p>${auth&&esAdmin()?`<button class="btn small" data-act="salaNombre">✏️ ${NOMBRE_SALA?"Cambiar el nombre del grupo":"Ponerle un nombre fácil al grupo"}</button>${NOMBRE_SALA?`<p class="note">Si lo cambias, el enlace con el nombre de ahora deja de valer (el del código interno sigue valiendo).</p>`:""}`:""}<button class="btn small primary" data-act="salaCopy">🔗 Copiar el enlace de este grupo</button><div class="row2"><button class="btn small" data-act="salaNew">+ Crear otro grupo</button><button class="btn small" data-act="salaChange">↪ Entrar en otro grupo</button></div><button class="btn small" data-act="salaClone">⧉ Copiar este grupo a un código nuevo</button>${auth&&esAdmin()?`<button class="btn small warn" data-act="salaPapelera">🗑 Mandar este grupo a la papelera</button>`:""}<p class="note">Versión de la app: ${APP_VERSION}</p></section>`;
-  h+=`<section class="card"><h2>Cartas</h2><p class="note">Cada carta tiene sus propios productos y precios: una por bar, por sitio de siempre, por fiestas…</p><div class="chips">${menus().map(m=>`<button class="chip${m.id===S.config.menu?" on":""}" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
-  h+=`<button class="btn primary" data-act="tab" data-id="carta">✏️ Editar «${esc(curMenu().name)}» · ${countProducts(catalog())} productos</button>`;
-  h+=`<div class="row2"><button class="btn small" data-act="menuDup">⧉ Duplicar esta</button><button class="btn small" data-act="menuNew">+ Carta vacía</button></div>`;
-  h+=`<button class="btn small${hasDefaultMenu()?"":" primary"}" data-act="menuFromDefault">+ Añadir la carta ${esc(DEFAULT_NAME)} (${countProducts(DEFAULT_CATALOG)} productos)</button>`;
-  h+=`<button class="btn small primary" data-act="tab" data-id="importar">⬇️ Importar productos (Excel, Word, foto…)</button>`;
-  h+=`<div class="row2"><button class="btn small" data-act="expTable">⬆️ Copiar como tabla</button><button class="btn small" data-act="expJson">⬆️ Copia de seguridad</button></div>`;
-  h+=`<p class="note">Las cartas se guardan en la base de datos compartida (bar/config → menus), así que las ve todo el grupo y se editan desde cualquier móvil. "Copiar como tabla" da un texto que se pega tal cual en Excel.</p>`;
-  h+=`<div class="row2"><button class="btn small" data-act="menuRename">✏️ Renombrar</button><button class="btn small warn" data-act="menuDel"${menus().length>1?"":" disabled"}>🗑 Borrar carta</button></div>`;
-  h+=`<button class="btn small warn" data-act="menuDefaults">↻ Restaurar esta carta a la de por defecto</button><p class="note">Al restaurar se guarda antes una copia de seguridad de la carta actual, así que no se pierde nada.</p></section>`;
+  // 038: una sola carta por grupo. Desde que cada bar recuerda lo que cobra, una carta por bar ya no
+  // hace falta (y estorbaba: lo aprendido por un bar es por producto, y cada carta tiene los suyos).
+  // Las que hubiera de antes no se borran (las rondas viejas las usan para los nombres).
+  const cm=curMenu(),guardadas=menus().filter(m=>m.id!==cm.id),misOtras=auth&&USER?otrasSalas().filter(id=>MIS_SALAS[id].estado==="dentro"):[];
+  h+=`<section class="card"><h2>La carta</h2><p class="note">Lo que se puede pedir en el grupo, con un precio de referencia. Lo que os cobra cada bar se aprende solo y se guarda aparte (Bares, más abajo).</p>`;
+  h+=`<button class="btn primary" data-act="tab" data-id="carta">✏️ Editar «${esc(cm.name)}» · ${countProducts(cm.catalog)} productos</button>`;
+  h+=`<p class="note" style="margin:12px 0 4px"><b>Añadir productos.</b> Solo se añaden los que no tenéis; los que ya están no se tocan.</p>`;
+  if(misOtras.length)h+=`<button class="btn small" data-act="traerVer">⬇️ De la carta de otro de tus grupos</button>`+(ui.traer?`<div class="chips" style="margin:2px 0 8px">${misOtras.map(id=>`<button class="chip" data-act="traerDe" data-id="${esc(id)}">${esc(MIS_SALAS[id].nombre||id)}</button>`).join("")}</div>`:"");
+  h+=`<button class="btn small" data-act="tab" data-id="importar">⬇️ Pegando una tabla (Excel, Word…) o desde una foto</button>`;
+  h+=`<p class="note" style="margin:12px 0 4px"><b>Sacar la carta.</b> «Como tabla» se pega tal cual en Excel; la copia de seguridad se vuelve a meter en «Pegando una tabla».</p>`;
+  h+=`<div class="row2"><button class="btn small" data-act="expTable">⬆️ Como tabla</button><button class="btn small" data-act="expJson">⬆️ Copia de seguridad</button></div>`;
+  h+=`<div class="row2" style="margin-top:12px"><button class="btn small" data-act="menuRename">✏️ Cambiar el nombre</button><button class="btn small warn" data-act="menuDefaults">↻ Volver a la de fábrica</button></div><p class="note">Volver a la de fábrica (${esc(DEFAULT_NAME)}, ${countProducts(DEFAULT_CATALOG)} productos) guarda antes una copia de la vuestra, así que no se pierde nada.</p>`;
+  if(guardadas.length)h+=`<p class="note" style="margin-top:10px">Cartas guardadas (de antes de la versión 038, o copias de al volver a la de fábrica). No se borran porque las rondas antiguas las usan para los nombres. Tocar una la pone como carta del grupo:</p><div class="chips">${guardadas.map(m=>`<button class="chip" data-act="menuPick" data-id="${m.id}">${esc(m.name)}</button>`).join("")}</div>`;
+  h+=`</section>`;
   h+=vBaresAjustes();
 
-  h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: quedada nueva, vaciar la ronda en curso, corregir una ronda cerrada, borrar personas o cartas y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
+  h+=`<section class="card"><h2>PIN de seguridad</h2><p class="note">Si lo activas, se pedirá para lo delicado: quedada nueva, vaciar la ronda en curso, corregir una ronda cerrada, borrar personas, volver a la carta de fábrica y quitarle el modo asignador a otro. No es cifrado: es un freno para evitar destrozos por bromas o descuidos.</p><button class="btn" data-act="setPin">${S.config.pin?"🔒 PIN activo · cambiar o quitar":"🔓 Poner un PIN"}</button></section>`;
   return h;
 }
 
@@ -1807,8 +1796,7 @@ function vImport(){
       h+='<div class="card"><table><thead><tr><th>Categoría</th><th style="text-align:left">Producto</th><th>Precio</th></tr></thead><tbody>';
       rows.slice(0,15).forEach(x=>{h+=`<tr><td>${esc(x.cat)}</td><td style="text-align:left">${esc(x.name)}</td><td>${eur(x.price)}</td></tr>`});
       h+='</tbody></table>'+(rows.length>15?`<p class="note">… y ${rows.length-15} más</p>`:"")+'</div>';
-      h+=`<button class="btn primary" data-act="impNew">Crear carta nueva con estos ${r.count}</button>`;
-      h+=`<button class="btn" data-act="impMerge">Añadirlos a "${esc(curMenu().name)}"</button>`;
+      h+=`<button class="btn primary" data-act="impMerge">Añadir a «${esc(curMenu().name)}» los que falten</button><p class="note">Los que ya están en la carta (con el mismo nombre) no se tocan.</p>`;
     }
     if(r.skipped.length)h+=`<p class="note">Sin entender: ${esc(r.skipped.slice(0,5).join(" · "))}</p>`;
     h+=`<button class="btn small" data-act="impClear">Vaciar</button>`;
@@ -2145,6 +2133,17 @@ function progHacerAdmin(uid){
     .then(()=>{flash("Ya es administrador");progCargar("grupo",g.id)})
     .catch(e=>{console.warn(e);alert("No se ha podido"+(esPermiso(e)?" (Firebase no deja: ¿están las reglas de esta versión?)":"")+".")});
 }
+// 037: cambiar quién es una cuenta de un grupo (por si alguien se equivocó al elegir: uno mismo ya no
+// puede cambiárselo, para que nadie se haga pasar por otro).
+function progCambiarPersona(uid,pid){
+  const g=PROG.g,m=g&&g.miembros.find(x=>x.uid===uid),p=g&&g.people.find(x=>x.id===pid);
+  if(!PROGRAMADOR||!m||!p||m.persona===pid){render(true);return}
+  const otra=g.miembros.find(x=>x.uid!==uid&&x.persona===pid&&x.rol!=="pendiente");
+  if(!confirm(`¿${m.email||m.nombre||"Esta cuenta"} es ${p.name||"?"}?${otra?` ${p.name||"?"} ya tiene cuenta (${otra.email||"sin email"}): las dos verán sus quedadas.`:""}`)){render(true);return}
+  db.collection("salas").doc(g.id).collection("miembros").doc(uid).update({persona:pid})
+    .then(()=>{flash("Cambiado");progCargar("grupo",g.id)})
+    .catch(e=>{console.warn(e);alert("No se ha podido"+(esPermiso(e)?" (Firebase no deja: ¿están las reglas de esta versión?)":"")+".");render(true)});
+}
 // 035: borrar para siempre un grupo de la papelera con todo lo suyo (Aitor, 2026-10-22: también el
 // archivo). El documento del grupo va el último: mientras exista (en la papelera), las reglas dejan
 // al programador borrar lo de dentro. Si algo falla a medias, lo que queda sigue en la papelera y se
@@ -2197,7 +2196,9 @@ function vProg(){
     :`<button class="btn small" data-act="progSalaPapelera">🗑 Mandar a la papelera</button>`;
   h+=`</section>`;
   h+=`<section class="card"><h2>Miembros del grupo</h2>`;
-  const cuenta=m=>`<div class="note">📱 ${esc(m.email||"sin email")} · ${m.rol}${m.dispositivo?" · "+esc(m.dispositivo):""} · ${progCodigo(base+"/miembros/"+m.uid)}${m.rol!=="admin"?` <button class="mini" data-act="progAdmin" data-id="${esc(m.uid)}">Hacer administrador</button>`:""}</div>`;
+  // 037: el programador también cambia quién es una cuenta (nadie puede cambiárselo a sí mismo).
+  const quienEs=m=>m.rol==="pendiente"?"":`<select data-progpersona="${esc(m.uid)}" aria-label="Quién es">${g.people.map(p=>`<option value="${esc(p.id)}"${p.id===m.persona?" selected":""}>Es ${esc(p.name||"?")}</option>`).join("")}${g.people.some(p=>p.id===m.persona)?"":`<option value="" selected>(sin elegir)</option>`}</select>`;
+  const cuenta=m=>`<div class="note">📱 ${esc(m.email||"sin email")} · ${m.rol}${m.dispositivo?" · "+esc(m.dispositivo):""} · ${progCodigo(base+"/miembros/"+m.uid)}${m.rol!=="admin"?` <button class="mini" data-act="progAdmin" data-id="${esc(m.uid)}">Hacer administrador</button>`:""}</div>${quienEs(m)}`;
   g.people.forEach(p=>{h+=`<div class="miembro"><div><b>${esc(p.name||"?")}</b> <span class="prog-cod">${esc(p.id)}</span></div>${g.miembros.filter(m=>m.persona===p.id).map(cuenta).join("")}</div>`});
   g.miembros.filter(m=>!g.people.some(p=>p.id===m.persona)).forEach(m=>{h+=`<div class="miembro"><div><b>${esc(m.nombre||m.email||"?")}</b> <span class="note">${m.persona?"es «"+esc(m.persona)+"», que no está en la lista":"aún no ha elegido quién es"}</span></div>${cuenta(m)}</div>`});
   h+=`</section><section class="card"><h2>Quedadas (${g.noches.length})</h2><p class="note">Todas, también las de la papelera (🗑).</p>`;
@@ -2264,7 +2265,7 @@ function vEntrar(){
 // Miembro sin persona (quien reclama una sala): elegir quién es de la cuadrilla.
 function vQuienEres(){
   const libres=people().filter(p=>!Object.keys(MIEMBROS).some(u=>u!==(USER&&USER.uid)&&MIEMBROS[u].persona===p.id));
-  return`<section class="card" style="margin-top:20px"><h2>¿Quién eres?</h2><p class="note">Elige quién eres en este grupo. Solo se pregunta una vez; si te equivocas, se cambia en Ajustes › Miembros del grupo.</p><div class="chips">${libres.map(p=>`<button class="chip" data-act="mbSoy" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div><button class="btn small" data-act="mbSoyNuevo">No estoy en la lista: añadirme</button></section>`;
+  return`<section class="card" style="margin-top:20px"><h2>¿Quién eres?</h2><p class="note">Elige quién eres en este grupo. Solo se pregunta una vez: si te equivocas, te lo puede cambiar otro administrador o quien programa Eskari.</p><div class="chips">${libres.map(p=>`<button class="chip" data-act="mbSoy" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div><button class="btn small" data-act="mbSoyNuevo">No estoy en la lista: añadirme</button></section>`;
 }
 const pendientes=()=>Object.keys(MIEMBROS).filter(u=>MIEMBROS[u].rol==="pendiente");
 function vAvisoPendientes(){
@@ -2299,7 +2300,9 @@ function vCuentaDe(u,admin){
   const m=MIEMBROS[u],yo=USER&&USER.uid,abierta=admin&&ui.mbAbierta===u;
   let h=`<div class="cuenta-de"><div class="fila"><span class="note">📱 ${esc([m.email||"sin cuenta",m.dispositivo].filter(Boolean).join(" · "))}${m.rol==="admin"?" · <b>administrador</b>":""}${u===yo?" · tú":""}</span>${admin?`<button class="linkish${abierta?" on":""}" data-act="mbEditar" data-id="${u}" aria-label="Opciones de esta cuenta">⚙️</button>`:""}</div>`;
   if(abierta){
-    h+=`<select data-mbcambia="${u}" aria-label="Quién es">${people().map(p=>`<option value="${p.id}"${p.id===m.persona?" selected":""}>Es ${esc(p.name)}</option>`).join("")}${m.persona&&findP(m.persona)?"":`<option value="" selected>(sin elegir)</option>`}</select>`;
+    // 037: quién eres tú no lo cambias tú (te harías pasar por otro y verías sus quedadas).
+    if(u===yo&&m.persona)h+=`<p class="note">Quién eres tú solo te lo puede cambiar otro administrador o quien programa Eskari.</p>`;
+    else h+=`<select data-mbcambia="${u}" aria-label="Quién es">${people().map(p=>`<option value="${p.id}"${p.id===m.persona?" selected":""}>Es ${esc(p.name)}</option>`).join("")}${m.persona&&findP(m.persona)?"":`<option value="" selected>(sin elegir)</option>`}</select>`;
     if(u!==yo)h+=`<div class="acts"><button class="mini" data-act="mbAdmin" data-id="${u}">${m.rol==="admin"?"Quitar admin":"Hacer admin"}</button><button class="mini" data-act="mbQuitar" data-id="${u}">Quitar acceso</button></div>`;
   }
   return h+`</div>`;
@@ -2380,6 +2383,15 @@ function vBarLista(){
 const sheet=inner=>`<div class="modal" data-act="modalClose"><div class="sheet" data-act="noop">${inner}</div></div>`;
 function vModal(){
   if(!ui.modal)return"";
+  // 038: crear un grupo desde dentro de otro: con qué carta empieza, y si se lleva los bares.
+  if(ui.modal==="grupoNuevo"&&ui.grupoNuevo){
+    const cm=curMenu(),np=countProducts(cm.catalog),nb=Object.keys(S.bares||{}).length;
+    return sheet(`<h2>Grupo nuevo: ${esc(ui.grupoNuevo.code)}</h2><p class="note">¿Con qué carta empieza?</p>`+
+      (nb?`<button class="btn primary" data-act="grupoNuevoCon" data-id="todo">Con «${esc(cm.name)}» (${np} productos) y los ${nb} bar${nb===1?"":"es"} con lo que cobran</button>`:"")+
+      `<button class="btn${nb?"":" primary"}" data-act="grupoNuevoCon" data-id="carta">Con «${esc(cm.name)}» (${np} productos)${nb?", sin los bares":""}</button>`+
+      `<button class="btn" data-act="grupoNuevoCon" data-id="fabrica">Con la de fábrica (${esc(DEFAULT_NAME)}, ${countProducts(DEFAULT_CATALOG)} productos)</button>`+
+      `<p class="note">De este grupo solo se copia eso: ni la gente, ni las quedadas, ni las cuentas. Los bares sirven si la otra cuadrilla va a los mismos.</p><button class="btn small" data-act="modalClose">Cancelar</button>`);
+  }
   if(ui.modal==="me"&&auth&&MIEMBRO)
     return sheet(`<h2>${esc(me?pname(me):"¿Quién eres?")}</h2>${vMe()}<p class="note">Cuenta: ${USER?(USER.isAnonymous?"sin cuenta (solo este navegador)":esc(USER.email||"")):""}</p><button class="btn small" data-act="modalClose" style="margin-top:12px">Cerrar</button>`);
   if(ui.modal==="me")
@@ -2934,16 +2946,26 @@ document.addEventListener("click",e=>{
       editConfig(c=>{c.assignerMode=""});return;
     }
 
-    case"menuPick":if(id!==S.config.menu)editConfig(c=>{c.menu=id});ui.path=[];return;
-    case"menuDup":{
-      const n=prompt("Nombre de la copia:",curMenu().name+" (copia)");if(!n||!n.trim())return;
-      const copy={id:uid("m"),name:n.trim().slice(0,30),catalog:freshCatalog(catalog())};
-      editConfig(c=>{c.menus.push(copy);c.menu=copy.id});flash("Carta duplicada");return;
+    case"menuPick":{
+      if(id===S.config.menu||!menus().some(m=>m.id===id))return;
+      if(!confirm(`¿Usar «${menus().find(m=>m.id===id).name}» como carta del grupo? «${curMenu().name}» queda guardada.`))return;
+      editConfig(c=>{c.menu=id});ui.path=[];return;
     }
-    case"menuNew":{
-      const n=prompt("Nombre de la carta nueva:","Carta 2");if(!n||!n.trim())return;
-      const m={id:uid("m"),name:n.trim().slice(0,30),catalog:[{id:uid("c"),name:"Bebidas",color:PALETTE[0],items:[]}]};
-      editConfig(c=>{c.menus.push(m);c.menu=m.id});flash("Carta creada");return;
+    // 038: traer a la carta los productos que falten de la carta de otro de tus grupos (por nombre).
+    case"traerVer":ui.traer=!ui.traer;break;
+    case"traerDe":{
+      if(!db||id===SALA||!MIS_SALAS[id]||MIS_SALAS[id].estado!=="dentro")return;
+      ui.traer=false;render();
+      const nom=MIS_SALAS[id].nombre||id;
+      db.collection("salas").doc(id).collection("bar").doc("config").get().then(s=>{
+        if(!s.exists){alert(`«${nom}» aún no tiene carta.`);return}
+        const cf=normConfig(s.data()),m=cf.menus.find(x=>x.id===cf.menu)||cf.menus[0];
+        let falta=0;eachCatalog(m.catalog,n=>{if(!n.group&&!nameExists(catalog(),n.name))falta++});
+        if(!falta){alert(`En la carta de «${nom}» («${m.name}») no hay nada que no tengáis ya.`);return}
+        if(!confirm(`En la carta de «${nom}» («${m.name}», ${countProducts(m.catalog)} productos) hay ${falta} que no tenéis. ¿Añadirlos a «${curMenu().name}» con su precio? Los que ya tenéis no se tocan, y lo que cobra cada bar se queda en su grupo.`))return;
+        const res=mergeCatalog(m.catalog);flash(`${res.added} producto${res.added===1?"":"s"} añadido${res.added===1?"":"s"}`);
+      }).catch(e=>{console.warn(e);alert("No se ha podido leer la carta de ese grupo.")});
+      return;
     }
     case"menuRename":{const n=prompt("Nombre de la carta:",curMenu().name);if(!n||!n.trim())return;editConfig(c=>{const m=c.menus.find(x=>x.id===c.menu);if(m)m.name=n.trim().slice(0,30)});return}
     case"salaCopy":copyOut(salaLink(),"Enlace copiado: ya puedes compartirlo");return;
@@ -3005,7 +3027,7 @@ document.addEventListener("click",e=>{
     }
     case"mbCancelar":if(auth&&USER)root().collection("miembros").doc(USER.uid).delete();return;
     case"mbSoy":case"mbSoyNuevo":{
-      if(!auth||!USER||!MIEMBRO)return;
+      if(!auth||!USER||!MIEMBRO||MIEMBRO.persona)return;   // 037: se elige una sola vez
       let pid=id;
       if(b.dataset.act==="mbSoyNuevo"){
         const n=(prompt("¿Cómo te llaman en el grupo?",ui.mbNombre||"")||"").trim().slice(0,30);if(!n)return;
@@ -3020,6 +3042,9 @@ document.addEventListener("click",e=>{
     case"mbAceptar":{
       const m=MIEMBROS[id];if(!m||m.rol!=="pendiente"||!esDentro())return;
       const sel=document.querySelector(`[data-mbpersona="${id}"]`);let pid=sel?sel.value:"nuevo";
+      // 037: si esa persona ya tiene cuenta, avisar: la cuenta nueva verá sus quedadas.
+      const otra=pid!=="nuevo"&&Object.keys(MIEMBROS).find(x=>x!==id&&MIEMBROS[x].persona===pid&&MIEMBROS[x].rol!=="pendiente");
+      if(otra&&!confirm(`${pname(pid)} ya tiene cuenta (${MIEMBROS[otra].email||"sin email"}). ¿Seguro que «${m.nombre||"?"}»${m.email?" ("+m.email+")":""} también es ${pname(pid)}? Verá sus quedadas.`))return;
       if(pid==="nuevo"){pid=uid("p");editConfig(c=>c.people.push({id:pid,name:(m.nombre||"Nuevo").slice(0,30),paused:false}))}
       if(!findP(pid))return;
       root().collection("miembros").doc(id).update({rol:"miembro",persona:pid,por:USER.uid,aceptado:Date.now()})
@@ -3057,7 +3082,13 @@ document.addEventListener("click",e=>{
       if(!salaOk(code)){alert("Ese nombre no vale: entre 2 y 24 letras, números o guiones.");return}
       let nombre="";
       if(auth){nombre=(prompt("¿Cómo te llaman en el grupo?",(USER.email||"").split("@")[0])||"").trim().slice(0,30);if(!nombre)return}
+      // 038: desde dentro de un grupo, el nuevo puede empezar con su carta (y sus bares).
+      if(auth&&nombre&&SALA&&esDentro()&&mode==="firebase"){ui.grupoNuevo={code,nombre};ui.modal="grupoNuevo";break}
       crearSala(code,false,"p1",nombre);return;
+    }
+    case"grupoNuevoCon":{
+      const g=ui.grupoNuevo;ui.modal=null;ui.grupoNuevo=null;if(!g)break;
+      crearSala(g.code,false,"p1",g.nombre,{carta:id!=="fabrica"?clone(curMenu()):null,bares:id==="todo"?clone(S.bares):null});return;
     }
     case"salaClone":{
       if(auth&&(!USER||USER.isAnonymous)){alert("Para crear un grupo necesitas una cuenta con email.");return}
@@ -3072,15 +3103,6 @@ document.addEventListener("click",e=>{
     case"expJson":copyOut(exportMenu(),"Copia de seguridad copiada");return;
     case"copyPrompt":copyOut(OCR_PROMPT,"Petición copiada: envíala junto a la foto");return;
     case"impClear":ui.impText="";break;
-    case"impNew":{
-      const r=parseTable(ui.impText||"");if(!r.count)return;
-      const n=prompt("Nombre de la carta nueva:",r.name||("Carta "+(menus().length+1)));
-      if(!n||!n.trim())return;
-      const m=r.menu?Object.assign({},r.menu,{id:uid("m"),name:n.trim().slice(0,30)}):catsToMenu(r.cats,n.trim());
-      ui.impText="";ui.path=[];ui.tab="ajustes";
-      editConfig(c=>{c.menus.push(m);c.menu=m.id});
-      flash(`Carta "${m.name}" creada con ${r.count} productos`);return;
-    }
     case"impMerge":{
       const r=parseTable(ui.impText||"");if(!r.count)return;
       if(!confirm(`Se añadirán hasta ${r.count} productos a "${curMenu().name}". ¿Seguir?`))return;
@@ -3088,21 +3110,8 @@ document.addEventListener("click",e=>{
       const res=r.menu?mergeCatalog(r.menu.catalog):mergeCats(r.cats);
       flash(`${res.added} añadidos${res.dup?` · ${res.dup} ya estaban`:""}`);return;
     }
-    case"menuFromDefault":{
-      const nm=DEFAULT_NAME+(menus().some(x=>canon(x.name)===canon(DEFAULT_NAME))?" "+hhmm(Date.now()):"");
-      const m={id:uid("m"),name:nm,fromDefault:true,catalog:freshCatalog(DEFAULT_CATALOG)};
-      editConfig(c=>{c.menus.push(m);c.menu=m.id});ui.path=[];flash("Carta completa añadida y activada");return;
-    }
-    case"menuDel":{
-      if(menus().length<2)return;
-      if(!requirePin())return;
-      const used=usedIds(),m=curMenu();
-      if(m.catalog.some(c=>c.items.some(it=>used.has(it.id)))){flash("Tiene bebidas pedidas en esta quedada");return}
-      if(!confirm(`¿Borrar la carta "${m.name}"?`))return;
-      editConfig(c=>{c.menus=c.menus.filter(x=>x.id!==m.id);c.menu=c.menus[0].id});ui.path=[];return;
-    }
     case"menuDefaults":{
-      if(!confirm("Se guardará una copia de la carta actual y esta pasará a ser la de por defecto. ¿Seguir?"))return;
+      if(!confirm(`Se guardará una copia de «${curMenu().name}» (en «Cartas guardadas») y la carta del grupo volverá a ser la de fábrica, ${DEFAULT_NAME}. ¿Seguir?`))return;
       if(!requirePin())return;
       const backup={id:uid("m"),name:(curMenu().name+" "+hhmm(Date.now())).slice(0,30),catalog:clone(catalog())};
       editConfig(c=>{c.menus.push(backup);const m=c.menus.find(x=>x.id===c.menu);if(m){m.catalog=freshCatalog(DEFAULT_CATALOG);m.fromDefault=true}});
@@ -3270,9 +3279,12 @@ document.addEventListener("change",e=>{
   if(e.target&&e.target.id==="impText"){ui.impText=e.target.value;render(true);return}
   const t=e.target;
   if(t.id==="selectMe"){if(auth)return;me=t.value||null;lsSet("ronda.me",me);ui.sel=me;render(true);return}
+  if(t.dataset.progpersona){progCambiarPersona(t.dataset.progpersona,t.value);return}   // 037
   // 025: un administrador cambia quién es un miembro.
   if(t.dataset.mbcambia){
-    const u=t.dataset.mbcambia;if(!esAdmin()||!MIEMBROS[u]||!findP(t.value))return;
+    const u=t.dataset.mbcambia;if(!esAdmin()||!MIEMBROS[u]||!findP(t.value)||(u===USER.uid&&MIEMBROS[u].persona))return;   // 037: a uno mismo, no
+    const otra=Object.keys(MIEMBROS).find(x=>x!==u&&MIEMBROS[x].persona===t.value&&MIEMBROS[x].rol!=="pendiente");
+    if(otra&&!confirm(`${pname(t.value)} ya tiene cuenta (${MIEMBROS[otra].email||"sin email"}). ¿Seguro que esta otra cuenta también es suya? Verá sus quedadas.`)){render(true);return}
     root().collection("miembros").doc(u).update({persona:t.value}).then(()=>flash("Cambiado")).catch(e=>{console.warn(e);alert("No se ha podido cambiar.")});
     return;
   }
@@ -3348,7 +3360,9 @@ document.addEventListener("change",e=>{
 // nombre: en una sala nueva, la cuadrilla empieza solo contigo, con ese nombre.
 // 036: ya no hace falta la contraseña de crear grupos (hasta la 035 iba a claves/{código}); basta una
 // cuenta con email.
-async function crearSala(code,silencio,persona,nombre){
+// 038: lleva = {carta, bares}: la carta con la que empieza (si no, la de fábrica) y los bares con lo
+// que cobran. La carta va con los mismos códigos de producto, para que los precios de los bares valgan.
+async function crearSala(code,silencio,persona,nombre,lleva){
   if(!db){alert("Sin conexión con la base de datos.");return false}
   try{
     const ref=db.collection("salas").doc(code);
@@ -3359,7 +3373,12 @@ async function crearSala(code,silencio,persona,nombre){
     b.set(ref,{creada:ahora,por:auth&&USER?USER.uid:(me||"")});
     if(auth&&USER)b.set(ref.collection("miembros").doc(USER.uid),{rol:"admin",persona:persona||"",nombre:nombre||"",email:USER.email||"",ts:ahora,dispositivo:dispositivo()});
     await b.commit();
-    if(nombre){const c=defaults().config;c.people=[{id:"p1",name:nombre,paused:false}];await ref.collection("bar").doc("config").set(c)}
+    if(nombre){
+      const c=defaults().config;c.people=[{id:"p1",name:nombre,paused:false}];
+      if(lleva&&lleva.carta){c.menus=[lleva.carta];c.menu=lleva.carta.id}
+      await ref.collection("bar").doc("config").set(c);
+    }
+    if(lleva&&lleva.bares&&Object.keys(lleva.bares).length)await ref.collection("bar").doc("precios").set({bares:lleva.bares});
     if(!silencio)irASala(code);
     return true;
   }catch(e){
