@@ -298,7 +298,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '013';
+const APP_VERSION = '014';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -1942,9 +1942,27 @@ function aplicarOperacion(d, op) {
     case 'elemento': {                           // (011) «proxima» se mezcla campo a campo: una nota nueva no cambia la decisión
       const ob = op.elemento, actual = ob?.id ? v.elementos.find(e => e.id === ob.id) : null;
       if (actual && ob.proxima) ob.proxima = { ...actual.proxima, ...ob.proxima };
-      return porId(v.elementos, ob, 'elemento');
+      // (014) Si se sustituye una nota que tenía texto, la vista previa enseña la de antes
+      const antes = actual ? [['nota de próxima visita', actual.proxima?.nota, ob.proxima?.nota], ['nota', actual.nota, ob.nota]]
+        .filter(([, a, n]) => n !== undefined && a && a !== n).map(([q, a]) => `${q} sustituida; antes decía «${corto(a)}»`) : [];
+      const r = porId(v.elementos, ob, 'elemento');
+      if (antes.length) r.texto += ' · ' + antes.join(' · ');
+      return r;
     }
-    case 'pendiente': return porId(v.pendientes, op.pendiente, 'pendiente');
+    case 'pendiente': {                          // (014) la nota y la nota del cierre que ya tenían texto no se pierden: lo nuevo va detrás
+      const p = op.pendiente, actual = p?.id ? v.pendientes.find(x => x.id === p.id) : null, juntadas = [];
+      const junta = (antes, nuevo, que) => { const t = juntarTexto(antes, nuevo); if (t !== limpio(antes) && t !== limpio(nuevo)) juntadas.push(que); return t; };
+      if (actual) {
+        if (p.nota !== undefined) p.nota = junta(actual.nota, p.nota, 'nota');
+        if (p.cierre) {
+          const t = junta(actual.cierre?.nota, p.cierre.nota, 'nota del cierre');
+          p.cierre = { ...actual.cierre, ...p.cierre, nota: t };
+        }
+      }
+      const r = porId(v.pendientes, p, 'pendiente');
+      if (r.ok && juntadas.length) r.texto += ` · el texto nuevo va detrás del que ya había en la ${juntadas.join(' y en la ')}`;
+      return r;
+    }
     case 'caducidad': {
       const c = op.caducidad, actual = c?.id ? v.caducidades.find(x => x.id === c.id) : null;
       if (!c?.id) return mal(`${nv}: caducidad sin id`);
@@ -1981,6 +1999,16 @@ function aplicarOperacion(d, op) {
     default: return mal(`Operación desconocida: ${op.op}`);
   }
 }
+// (014) Junta el texto que ya había con el que llega por importación, sin perder ninguno.
+// Si uno ya contiene al otro, se queda el más largo (así, volver a importar lo mismo no lo repite).
+function juntarTexto(antes, nuevo) {
+  const a = limpio(antes), n = limpio(nuevo);
+  if (!a || !n) return a || n;
+  if (a.includes(n)) return a;
+  if (n.includes(a)) return n;
+  return `${a}${/[.!?…)»]$/.test(a) ? '' : '.'} ${n}`;
+}
+const corto = (s, max = 160) => s.length > max ? s.slice(0, max - 1) + '…' : s;
 // Completa una caducidad que ya existe sin perder nada de lo que hay (006):
 // - historial: añade los periodos que faltan y completa los que ya están (mismos desde, hasta y pagado).
 //   Solo quita los que vengan en historialQuitar, con esas mismas tres fechas;
@@ -2062,7 +2090,7 @@ window.addEventListener('beforeunload', e => { if (S.sucio) { e.preventDefault()
 
 // Para las pruebas (test-humo.html).
 window.Ruedak = {
-  version: APP_VERSION, S, comprobarCambios, numero, hojasExcel, excel: () => xlsx(hojasExcel()),
+  version: APP_VERSION, S, comprobarCambios, numero, juntarTexto, hojasExcel, excel: () => xlsx(hojasExcel()),
   kmPorAno: vid => kmPorAno(veh(vid)), lecturasTodas: vid => lecturasTodas(veh(vid)),
   desdeAnterior: (vid, eid) => { const v = veh(vid); return [...desdeAnterior(v, elemento(v, eid))].map(([l, d]) => ({ ...d, visita: v.visitas.find(x => x.lineas.includes(l))?.id })); },
   juegosNeumaticos: (vid, eid) => juegosNeumaticos(veh(vid), elemento(veh(vid), eid)),
