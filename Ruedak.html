@@ -171,6 +171,8 @@ ul.importacion li.mal { color: var(--rojo); }
 .pend { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 9px 12px; border-top: 1px solid var(--raya); }
 .pend:first-child { border-top: 0; }
 .pend .botones { margin-top: 0; flex-wrap: nowrap; }
+.nota-larga { margin-top: 3px; overflow-wrap: anywhere; }
+ul.importacion .imp-cambio { margin-top: 2px; overflow-wrap: anywhere; }
 .boton.peligro { color: var(--rojo); border-color: var(--rojo); }
 .tabla .boton.peque { white-space: nowrap; }
 .tabla td.det { min-width: 13em; }                /* en el móvil la tabla se desplaza de lado en vez de partir el detalle palabra a palabra */
@@ -298,7 +300,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '014';
+const APP_VERSION = '015';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -333,6 +335,7 @@ function hoy() { const p = prueba(); if (p && p.hoy) return p.hoy; const d = new
 
 // ─── Utilidades ──────────────────────────────────────────────────────────────
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function escN(s) { return esc(s).replace(/\n/g, '<br>'); }                              // (015) notas: con sus saltos de línea
 function iso(y, m, d) { return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
 function partes(f) { return f.split('-').map(Number); }
 function utc(f) { const [y, m, d] = partes(f); return Date.UTC(y, m - 1, d); }
@@ -677,8 +680,8 @@ function detalleElemento(v, e) {
   const el = e.el, hist = lineasDe(v, el.id).reverse();
   const filas = [['Referencia', el.referencia], ['Especificación', el.especificacion], ['Intervalo', textoIntervalo(el.intervalo)],
     ['Fuente', el.fuente], ['Nota', el.nota]].filter(([, x]) => x);
-  return `<div class="detalle"><dl class="datos">${filas.map(([k, x]) => `<dt>${k}</dt><dd>${esc(x)}</dd>`).join('')}
-      <dt>Próxima visita</dt><dd>${esc(el.proxima?.nota || '—')} <button class="boton peque" data-accion="nota-proxima" data-veh="${v.id}" data-el="${esc(el.id)}">Editar</button></dd></dl>
+  return `<div class="detalle"><dl class="datos">${filas.map(([k, x]) => `<dt>${k}</dt><dd>${escN(x)}</dd>`).join('')}
+      <dt>Próxima visita</dt><dd>${escN(el.proxima?.nota || '—')} <button class="boton peque" data-accion="nota-proxima" data-veh="${v.id}" data-el="${esc(el.id)}">Editar</button></dd></dl>
     ${hist.length ? tablaLineas(v, hist) : '<p class="sub">Sin registros en el historial.</p>'}
     <div class="botones"><button class="boton peque" data-accion="editar-elemento" data-veh="${v.id}" data-el="${esc(el.id)}">Editar el elemento</button></div></div>`;
 }
@@ -712,7 +715,7 @@ function tablaLineas(v, hist) {
       <td>${esc(nombreTaller(x.taller))}${x.importe != null ? `<br><span class="sub">Factura ${fEur(x.importe)}</span>` : ''}</td>
       <td>${ACCIONES[l.accion] || esc(l.accion)}</td>
       <td class="desde">${textoDesdeAnterior(v, desde.get(l))}</td>
-      <td class="det">${esc([l.marca, l.texto, cant(l), l.dot ? 'DOT ' + l.dot : '', l.nota].filter(Boolean).join(' · '))}</td>
+      <td class="det">${escN([l.marca, l.texto, cant(l), l.dot ? 'DOT ' + l.dot : '', l.nota].filter(Boolean).join(' · '))}</td>
       <td class="num">${l.importe != null ? fEur(l.importe) + (x.lineasConIva ? '' : '<br><span class="sub">sin IVA</span>') : ''}</td>
       <td><button class="boton peque" data-accion="editar-linea" data-veh="${v.id}" data-vis="${esc(x.id)}" data-lin="${x.lineas.indexOf(l)}">Editar</button></td></tr>`).join('')}
   </tbody></table></div>
@@ -748,14 +751,14 @@ function visitaHTML(v, x) {
       ${x.itv?.defectos ? `<p>Defectos: ${esc(x.itv.defectos)}</p>` : ''}
       ${x.lineas.length ? `<div class="tabla-wrap"><table class="tabla"><thead><tr><th>Elemento</th><th>Detalle</th><th class="num">Cant.</th><th class="num">Importe</th><th>Acción</th><th></th></tr></thead><tbody>
         ${x.lineas.map((l, i) => { const el = l.elemento ? elemento(v, l.elemento) : null; return `<tr><td>${esc(el ? el.nombre : l.texto || l.elemento)}</td>
-          <td class="det">${esc([el ? l.texto : '', l.marca, l.referencia, l.dot ? 'DOT ' + l.dot : '', l.nota].filter(Boolean).join(' · '))}</td>
+          <td class="det">${escN([el ? l.texto : '', l.marca, l.referencia, l.dot ? 'DOT ' + l.dot : '', l.nota].filter(Boolean).join(' · '))}</td>
           <td class="num">${l.cantidad != null ? fNum(l.cantidad, Number.isInteger(l.cantidad) ? 0 : 1) + (l.unidad ? ' ' + esc(l.unidad) : '') : ''}</td>
           <td class="num">${l.importe != null ? fEur(l.importe) : ''}</td><td>${ACCIONES[l.accion] || esc(l.accion)}</td>
           <td><button class="boton peque" data-accion="editar-linea" data-veh="${v.id}" data-vis="${esc(x.id)}" data-lin="${i}">Editar</button></td></tr>`; }).join('')}
       </tbody></table></div>` : '<p class="sub">Sin líneas.</p>'}
       ${conImporte ? `<p class="sub">Importes de las líneas ${x.lineasConIva ? 'con' : 'sin'} IVA${x.importe != null ? '; el total de la visita lleva IVA' : ''}.</p>` : ''}
       ${mo ? `<p>${mo}</p>` : ''}
-      ${x.notas ? `<p class="sub">${esc(x.notas)}</p>` : ''}
+      ${x.notas ? `<p class="sub">${escN(x.notas)}</p>` : ''}
       ${f ? `<p>Factura${f.numero ? ` nº ${esc(f.numero)}` : ''}${f.fichero ? `: <span class="mono">${esc(f.fichero)}</span>` : ''}${f.enlace ? ` · <a href="${esc(f.enlace)}" target="_blank" rel="noopener">abrir</a>` : ''}</p>` : ''}
       <div class="botones"><button class="boton peque" data-accion="nueva-linea" data-veh="${v.id}" data-vis="${esc(x.id)}">Añadir línea</button>
         <button class="boton peque" data-accion="editar-visita" data-veh="${v.id}" data-vis="${esc(x.id)}">Editar la visita</button></div>
@@ -882,9 +885,9 @@ function pestCaducidades(v) {
     return `<h3>${esc(c.tipo)}</h3><div class="caja">
       <p>${punto(e.color)} Vence el <b>${esc(e.texto)}</b> <button class="boton peque" data-accion="renovar" data-veh="${v.id}" data-cad="${esc(c.id)}">Renovar</button>
         <button class="boton peque" data-accion="editar-caducidad" data-veh="${v.id}" data-cad="${esc(c.id)}">Editar</button></p>
-      ${filas.length ? `<dl class="datos">${filas.map(([k, x]) => `<dt>${k}</dt><dd>${esc(x)}</dd>`).join('')}</dl>` : ''}
+      ${filas.length ? `<dl class="datos">${filas.map(([k, x]) => `<dt>${k}</dt><dd>${escN(x)}</dd>`).join('')}</dl>` : ''}
       ${c.historial?.length ? `<div class="tabla-wrap"><table class="tabla" style="margin-top:8px"><thead><tr><th>Periodo</th><th>Entidad</th><th class="num">Importe</th><th>Nota</th></tr></thead><tbody>
-        ${[...c.historial].reverse().map(x => `<tr><td>${x.pagado ? 'Pagado ' + fFecha(x.pagado) : `${x.desde ? fFecha(x.desde) : '…'} – ${x.hasta ? fFecha(x.hasta) : '…'}`}</td><td>${esc(x.entidad || '')}</td><td class="num">${x.importe != null ? fEur(x.importe) : ''}</td><td>${esc(x.nota || '')}</td></tr>`).join('')}
+        ${[...c.historial].reverse().map(x => `<tr><td>${x.pagado ? 'Pagado ' + fFecha(x.pagado) : `${x.desde ? fFecha(x.desde) : '…'} – ${x.hasta ? fFecha(x.hasta) : '…'}`}</td><td>${esc(x.entidad || '')}</td><td class="num">${x.importe != null ? fEur(x.importe) : ''}</td><td>${escN(x.nota || '')}</td></tr>`).join('')}
       </tbody></table></div>` : ''}</div>`;
   }).join('');
 }
@@ -893,9 +896,9 @@ function pestPendientes(v) {
   const ab = v.pendientes.filter(p => p.estado === 'abierto'), ce = v.pendientes.filter(p => p.estado !== 'abierto');
   const nombreEl = id => id ? elemento(v, id)?.nombre || id : '';
   return `<div class="botones"><button class="boton primario" data-accion="nuevo-pendiente" data-veh="${v.id}">Añadir pendiente</button></div>
-    <h3>Abiertos</h3>${ab.length ? `<div class="lista-el">${ab.map(p => `<div class="pend"><div><b>${esc(p.texto)}</b><br><span class="sub">${esc(TIPOS_PEND[p.tipo] || p.tipo)} desde ${fFecha(p.desde)}${p.elemento ? ' · ' + esc(nombreEl(p.elemento)) : ''}${p.nota ? ' · ' + esc(p.nota) : ''}</span></div>
+    <h3>Abiertos</h3>${ab.length ? `<div class="lista-el">${ab.map(p => `<div class="pend"><div><b>${escN(p.texto)}</b><br><span class="sub">${esc(TIPOS_PEND[p.tipo] || p.tipo)} desde ${fFecha(p.desde)}${p.elemento ? ' · ' + esc(nombreEl(p.elemento)) : ''}</span>${p.nota ? `<div class="sub nota-larga">${escN(p.nota)}</div>` : ''}</div>
       <div class="botones"><button class="boton peque" data-accion="editar-pendiente" data-veh="${v.id}" data-pend="${esc(p.id)}">Editar</button><button class="boton peque" data-accion="cerrar-pendiente" data-veh="${v.id}" data-pend="${esc(p.id)}">Cerrar</button></div></div>`).join('')}</div>` : '<p class="sub">No hay pendientes abiertos.</p>'}
-    ${ce.length ? `<h3>Cerrados</h3><div class="lista-el">${ce.map(p => `<div class="pend"><div>${esc(p.texto)}<br><span class="sub">${p.estado === 'hecho' ? 'Hecho' : 'Descartado'}${p.cierre?.fecha ? ' el ' + fFecha(p.cierre.fecha) : ''}${p.cierre?.nota ? ' · ' + esc(p.cierre.nota) : ''}</span></div>
+    ${ce.length ? `<h3>Cerrados</h3><div class="lista-el">${ce.map(p => `<div class="pend"><div>${escN(p.texto)}<br><span class="sub">${p.estado === 'hecho' ? 'Hecho' : 'Descartado'}${p.cierre?.fecha ? ' el ' + fFecha(p.cierre.fecha) : ''}</span>${p.cierre?.nota ? `<div class="sub nota-larga">${escN(p.cierre.nota)}</div>` : ''}${p.nota ? `<div class="sub nota-larga">${escN(p.nota)}</div>` : ''}</div>
       <div class="botones"><button class="boton peque" data-accion="editar-pendiente" data-veh="${v.id}" data-pend="${esc(p.id)}">Editar</button><button class="boton peque" data-accion="reabrir-pendiente" data-veh="${v.id}" data-pend="${esc(p.id)}">Reabrir</button></div></div>`).join('')}</div>` : ''}`;
 }
 
@@ -991,7 +994,7 @@ function vistaHoja(v) {
     return p.length ? `<div class="h-nota">${esc(p.join('. '))}.</div>` : '';
   };
   const notas = e => [e.el.proxima?.nota, ...abiertos.filter(p => p.elemento === e.el.id).map(p => `${TIPOS_PEND[p.tipo] || p.tipo}: ${p.texto}`)]
-    .filter(Boolean).map(t => `<div class="h-nota h-libre">${esc(t)}</div>`).join('');
+    .filter(Boolean).map(t => `<div class="h-nota h-libre">${escN(t)}</div>`).join('');
   const ultimo = e => e.ult ? `${fMes(e.ult.visita.fecha)}${e.ult.visita.km != null ? `<div class="h-nota">${fKm(e.ult.visita.km)}</div>` : ''}`
     : e.el.intervalo ? 'Nunca' : '—';
   const item = (titulo, notasHtml) => `<li><span class="casilla"></span><div><span class="h-tarea">${esc(titulo)}</span>${notasHtml}</div></li>`;
@@ -1062,7 +1065,7 @@ function vistaAjustes() {
     <input type="file" id="imp-fichero" accept=".json,application/json" data-accion="importar">
     ${imp ? `<div id="imp-vista">
       <p><b>${esc(imp.nombre)}</b>${imp.descripcion ? ' · ' + esc(imp.descripcion) : ''}</p>
-      ${imp.error ? `<p class="error" style="color:var(--rojo)">${esc(imp.error)}</p>` : `<ul class="importacion">${imp.items.map(i => `<li class="${i.ok ? 'bien' : 'mal'}">${esc(i.texto)}</li>`).join('')}</ul>
+      ${imp.error ? `<p class="error" style="color:var(--rojo)">${esc(imp.error)}</p>` : `<ul class="importacion">${imp.items.map(i => `<li class="${i.ok ? 'bien' : 'mal'}">${esc(i.texto)}${(i.cambios || []).map(c => `<div class="sub imp-cambio">${escN(c)}</div>`).join('')}</li>`).join('')}</ul>
       <div class="botones">${imp.completo || imp.validas ? `<button class="boton primario" data-accion="confirmar-import">${imp.completo ? 'Cargar estos datos' : `Importar ${plural(imp.validas, 'cambio', 'cambios')}`}</button>` : ''}<button class="boton" data-accion="cancelar-import">Cancelar</button></div>`}
     </div>` : ''}
   </div></section>
@@ -1242,7 +1245,7 @@ async function editarPendiente(vid, pid) {
       ${cFecha('Desde', 'desde', p.desde)}
       ${cArea('Nota', 'nota', p.nota, 2)}
       ${cerrado ? `<fieldset><legend>Cierre</legend>${cLista('Cómo quedó', 'estado', [['hecho', 'Hecho'], ['descartado', 'Descartado']], p.estado)}
-        ${cFecha('Fecha', 'cierreFecha', p.cierre?.fecha)}${cTexto('Nota del cierre', 'cierreNota', p.cierre?.nota)}</fieldset>` : ''}`,
+        ${cFecha('Fecha', 'cierreFecha', p.cierre?.fecha)}${cArea('Nota del cierre', 'cierreNota', p.cierre?.nota, 3)}</fieldset>` : ''}`,
     validar: x => !x.texto.trim() ? 'Escribe qué pasa.' : !esFecha(x.desde) ? 'Falta la fecha de «desde».' : null
   });
   if (!r) return;
@@ -1260,7 +1263,7 @@ async function editarPendiente(vid, pid) {
 async function reabrirPendiente(vid, pid) {
   const p = veh(vid).pendientes.find(x => x.id === pid);
   const antes = `${p.estado === 'hecho' ? 'Hecho' : 'Descartado'}${p.cierre?.fecha ? ' el ' + fFecha(p.cierre.fecha) : ''}${p.cierre?.nota ? ` (${p.cierre.nota})` : ''}; reabierto el ${fFecha(hoy())}.`;
-  p.nota = [p.nota, antes].filter(Boolean).join(' ');
+  p.nota = [p.nota, antes].filter(Boolean).join('\n');
   p.estado = 'abierto'; delete p.cierre;
   await guardar('Pendiente reabierto');
 }
@@ -1338,7 +1341,7 @@ async function editarLinea(vid, xid, i) {
         ${cTexto('Unidad', 'unidad', l.unidad, 'placeholder="L, ud…"')}
       </div>
       <div class="rejilla" data-solo="neumatico">${cTexto('Marca y modelo', 'marca', l.marca)}${cTexto('DOT', 'dot', l.dot, 'placeholder="semana y año: 2423"')}</div>
-      ${cTexto('Nota', 'nota', l.nota)}`,
+      ${cArea('Nota', 'nota', l.nota, 2)}`,
     preparar: form => { form.querySelector('[data-solo="neumatico"]').hidden = !esNeumatico(form.elements.elemento.value); },
     validar: y => !y.elemento && !y.texto.trim() ? 'Sin elemento, escribe en «Detalle» qué es (mano de obra, material…).'
       : malNumero(y, [['importe', 'Importe'], ['cantidad', 'Cantidad']])
@@ -1712,7 +1715,7 @@ async function cerrarPendiente(vid, pid) {
     cuerpo: `<p>${esc(p.texto)}</p>
       <label>Cómo queda<select name="estado"><option value="hecho">Hecho</option><option value="descartado">Descartado</option></select></label>
       <label>Fecha<input type="date" name="fecha" value="${hoy()}"></label>
-      <label>Nota<input type="text" name="nota"></label>`
+      ${cArea('Nota', 'nota', '', 3)}`
   });
   if (!r) return;
   p.estado = r.estado;
@@ -1919,10 +1922,11 @@ function aplicarOperacion(d, op) {
           return mal(`${nv}: en la visita del ${fFecha(y.fecha)} no hay una sola línea de «${elemento(v, c.elemento)?.nombre || c.elemento}»${c.accion ? ` (${ACCIONES[c.accion] || c.accion})` : ''} que completar`); }
         if (campos.factura) campos.factura = { ...y.factura, ...campos.factura };
         const cambiados = Object.keys(campos).filter(k => JSON.stringify(y[k]) !== JSON.stringify(campos[k]));
+        const textos = 'notas' in campos ? [cambioTexto('Notas', y.notas, campos.notas)].filter(Boolean) : [];
         Object.assign(y, campos); v.visitas.sort(porFecha);
         completarLineas.forEach(({ elemento: e, accion, ...resto }, i) => Object.assign(destinos[i][0], resto));
         if (completarLineas.length) cambiados.push('líneas: ' + completarLineas.map(c => elemento(v, c.elemento)?.nombre || c.elemento).join(', '));
-        return { ok: true, texto: `${nv}: visita del ${fFecha(y.fecha)} completada (${cambiados.join(', ') || 'sin cambios'})${textoLibres(liberarDecisiones(v, y))}` };
+        return { ok: true, texto: `${nv}: visita del ${fFecha(y.fecha)} completada (${cambiados.join(', ') || 'sin cambios'})${textoLibres(liberarDecisiones(v, y))}`, cambios: textos };
       }
       if (!x?.id || !/^\d{4}-\d{2}-\d{2}$/.test(x.fecha || '')) return mal(`${nv}: visita sin id o sin fecha`);
       if (v.visitas.some(y => y.id === x.id)) return mal(`${nv}: la visita ${x.id} ya existe; no se duplica`);
@@ -1941,27 +1945,23 @@ function aplicarOperacion(d, op) {
     }
     case 'elemento': {                           // (011) «proxima» se mezcla campo a campo: una nota nueva no cambia la decisión
       const ob = op.elemento, actual = ob?.id ? v.elementos.find(e => e.id === ob.id) : null;
+      // (014/015) La nota se sustituye (las limpiezas lo necesitan), pero la vista previa dice qué cambia
+      const textos = actual ? [ob.proxima && 'nota' in ob.proxima && cambioTexto('Nota de próxima visita', actual.proxima?.nota, ob.proxima.nota),
+        ob && 'nota' in ob && cambioTexto('Nota', actual.nota, ob.nota)].filter(Boolean) : [];
       if (actual && ob.proxima) ob.proxima = { ...actual.proxima, ...ob.proxima };
-      // (014) Si se sustituye una nota que tenía texto, la vista previa enseña la de antes
-      const antes = actual ? [['nota de próxima visita', actual.proxima?.nota, ob.proxima?.nota], ['nota', actual.nota, ob.nota]]
-        .filter(([, a, n]) => n !== undefined && a && a !== n).map(([q, a]) => `${q} sustituida; antes decía «${corto(a)}»`) : [];
-      const r = porId(v.elementos, ob, 'elemento');
-      if (antes.length) r.texto += ' · ' + antes.join(' · ');
-      return r;
+      return { ...porId(v.elementos, ob, 'elemento'), cambios: textos };
     }
     case 'pendiente': {                          // (014) la nota y la nota del cierre que ya tenían texto no se pierden: lo nuevo va detrás
-      const p = op.pendiente, actual = p?.id ? v.pendientes.find(x => x.id === p.id) : null, juntadas = [];
-      const junta = (antes, nuevo, que) => { const t = juntarTexto(antes, nuevo); if (t !== limpio(antes) && t !== limpio(nuevo)) juntadas.push(que); return t; };
+      const p = op.pendiente, actual = p?.id ? v.pendientes.find(x => x.id === p.id) : null, textos = [];
+      const junta = (antes, nuevo, que) => { const t = juntarTexto(antes, nuevo), c = cambioTexto(que, antes, t); if (c) textos.push(c); return t; };
       if (actual) {
-        if (p.nota !== undefined) p.nota = junta(actual.nota, p.nota, 'nota');
+        if (p.nota !== undefined) p.nota = junta(actual.nota, p.nota, 'Nota');
         if (p.cierre) {
-          const t = junta(actual.cierre?.nota, p.cierre.nota, 'nota del cierre');
+          const t = junta(actual.cierre?.nota, p.cierre.nota, 'Nota del cierre');
           p.cierre = { ...actual.cierre, ...p.cierre, nota: t };
         }
       }
-      const r = porId(v.pendientes, p, 'pendiente');
-      if (r.ok && juntadas.length) r.texto += ` · el texto nuevo va detrás del que ya había en la ${juntadas.join(' y en la ')}`;
-      return r;
+      return { ...porId(v.pendientes, p, 'pendiente'), cambios: textos };
     }
     case 'caducidad': {
       const c = op.caducidad, actual = c?.id ? v.caducidades.find(x => x.id === c.id) : null;
@@ -2001,14 +2001,29 @@ function aplicarOperacion(d, op) {
 }
 // (014) Junta el texto que ya había con el que llega por importación, sin perder ninguno.
 // Si uno ya contiene al otro, se queda el más largo (así, volver a importar lo mismo no lo repite).
+// (015) Los espacios y saltos de línea no cuentan al comparar: un texto igual con otros saltos sustituye al que había.
+const sinSaltos = s => s.replace(/\s+/g, ' ');
 function juntarTexto(antes, nuevo) {
   const a = limpio(antes), n = limpio(nuevo);
   if (!a || !n) return a || n;
-  if (a.includes(n)) return a;
-  if (n.includes(a)) return n;
-  return `${a}${/[.!?…)»]$/.test(a) ? '' : '.'} ${n}`;
+  if (sinSaltos(n).includes(sinSaltos(a))) return n;
+  if (sinSaltos(a).includes(sinSaltos(n))) return a;
+  return /\n/.test(a + n) ? `${a}\n\n${n}` : `${a}${/[.!?…)»]$/.test(a) ? '' : '.'} ${n}`;
 }
-const corto = (s, max = 160) => s.length > max ? s.slice(0, max - 1) + '…' : s;
+const corto = (s, max = 200) => s.length > max ? s.slice(0, max - 1) + '…' : s;
+// (015) Qué le pasa a un texto al importar, en una frase para la vista previa, o null si no cambia.
+function cambioTexto(que, antes, ahora) {
+  const a = limpio(antes), n = limpio(ahora);
+  if (a === n) return null;
+  if (!a) return `${que}: nueva. «${corto(n)}»`;
+  if (!n) return `${que}: se borra. Decía «${corto(a)}»`;
+  const za = sinSaltos(a), zn = sinSaltos(n);
+  if (za === zn) return `${que}: el mismo texto, con saltos de línea nuevos.`;
+  if (zn.startsWith(za)) return `${que}: se añade al final «${corto(zn.slice(za.length).replace(/^[.\s]+/, ''))}»`;
+  if (zn.endsWith(za)) return `${que}: se añade al principio «${corto(zn.slice(0, zn.length - za.length).trim())}»`;
+  if (zn.includes(za)) return `${que}: se amplía. Quedará «${corto(n)}»`;
+  return `${que}: se sustituye.\nAntes: «${corto(a)}»\nAhora: «${corto(n)}»`;
+}
 // Completa una caducidad que ya existe sin perder nada de lo que hay (006):
 // - historial: añade los periodos que faltan y completa los que ya están (mismos desde, hasta y pagado).
 //   Solo quita los que vengan en historialQuitar, con esas mismas tres fechas;
@@ -2017,7 +2032,7 @@ const corto = (s, max = 160) => s.length > max ? s.slice(0, max - 1) + '…' : s
 function mezclarCaducidad(c, nueva, quitar = [], nv) {
   const { id, historial = [], datos, vence, ...resto } = nueva;
   const clave = h => [h.desde || '', h.hasta || '', h.pagado || ''].join('|');
-  const notas = [];
+  const notas = [], textos = 'notas' in resto ? [cambioTexto('Notas', c.notas, resto.notas)].filter(Boolean) : [];
   Object.assign(c, resto);
   if (datos) c.datos = { ...c.datos, ...datos };
   if (vence && vence > c.vence) { c.vence = vence; notas.push(`vence el ${fFecha(vence)}`); }
@@ -2032,7 +2047,7 @@ function mezclarCaducidad(c, nueva, quitar = [], nv) {
   c.historial = h.sort((a, b) => orden(a).localeCompare(orden(b)));
   const cambios = [nuevos && plural(nuevos, 'periodo añadido', 'periodos añadidos'), completados && plural(completados, 'completado', 'completados'),
     quitados && plural(quitados, 'quitado', 'quitados'), ...notas].filter(Boolean);
-  return { ok: true, texto: `${nv}: ${c.tipo}: ${cambios.join(', ') || 'sin cambios'}` };
+  return { ok: true, texto: `${nv}: ${c.tipo}: ${cambios.join(', ') || (textos.length ? 'notas' : 'sin cambios')}`, cambios: textos };
 }
 async function confirmarImport() {
   const imp = S.importacion;
@@ -2090,7 +2105,7 @@ window.addEventListener('beforeunload', e => { if (S.sucio) { e.preventDefault()
 
 // Para las pruebas (test-humo.html).
 window.Ruedak = {
-  version: APP_VERSION, S, comprobarCambios, numero, juntarTexto, hojasExcel, excel: () => xlsx(hojasExcel()),
+  version: APP_VERSION, S, comprobarCambios, numero, juntarTexto, cambioTexto, hojasExcel, excel: () => xlsx(hojasExcel()),
   kmPorAno: vid => kmPorAno(veh(vid)), lecturasTodas: vid => lecturasTodas(veh(vid)),
   desdeAnterior: (vid, eid) => { const v = veh(vid); return [...desdeAnterior(v, elemento(v, eid))].map(([l, d]) => ({ ...d, visita: v.visitas.find(x => x.lineas.includes(l))?.id })); },
   juegosNeumaticos: (vid, eid) => juegosNeumaticos(veh(vid), elemento(veh(vid), eid)),
