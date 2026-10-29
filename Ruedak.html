@@ -189,6 +189,10 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 .propuesta { display: grid; gap: 8px; margin-top: 10px; }
 .prop-fila { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding-bottom: 8px; border-bottom: 1px solid var(--raya); }
 .prop-fila > .punto { margin-top: 5px; }
+.ficha-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 6px; padding: 8px 0; border-top: 1px solid var(--raya); }
+.ficha-fila input { width: 100%; font-weight: 600; }
+.ficha-fila textarea { grid-column: 1 / -1; width: 100%; resize: vertical; }
+.ficha-botones { display: flex; gap: 4px; }
 
 /* hoja para el taller (en pantalla; al imprimir, ver @media print al final) */
 .hoja { background: var(--papel); border: 1px solid var(--raya); border-radius: var(--radio); padding: 20px 22px; max-width: 840px; margin: 0 auto; }
@@ -294,7 +298,7 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 'use strict';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const APP_VERSION = '012';
+const APP_VERSION = '013';
 // Clave de la app «Ruedak» de Dropbox (acceso solo a su carpeta, /Aplicaciones/Ruedak/).
 // Es pública por diseño (PKCE, sin secreto). Dada de alta el 10/10/2026.
 const DROPBOX_APP_KEY = 'e8dbud93hwihlhy';
@@ -765,6 +769,7 @@ function pestFicha(v) {
   return `<div class="caja"><dl class="datos">${filas.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}
     ${cf ? `<dt>Facturas</dt><dd><span class="mono">${esc(cf.ruta || cf.nombre || '')}</span>${cf.enlace ? ` · <a href="${esc(cf.enlace)}" target="_blank" rel="noopener">abrir la carpeta</a>` : ''}</dd>` : ''}
   </dl></div>
+  <div class="botones"><button class="boton peque" data-accion="editar-ficha" data-veh="${v.id}">Editar la ficha</button></div>
   <p class="sub">Las lecturas de km y los km de cada año están en la pestaña <a href="#/v/${v.id}/km">Km</a>.</p>`;
 }
 
@@ -1419,6 +1424,62 @@ async function editarCaducidad(vid, cid) {
   await guardar(nueva ? 'Caducidad añadida' : 'Caducidad guardada');
 }
 
+// Ficha (013): datos libres y en orden, un nombre y un valor por fila. Se pueden añadir, quitar y mover.
+// Cada fila lleva su nombre de antes (orig): si cambia el nombre de un dato oculto en la hoja del taller, sigue oculto con el nombre nuevo.
+const FICHA_RESERVADOS = ['Alta', 'Baja', 'Facturas', 'Matrícula', 'Kilómetros', 'ITV'];   // ya los pone la app en la ficha o en la hoja
+function filasFicha(x) {
+  return Object.keys(x).filter(k => /^campo\d+$/.test(k)).map(k => {
+    const i = k.slice(5);
+    return { campo: x[k].trim(), valor: String(x['valor' + i] ?? '').replace(/\s*\n\s*/g, ' ').trim(), orig: x['orig' + i] || '' };
+  }).filter(f => f.campo || f.valor);
+}
+async function editarFicha(vid) {
+  const v = veh(vid);
+  let n = 0;
+  const fila = (f = { campo: '', valor: '' }, orig = '') => { const i = n++; return `<div class="ficha-fila">
+      <input type="text" name="campo${i}" value="${esc(f.campo)}" placeholder="Dato" aria-label="Dato" autocomplete="off"><input type="hidden" name="orig${i}" value="${esc(orig)}">
+      <div class="ficha-botones"><button type="button" class="boton peque" data-ficha="subir" aria-label="Subir">↑</button><button type="button" class="boton peque" data-ficha="bajar" aria-label="Bajar">↓</button><button type="button" class="boton peque peligro" data-ficha="quitar" aria-label="Quitar">✕</button></div>
+      <textarea name="valor${i}" rows="${Math.min(4, Math.max(1, Math.ceil(f.valor.length / 42)))}" placeholder="Valor" aria-label="Valor">${esc(f.valor)}</textarea></div>`; };
+  const r = await dialogo({
+    titulo: `Ficha · ${v.nombre}`, ancho: 600,
+    cuerpo: `<p class="sub">Un dato por fila, en el orden en que salen en la ficha y en la hoja para el taller. Los que empiezan por «Fuente» van al pie de la hoja.</p>
+      <div class="ficha-filas">${v.ficha.map(f => fila(f, f.campo)).join('')}</div>
+      <div class="botones"><button type="button" class="boton peque" data-ficha="nuevo">Añadir un dato</button></div>`,
+    preparar: f => {
+      if (f.dataset.listo) return;
+      f.dataset.listo = '1';
+      f.addEventListener('click', e => {
+        const b = e.target.closest('[data-ficha]'), fl = b?.closest('.ficha-fila');
+        if (!b) return;
+        if (b.dataset.ficha === 'nuevo') { f.querySelector('.ficha-filas').insertAdjacentHTML('beforeend', fila()); f.querySelector('.ficha-filas').lastElementChild.querySelector('input').focus(); }
+        else if (b.dataset.ficha === 'subir' && fl.previousElementSibling) fl.previousElementSibling.before(fl);
+        else if (b.dataset.ficha === 'bajar' && fl.nextElementSibling) fl.nextElementSibling.after(fl);
+        else if (b.dataset.ficha === 'quitar') fl.remove();
+      });
+    },
+    validar: x => {
+      const fs = filasFicha(x), vistos = new Set();
+      for (const f of fs) {
+        if (!f.campo) return `Falta el nombre del dato «${f.valor.slice(0, 40)}».`;
+        if (!f.valor) return `Falta el valor de «${f.campo}». Si sobra, quítalo con ✕.`;
+        if (FICHA_RESERVADOS.some(c => c.toLowerCase() === f.campo.toLowerCase())) return `«${f.campo}» ya lo pone la app: elige otro nombre.`;
+        if (vistos.has(f.campo.toLowerCase())) return `Hay dos datos que se llaman «${f.campo}».`;
+        vistos.add(f.campo.toLowerCase());
+      }
+      return null;
+    }
+  });
+  if (!r) return;
+  const fs = filasFicha(r), antes = new Set(v.ficha.map(f => f.campo));
+  v.ficha = fs.map(({ campo, valor }) => ({ campo, valor }));
+  if (v.hoja?.ocultar) {
+    const nombre = new Map(fs.filter(f => f.orig).map(f => [f.orig, f.campo]));
+    const ocultar = v.hoja.ocultar.filter(c => !antes.has(c) || nombre.has(c)).map(c => nombre.get(c) ?? c);
+    v.hoja = { ...v.hoja, ocultar: ocultar.length ? ocultar : undefined };
+  }
+  await guardar('Ficha guardada');
+}
+
 async function borrarLectura(vid, i) {
   const v = veh(vid), l = v.lecturas[Number(i)];
   if (!await confirmar('Borrar la lectura', `Se borra la lectura de ${fKm(l.km)} del ${fFecha(l.fecha)}.`, 'Borrar')) return;
@@ -1961,7 +2022,7 @@ document.addEventListener('click', e => {
     'nueva-linea': () => editarLinea(vid, vis, null), 'editar-linea': () => editarLinea(vid, vis, lin),
     'nuevo-elemento': () => editarElemento(vid, null), 'editar-elemento': () => editarElemento(vid, el),
     'nueva-caducidad': () => editarCaducidad(vid, null), 'editar-caducidad': () => editarCaducidad(vid, cad),
-    'borrar-lectura': () => borrarLectura(vid, lec),
+    'borrar-lectura': () => borrarLectura(vid, lec), 'editar-ficha': () => editarFicha(vid),
     'ajustar-hoja': () => ajustarHoja(vid), imprimir: () => imprimirHoja(vid), 'exportar-excel': exportarExcel,
     proponer: () => proponerProxima(vid),
     conectar: conectarDropbox, desconectar: desconectarDropbox, 'abrir-local': abrirLocal, 'guardar-como': guardarComo,
