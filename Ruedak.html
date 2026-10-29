@@ -1953,6 +1953,22 @@ function aplicarOperacion(d, op) {
       c.historial = c.historial || []; v.caducidades.push(c);
       return { ok: true, texto: `${nv}: caducidad nueva «${c.tipo}»` };
     }
+    case 'ficha': {                              // (013) añade o cambia datos por su nombre; no quita ninguno
+      const filas = op.ficha;                    // [{ campo, valor, despues? }]: «despues» = tras qué dato va uno nuevo (si no, al final)
+      if (!Array.isArray(filas) || !filas.length) return mal(`${nv}: ficha sin datos`);
+      const malo = filas.find(f => !String(f?.campo ?? '').trim() || !String(f?.valor ?? '').trim()
+        || FICHA_RESERVADOS.some(c => c.toLowerCase() === String(f.campo).trim().toLowerCase()));
+      if (malo) return mal(`${nv}: dato de la ficha no válido («${malo?.campo || ''}»)`);
+      const igual = c => x => x.campo.toLowerCase() === String(c).trim().toLowerCase(), hechos = [];
+      for (const f of filas) {
+        const campo = f.campo.trim(), valor = String(f.valor).trim(), actual = v.ficha.find(igual(campo));
+        if (actual) { hechos.push(`«${actual.campo}» ${actual.valor === valor ? 'sin cambios' : 'cambiado'}`); actual.valor = valor; continue; }
+        const i = f.despues ? v.ficha.findIndex(igual(f.despues)) : -1;
+        v.ficha.splice(i < 0 ? v.ficha.length : i + 1, 0, { campo, valor });
+        hechos.push(`«${campo}» añadido`);
+      }
+      return { ok: true, texto: `${nv}: ficha: ${hechos.join(', ')}` };
+    }
     case 'taller': return porId(d.talleres, op.taller, 'taller');
     case 'vehiculo': {
       const n = op.vehiculo;
