@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Giros OruxMaps</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root {
+  --fondo: #f6f7f8; --panel: #ffffff; --texto: #1c2126; --suave: #5f6b76; --borde: #d9dee3;
+  --acento: #0b6e4f; --acento-texto: #ffffff; --sel: #e4f2ed;
+  --izq: #1d5fd1; --der: #c8500a; --recto: #5f6b76; --vuelta: #a31a6b; --glorieta: #0b6e4f; --poi: #7a5c00;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --fondo: #14181c; --panel: #1d2329; --texto: #e8ecef; --suave: #9aa6b1; --borde: #36404a;
+    --acento: #2fa37c; --acento-texto: #06140f; --sel: #1f3a31; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--fondo); color: var(--texto); font: 14px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
+  display: grid; grid-template: auto minmax(0, 1fr) / 370px minmax(0, 1fr); grid-template-areas: "cab cab" "lat mapa"; }
+header { grid-area: cab; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--borde); }
+h1 { font-size: 16px; margin: 0 8px 0 0; }
+#nombre { color: var(--suave); flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button, .boton, select, input, textarea { font: inherit; color: inherit; }
+button, .boton { background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; padding: 5px 10px;
+  cursor: pointer; display: inline-block; }
+button:hover:not(:disabled), .boton:hover { border-color: var(--acento); }
+button:disabled { opacity: .45; cursor: default; }
+button.principal { background: var(--acento); color: var(--acento-texto); border-color: var(--acento); }
+button.activo { background: var(--sel); border-color: var(--acento); }
+aside { grid-area: lat; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--borde); }
+#resumen { padding: 8px 12px; color: var(--suave); border-bottom: 1px solid var(--borde); }
+#aviso { padding: 8px 12px; background: var(--sel); border-bottom: 1px solid var(--borde); }
+#aviso:empty { display: none; }
+#aviso.error { background: #fbe4e4; color: #7c1616; }
+.pestanas { display: flex; gap: 6px; padding: 8px 12px 0; align-items: center; }
+.pestanas button[aria-selected="true"] { background: var(--sel); border-color: var(--acento); }
+#filtro { margin-left: auto; padding: 4px; background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; max-width: 130px; }
+#nav { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--borde); }
+#nav button { flex: 1; }
+#lista { flex: 1; overflow-y: auto; min-height: 0; }
+.fila { display: grid; grid-template-columns: 30px 56px 1fr 30px; gap: 6px; align-items: center; padding: 5px 12px;
+  border-bottom: 1px solid var(--borde); cursor: pointer; }
+.fila.sel { background: var(--sel); }
+.fila select { width: 100%; padding: 2px; background: var(--panel); border: 1px solid var(--borde); border-radius: 5px; }
+.fila .km { font-variant-numeric: tabular-nums; }
+.fila .quitar { padding: 0; width: 28px; height: 28px; }
+.fila .extra { grid-column: 2 / -1; color: var(--suave); font-size: 12px; }
+.fila.poi { grid-template-columns: 30px 1fr 30px 30px; }
+.fila.poi .extra { grid-column: 2 / -1; }
+.vacio { padding: 16px 12px; color: var(--suave); }
+main { grid-area: mapa; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+#mapaCaja { position: relative; flex: 1; min-height: 0; }
+#mapa { position: absolute; inset: 0; background: var(--fondo); }
+#perfil { background: var(--panel); border-top: 1px solid var(--borde); }
+.perfilCab { display: flex; align-items: center; gap: 10px; padding: 3px 8px; }
+.perfilCab button { padding: 1px 8px; white-space: nowrap; }
+#perfilDatos { color: var(--suave); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#perfilCuerpo { position: relative; height: 140px; }
+#perfilLienzo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: pan-y; cursor: crosshair; }
+#perfilVacio { padding: 8px 12px; color: var(--suave); }
+#perfilLinea { position: absolute; top: 0; bottom: 16px; width: 1px; background: var(--texto); pointer-events: none; }
+#perfilInfo { position: absolute; top: 4px; background: var(--panel); border: 1px solid var(--borde); border-radius: 5px; padding: 3px 7px;
+  font-size: 12px; line-height: 1.35; pointer-events: none; white-space: nowrap; font-variant-numeric: tabular-nums; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.puntero { width: 14px; height: 14px; border-radius: 50%; background: #ffd400; border: 2px solid #222; box-shadow: 0 0 0 2px #fff; }
+#mapa.anadiendo { cursor: crosshair; }
+#caer { position: absolute; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 24px; background: var(--fondo); }
+#caer.oculto { display: none; }
+#caer.encima { display: flex; background: color-mix(in srgb, var(--sel) 85%, transparent); }
+#caer div { border: 2px dashed var(--borde); border-radius: 12px; padding: 32px; max-width: 420px; }
+#caer h2 { margin: 0 0 6px; font-size: 18px; }
+#caer p { margin: 0; color: var(--suave); }
+#modo { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 800; background: var(--panel);
+  border: 1px solid var(--acento); border-radius: 6px; padding: 5px 10px; box-shadow: 0 1px 4px rgba(0,0,0,.25); white-space: nowrap; }
+#modo:empty { display: none; }
+.icono { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 15px; line-height: 1; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45); }
+.icono.fila-i { box-shadow: none; border: 0; }
+.g-izq { background: var(--izq); } .g-der { background: var(--der); } .g-recto { background: var(--recto); }
+.g-vuelta { background: var(--vuelta); } .g-glorieta { background: var(--glorieta); } .g-poi { background: var(--poi); border-radius: 5px; }
+#mapa.lejos .leaflet-marker-icon .icono { transform: scale(.62); }
+#mapa.lejos .marca-sel .icono { transform: scale(1.25); }
+.marca-sel .icono { outline: 3px solid #ffd400; transform: scale(1.25); }
+.chevron { color: #d0006f; font-size: 13px; font-weight: 900; line-height: 12px; width: 12px; text-align: center; text-shadow: 0 0 2px #fff; }
+.kmetiq { background: #fff; color: #222; border: 1px solid #888; border-radius: 4px; font-size: 11px; padding: 0 3px; white-space: nowrap; width: max-content; }
+#trabajo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 850; width: min(320px, calc(100% - 32px));
+  background: var(--panel); border: 1px solid var(--acento); border-radius: 8px; padding: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+#trabajo .barra { height: 6px; border-radius: 3px; background: var(--borde); overflow: hidden; margin: 8px 0; }
+#trabajo .barra div { height: 100%; width: 35%; border-radius: 3px; background: var(--acento); animation: vaiven 1.2s ease-in-out infinite alternate; }
+@keyframes vaiven { from { transform: translateX(-20%); } to { transform: translateX(205%); } }
+#trabajo .pieT { display: flex; justify-content: space-between; align-items: center; color: var(--suave); font-variant-numeric: tabular-nums; }
+.senales { display: flex; gap: 8px; flex-wrap: wrap; background: var(--panel); color: var(--texto); border: 1px solid var(--borde); border-radius: 6px; padding: 4px 8px; font: 12px/1.4 system-ui, "Segoe UI", sans-serif; }
+.senales select { background: var(--panel); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
+dialog { background: var(--panel); color: var(--texto); border: 1px solid var(--borde); border-radius: 10px; max-width: min(460px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.4); }
+dialog h3 { margin: 0 0 10px; font-size: 16px; }
+dialog p { margin: 0 0 10px; color: var(--suave); }
+.opciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)); gap: 6px; margin-bottom: 12px; }
+.opciones button { display: flex; align-items: center; gap: 6px; text-align: left; }
+.opciones .icono { flex: none; width: 22px; height: 22px; font-size: 13px; border: 0; box-shadow: none; }
+.campo { display: block; margin-bottom: 10px; }
+.campo input, .campo textarea { display: block; width: 100%; padding: 5px; margin-top: 3px; background: var(--panel); border: 1px solid var(--borde); border-radius: 5px; }
+.pie { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 800px) {
+  html, body { height: auto; }
+  body { grid-template: auto 62vh auto / minmax(0, 1fr); grid-template-areas: "cab" "mapa" "lat"; }
+  #perfilCuerpo { height: 105px; }
+  #lista { flex: none; height: 45vh; }
+  aside { border-right: 0; border-top: 1px solid var(--borde); }
+  #nombre { flex-basis: 100%; order: 9; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Giros OruxMaps</h1>
+  <label class="boton">Abrir GPX<input id="fichero" type="file" accept=".gpx,application/gpx+xml" hidden></label>
+  <button id="generar" disabled>Generar giros</button>
+  <button id="addGiro" disabled>+ Giro</button>
+  <button id="addPoi" disabled>+ POI</button>
+  <button id="deshacer" disabled title="Ctrl+Z">Deshacer</button>
+  <button id="descargar" class="principal" disabled>Descargar GPX</button>
+  <span id="nombre"></span>
+</header>
+<aside>
+  <div id="resumen">Abre un GPX para empezar.</div>
+  <div id="aviso" role="status"></div>
+  <div class="pestanas" role="tablist">
+    <button id="tabGiros" role="tab" aria-selected="true">Giros (0)</button>
+    <button id="tabPois" role="tab" aria-selected="false">POIs (0)</button>
+    <select id="filtro" aria-label="Filtrar giros">
+      <option value="">Todos</option><option value="glorieta">Glorietas</option>
+      <option value="izq">Izquierda</option><option value="der">Derecha</option>
+      <option value="vuelta">Media vuelta</option><option value="recto">Recto</option>
+    </select>
+  </div>
+  <div id="nav">
+    <button id="ant" title="Tecla ←">← Anterior</button>
+    <button id="sig" title="Tecla →">Siguiente →</button>
+  </div>
+  <div id="lista"></div>
+</aside>
+<main>
+  <div id="mapaCaja">
+  <div id="mapa"></div>
+  <div id="modo"></div>
+  <div id="trabajo" role="status" hidden>
+    <div id="trabajoTexto"></div>
+    <div class="barra"><div></div></div>
+    <div class="pieT"><span id="trabajoDatos"></span><button id="trabajoCancelar">Cancelar</button></div>
+  </div>
+  <div id="caer"><div><h2>Arrastra aquí tu GPX</h2><p>Se queda en tu ordenador. Para los cruces solo se pide a Overpass la zona de la ruta.</p></div></div>
+  </div>
+  <section id="perfil" aria-label="Perfil de elevación" hidden>
+    <div class="perfilCab">
+      <button id="perfilBoton" aria-expanded="true" aria-controls="perfilCuerpo"></button>
+      <span id="perfilDatos"></span>
+    </div>
+    <div id="perfilCuerpo">
+      <canvas id="perfilLienzo"></canvas>
+      <div id="perfilLinea" hidden></div>
+      <div id="perfilInfo" hidden></div>
+    </div>
+  </section>
+</main>
+<dialog id="dlg"></dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<script id="nucleo">
+// Método de giros: misma lógica que tools\gpx_giros_osm.py. Si cambia uno, cambiar el otro.
+const GirosOSM = (() => {
+  const R = 6371000, L = 20, TOL_RAMA = 40, CERCANA = 35, FUSION = 15;
+  const NO_SALIDA = new Set(["footway", "path", "cycleway", "steps", "pedestrian", "bridleway"]);
+  const EXCLUIDOS = "proposed|construction|razed|abandoned|platform|raceway|bus_guideway|corridor|elevator|escalator";
+  const TU = 1003, TSHL = 1019, TL = 1000, TSLL = 1017, KL = 1015, C = 1002, KR = 1014, TSLR = 1016, TR = 1001, TSHR = 1018;
+  const mod = (a, b) => ((a % b) + b) % b;
+  const rad = g => g * Math.PI / 180;
+  const xy = (lat, lon, lat0) => [rad(lon) * R * Math.cos(rad(lat0)), rad(lat) * R];
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const distSeg = (p, a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+    return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+  };
+  const rumbo = (a, b) => mod(Math.atan2(b[0] - a[0], b[1] - a[1]) * 180 / Math.PI, 360);
+  const giro = (desde, hasta) => mod(hasta - desde + 180, 360) - 180;
+
+  class Track {
+    // pts: [{lat, lon, ele}]
+    constructor(pts) {
+      this.lat0 = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
+      this.pts = []; this.xs = [];
+      for (const p of pts) {
+        const q = xy(p.lat, p.lon, this.lat0);
+        if (!this.xs.length || dist(q, this.xs[this.xs.length - 1]) > 0.01) { this.pts.push(p); this.xs.push(q); }
+      }
+      this.s = [0];
+      for (let i = 1; i < this.xs.length; i++) this.s.push(this.s[i - 1] + dist(this.xs[i - 1], this.xs[i]));
+      this.total = this.s[this.s.length - 1];
+    }
+    indice(s) {
+      let lo = 0, hi = this.s.length - 1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (this.s[m] <= s) lo = m; else hi = m; }
+      return lo;
+    }
+    en(s0) {
+      const s = Math.max(0, Math.min(this.total, s0)), lo = this.indice(s), hi = lo + 1;
+      const t = (s - this.s[lo]) / (this.s[hi] - this.s[lo]), a = this.xs[lo], b = this.xs[hi];
+      return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+    }
+    latlon(s0) {
+      const s = Math.max(0, Math.min(this.total, s0)), lo = this.indice(s), hi = lo + 1;
+      const t = (s - this.s[lo]) / (this.s[hi] - this.s[lo]), a = this.pts[lo], b = this.pts[hi];
+      return [a.lat + t * (b.lat - a.lat), a.lon + t * (b.lon - a.lon)];
+    }
+    // Altitud del punto siguiente del track (bisect_right)
+    ele(s) {
+      let lo = 0, hi = this.s.length;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (s < this.s[m]) hi = m; else lo = m + 1; }
+      return this.pts[Math.min(lo, this.pts.length - 1)].ele;
+    }
+    pasadas(c, radio) {
+      const res = []; let mejor = null;
+      for (let i = 0; i < this.xs.length - 1; i++) {
+        const a = this.xs[i], b = this.xs[i + 1], d = distSeg(c, a, b);
+        if (d <= radio) {
+          const dx = b[0] - a[0], dy = b[1] - a[1];
+          const t = Math.max(0, Math.min(1, ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+          if (mejor === null || d < mejor[0] - 1e-6) mejor =[d, this.s[i] + t * (this.s[i + 1] - this.s[i])];
+        } else if (mejor !== null) { res.push(mejor[1]); mejor = null; }
+      }
+      if (mejor !== null) res.push(mejor[1]);
+      return res;
+    }
+    parado(s, ventana = 150, radio = 25) {
+      for (let ini = Math.trunc(s - ventana); ini < Math.trunc(s) + 1; ini += 10) {
+        const puntos = [];
+        for (let k = 0; k <= ventana; k += 10) puntos.push(this.en(ini + k));
+        if (ini >= 0 && ini + ventana <= this.total && puntos.every(p => dist(puntos[0], p) <= radio)) return true;
+      }
+      return false;
+    }
+    celdas(tam = 100) {
+      const res = new Set();
+      for (let s = 0; s <= this.total; s += tam / 2) {
+        const [x, y] = this.en(s);
+        res.add(Math.floor(x / tam) + "," + Math.floor(y / tam));
+      }
+      return res;
+    }
+  }
+
+  class Red {
+    constructor(elementos, lat0) {
+      this.xy = new Map(); this.vec = new Map(); this.anillo = new Set();
+      this.entradaSolo = new Map(); this.salidaSolo = new Map();
+      this.aristasAnillo = new Set(); this.sigAnillo = new Map(); this.menores = new Set();
+      for (const e of elementos) if (e.type === "node") this.xy.set(e.id, xy(e.lat, e.lon, lat0));
+      const anade = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
+      for (const w of elementos) {
+        if (w.type !== "way") continue;
+        const ns = w.nodes, tags = w.tags || {};
+        const esAnillo = tags.junction === "roundabout" || tags.junction === "circular";
+        if (esAnillo) ns.forEach(n => this.anillo.add(n));
+        for (let i = 0; i < ns.length - 1; i++) {
+          const a = ns[i], b = ns[i + 1];
+          anade(this.vec, a, b); anade(this.vec, b, a);
+          if (esAnillo) { this.aristasAnillo.add(a + ">" + b); this.aristasAnillo.add(b + ">" + a); this.sigAnillo.set(a, b); }
+          if (NO_SALIDA.has(tags.highway)) { this.menores.add(a + ">" + b); this.menores.add(b + ">" + a); }
+        }
+        if (tags.oneway === "yes" && !esAnillo) {
+          anade(this.entradaSolo, ns[ns.length - 1], ns[ns.length - 2]);
+          anade(this.salidaSolo, ns[0], ns[1]);
+        }
+      }
+    }
+    cruces() { return [...this.vec.keys()].filter(n => this.vec.get(n).size >= 3 && this.xy.has(n)); }
+    prohibido(m, n, v) { return m.has(n) && m.get(n).has(v); }
+    rama(nodo, vecino) {
+      let ant = nodo, act = vecino, largo = 0;
+      for (;;) {
+        const a = this.xy.get(ant), b = this.xy.get(act), paso = dist(a, b);
+        if (largo + paso >= L) {
+          const t = (L - largo) / paso;
+          return { p: [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])], largo: L, sinSalida: false };
+        }
+        largo += paso;
+        const sig = [...this.vec.get(act)].filter(x => x !== ant);
+        if (sig.length !== 1) return { p: b, largo, sinSalida: sig.length === 0 };
+        ant = act; act = sig[0];
+      }
+    }
+    brazoCercano(nodos, punto, prohibidos) {
+      let mejor = null, res = null;
+      for (const n of nodos) {
+        for (const v of this.vec.get(n)) {
+          if (this.aristasAnillo.has(n + ">" + v) || this.menores.has(n + ">" + v) || this.prohibido(prohibidos, n, v)) continue;
+          const d = dist(this.rama(n, v).p, punto);
+          if (mejor === null || d < mejor) { mejor = d; res = n; }
+        }
+      }
+      return res;
+    }
+    salidasAnillo(entrada, salida, largoTrack) {
+      if (entrada === salida) return 0;
+      let act = entrada, arco = 0, salidas = 0;
+      for (let i = 0; i < 200; i++) {
+        const sig = this.sigAnillo.get(act);
+        if (sig === undefined) return 0;
+        arco += dist(this.xy.get(act), this.xy.get(sig));
+        act = sig;
+        const util = [...this.vec.get(act)].some(v => !this.aristasAnillo.has(act + ">" + v)
+          && !this.menores.has(act + ">" + v) && !this.prohibido(this.entradaSolo, act, v));
+        if (act === salida || util) salidas++;
+        if (act === salida) return Math.abs(arco - largoTrack) <= 0.5 * arco + 10 ? salidas : 0;
+      }
+      return 0;
+    }
+  }
+
+  function codigo(a) {
+    if (a < -159 || a >= 159) return TU;
+    for (const [lim, cod] of [[-135, TSHL], [-45, TL], [-21, TSLL], [21, C], [45, TSLR], [135, TR], [159, TSHR]]) if (a < lim) return cod;
+    return TSHR;
+  }
+  function decidir(a, otras) {
+    if (!otras.length) return null;
+    const prox = otras.reduce((m, o) => Math.abs(giro(a, o)) < Math.abs(giro(a, m)) ? o : m);
+    const cerca = Math.abs(giro(a, prox)) < CERCANA;
+    if (Math.abs(a) < 21) return cerca ? (giro(prox, a) < 0 ? KL : KR) : null;
+    if (Math.abs(a) < 45) return cerca || otras.some(o => Math.abs(o) < Math.abs(a)) ? codigo(a) : null;
+    return codigo(a);
+  }
+
+  function calcular(track, elementos, radio = 15) {
+    const red = new Red(elementos, track.lat0), candidatos = [], glorietas = [], celdas = track.celdas();
+    const argmin = (lista, f) => lista.reduce((m, x) => f(x) < f(m) ? x : m);
+    for (const n of red.cruces()) {
+      const c = red.xy.get(n), cx = Math.floor(c[0] / 100), cy = Math.floor(c[1] / 100);
+      let cerca = false;
+      for (let i = -1; i <= 1 && !cerca; i++) for (let j = -1; j <= 1; j++) if (celdas.has((cx + i) + "," + (cy + j))) { cerca = true; break; }
+      if (!cerca) continue;
+      for (const s of track.pasadas(c, radio)) {
+        if (s < L || s > track.total - L) continue;
+        if (red.anillo.has(n)) { glorietas.push([s, n]); continue; }
+        const pos = track.en(s), rEnt = rumbo(pos, track.en(s - L)), rSal = rumbo(pos, track.en(s + L));
+        const aReal = giro(rEnt + 180, rSal), ramas = new Map();
+        for (const v of red.vec.get(n)) {
+          const r = red.rama(n, v);
+          if (!(r.sinSalida && r.largo < 8)) ramas.set(v, rumbo(c, r.p));
+        }
+        if (ramas.size < 2) continue;
+        const claves = [...ramas.keys()];
+        const ent = argmin(claves, v => Math.abs(giro(ramas.get(v), rEnt)));
+        const sal = argmin(claves, v => Math.abs(giro(ramas.get(v), rSal)));
+        const entOk = Math.abs(giro(ramas.get(ent), rEnt)) <= TOL_RAMA, salOk = Math.abs(giro(ramas.get(sal), rSal)) <= TOL_RAMA;
+        if (!entOk && !salOk) continue;
+        const rumboEnt = (entOk ? ramas.get(ent) : rEnt) + 180, rumboSal = salOk ? ramas.get(sal) : rSal;
+        let a = giro(rumboEnt, rumboSal);
+        if (Math.abs(giro(a, aReal)) > TOL_RAMA) {
+          if (Math.abs(aReal) < 21) continue;
+          a = aReal;
+        }
+        const otras = claves.filter(v => !(entOk && v === ent) && !(salOk && v === sal) && !red.prohibido(red.entradaSolo, n, v))
+          .map(v => giro(rumboEnt, ramas.get(v)));
+        const cod = decidir(a, otras);
+        if (cod !== null) candidatos.push({ s, cod, a });
+      }
+    }
+    let avisos = [];
+    for (const x of candidatos.sort((p, q) => p.s - q.s)) {
+      const u = avisos[avisos.length - 1];
+      if (u && x.s - u.s < FUSION) { if (Math.abs(x.a) > Math.abs(u.a)) avisos[avisos.length - 1] = x; }
+      else avisos.push(x);
+    }
+    glorietas.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+    let grupo = [];
+    const cerrar = () => {
+      const s0 = grupo[0][0], s1 = grupo[grupo.length - 1][0], nodos = new Map(grupo.map(g => [g[1], g[0]]));
+      const ent = red.brazoCercano(nodos.keys(), track.en(s0 - L), red.salidaSolo);
+      const sal = red.brazoCercano(nodos.keys(), track.en(s1 + L), red.entradaSolo);
+      const salidas = ent !== null && sal !== null ? red.salidasAnillo(ent, sal, Math.abs(nodos.get(sal) - nodos.get(ent))) : 0;
+      if (salidas) {
+        avisos = avisos.filter(x => !(s0 - 20 <= x.s && x.s <= s1 + 20));
+        avisos.push({ s: s0, cod: 1008 + Math.min(salidas, 5), a: 0 });
+      }
+      grupo = [];
+    };
+    for (const g of glorietas) {
+      if (grupo.length && g[0] - grupo[grupo.length - 1][0] > 60) cerrar();
+      grupo.push(g);
+    }
+    if (grupo.length) cerrar();
+    const vueltas = [];
+    for (let s = L; s < track.total - L; s += 2) {
+      const d = dist(track.en(s - L), track.en(s + L));
+      if (d < 5) {
+        const u = vueltas[vueltas.length - 1];
+        if (u && s - u[0] < 2 * L) { if (d < u[1]) vueltas[vueltas.length - 1] = [s, d]; }
+        else vueltas.push([s, d]);
+      }
+    }
+    for (const [s] of vueltas) if (!avisos.some(x => Math.abs(x.s - s) < 30)) avisos.push({ s, cod: TU, a: 180 });
+    return avisos.filter(x => !track.parado(x.s)).sort((p, q) => p.s - q.s);
+  }
+
+  // avisar(texto, bytes recibidos); señal: AbortSignal para cancelar
+  async function descargarOSM(pts, avisar = () => {}, senal) {
+    const lat = pts.map(p => p.lat), lon = pts.map(p => p.lon), m = 0.002;
+    const caja = [Math.min(...lat) - m, Math.min(...lon) - m, Math.max(...lat) + m, Math.max(...lon) + m].map(x => x.toFixed(5)).join(",");
+    const consulta = `[out:json][timeout:120];way["highway"]["highway"!~"^(${EXCLUIDOS})$"](${caja});out body;>;out skel qt;`;
+    let ultimo = "", intento = 0;
+    for (const srv of ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]) {
+      for (let i = 0; i < 3; i++) {
+        intento++;
+        try {
+          avisar("Esperando a que Overpass prepare los caminos…", 0);
+          const r = await fetch(srv, { method: "POST", body: new URLSearchParams({ data: consulta }), signal: senal });
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          // Overpass no anuncia el tamaño: se puede contar lo recibido, pero no un porcentaje
+          const lector = r.body.getReader(), trozos = [];
+          let bytes = 0;
+          for (;;) {
+            const { done, value } = await lector.read();
+            if (done) break;
+            trozos.push(value); bytes += value.length;
+            avisar("Recibiendo los caminos de la zona…", bytes);
+          }
+          const texto = await new Blob(trozos).text();
+          return JSON.parse(texto).elements;
+        } catch (e) {
+          if (e.name === "AbortError") throw e;
+          ultimo = e.message;
+          if (intento < 6) {
+            avisar(`Overpass no responde (${ultimo}). Reintento ${intento} de 5…`, 0);
+            await new Promise((ok, mal) => {
+              const t = setTimeout(ok, 5000 * (i + 1));
+              if (senal) senal.addEventListener("abort", () => { clearTimeout(t); mal(new DOMException("Cancelado", "AbortError")); }, { once: true });
+            });
+          }
+        }
+      }
+    }
+    throw new Error(ultimo);
+  }
+  return { Track, calcular, descargarOSM, xy, dist, rumbo };
+})();
+</script>
+
+<script>
+const $ = id => document.getElementById(id);
+const TIPOS = [
+  [1000, "Izquierda", "←", "izq"], [1001, "Derecha", "→", "der"], [1017, "Suave izq.", "↖", "izq"], [1016, "Suave der.", "↗", "der"],
+  [1015, "Mantener izq.", "⇖", "izq"], [1014, "Mantener der.", "⇗", "der"], [1019, "Muy cerrado izq.", "↙", "izq"], [1018, "Muy cerrado der.", "↘", "der"],
+  [1002, "Recto", "↑", "recto"], [1003, "Media vuelta", "↩", "vuelta"],
+];
+// 1014 en adelante ya son «mantener»: el código de glorieta solo llega a la salida 5
+for (let n = 1; n <= 5; n++) TIPOS.push([1008 + n, `Glorieta, salida ${n}`, String(n), "glorieta"]);
+const TIPO = new Map(TIPOS.map(t => [t[0], t]));
+const esGiro = c => TIPO.has(c);
+
+const est = { texto: "", nombre: "", track: null, giros: [], pois: [], sel: null, pestana: "giros", modo: null, cambios: false, deshacer: [] };
+let sigId = 1, capaTrack = null, capaMarcas = null, capaGuias = null, capaSenales = null, marcas = new Map();
+const pasos = { km: 1000, flecha: 250 };
+try { Object.assign(pasos, JSON.parse(localStorage.getItem("giros-pasos")) || {}); } catch (e) {}
+function guardarPasos() { try { localStorage.setItem("giros-pasos", JSON.stringify(pasos)); } catch (e) {} }
+
+function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function aviso(t, error = false) { $("aviso").textContent = t; $("aviso").className = error ? "error" : ""; }
+const fmtKm = s => (s / 1000).toFixed(2);
+
+// ---------- Mapa ----------
+let mapa = null;
+if (window.L) {
+  mapa = L.map("mapa", { zoomControl: true });
+  // No usar tile.openstreetmap.org: bloquea las páginas abiertas como fichero local
+  const calle = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "© Esri" });
+  const bici = L.tileLayer("https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png", { maxZoom: 20, subdomains: "abc", attribution: "© OpenStreetMap, CyclOSM" });
+  const topo = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", { maxZoom: 19, maxNativeZoom: 17, subdomains: "abc", attribution: "© OpenStreetMap, © OpenTopoMap (CC-BY-SA)" });
+  const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "© Esri" });
+  calle.addTo(mapa);
+  L.control.layers({ "Callejero": calle, "Ciclista": bici, "Topográfico": topo, "Satélite": sat }).addTo(mapa);
+  mapa.setView([43.3, -3.03], 11);
+  const tamIconos = () => $("mapa").classList.toggle("lejos", mapa.getZoom() < 15);
+  mapa.on("zoomend", tamIconos); tamIconos();
+  capaGuias = L.layerGroup().addTo(mapa);
+  capaSenales = L.layerGroup().addTo(mapa);
+  capaMarcas = L.layerGroup().addTo(mapa);
+  mapa.on("zoomend", dibujarSenales);
+  const control = L.control({ position: "bottomleft" });
+  control.onAdd = () => {
+    const d = L.DomUtil.create("div", "senales");
+    d.innerHTML = `<label>Km <select id="pasoKm"><option value="0">No</option><option value="500">0,5 km</option><option value="1000">1 km</option><option value="2000">2 km</option><option value="5000">5 km</option></select></label>
+      <label>Flechas <select id="pasoFlecha"><option value="0">No</option><option value="100">100 m</option><option value="250">250 m</option><option value="500">500 m</option><option value="1000">1 km</option></select></label>`;
+    L.DomEvent.disableClickPropagation(d);
+    d.querySelector("#pasoKm").value = pasos.km;
+    d.querySelector("#pasoFlecha").value = pasos.flecha;
+    d.querySelector("#pasoKm").onchange = e => { pasos.km = +e.target.value; guardarPasos(); dibujarSenales(); };
+    d.querySelector("#pasoFlecha").onchange = e => { pasos.flecha = +e.target.value; guardarPasos(); dibujarSenales(); };
+    return d;
+  };
+  control.addTo(mapa);
+  mapa.on("click", clicMapa);
+} else {
+  aviso("No se ha podido cargar el mapa: revisa la conexión a internet y recarga la página.", true);
+}
+
+// ---------- Lectura ----------
+function textoEtiqueta(raw, etiqueta) {
+  const m = raw.match(new RegExp(`<${etiqueta}(?:\\s[^>]*)?>([\\s\\S]*?)</${etiqueta}>`));
+  if (!m) return "";
+  const t = m[1].trim(), c = t.match(/^<!\[CDATA\[([\s\S]*)\]\]>$/);
+  if (c) return c[1];
+  return t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+}
+
+function leerGPX(texto) {
+  const doc = new DOMParser().parseFromString(texto, "application/xml");
+  if (doc.querySelector("parsererror")) throw new Error("el fichero no es un GPX válido");
+  let nodos = [...doc.getElementsByTagName("trkpt")];
+  if (!nodos.length) nodos = [...doc.getElementsByTagName("rtept")];
+  if (nodos.length < 2) throw new Error("el GPX no tiene track");
+  const pts = nodos.map(n => {
+    const e = [...n.children].find(c => c.localName === "ele"), h = [...n.children].find(c => c.localName === "time");
+    return { lat: parseFloat(n.getAttribute("lat")), lon: parseFloat(n.getAttribute("lon")), ele: e ? e.textContent.trim() : null,
+      t: h ? Date.parse(h.textContent.trim()) : NaN };
+  });
+  return pts;
+}
+
+function leerWpts(texto, track) {
+  const giros = [], pois = [];
+  let s0 = 0;
+  for (const m of texto.matchAll(/[ \t]*<wpt\b[^>]*?(?:\/>|>[\s\S]*?<\/wpt>)/g)) {
+    const raw = m[0], ap = raw.match(/<wpt\b[^>]*>/)[0];
+    const lat = parseFloat(ap.match(/\blat="([^"]+)"/)[1]), lon = parseFloat(ap.match(/\blon="([^"]+)"/)[1]);
+    const c = raw.match(/type="ICON"[^>]*>\s*(\d+)\s*</), cod = c ? parseInt(c[1]) : null;
+    if (cod !== null && esGiro(cod)) {
+      const q = GirosOSM.xy(lat, lon, track.lat0), cand = track.pasadas(q, 40), pos = cand.filter(s => s >= s0 - 30);
+      let s = pos.length ? Math.min(...pos) : (cand.length ? cand.reduce((a, b) => Math.abs(a - s0) < Math.abs(b - s0) ? a : b) : s0);
+      if (s < s0 && s >= s0 - 30) s = s0;     // respeta el orden del fichero
+      s0 = Math.max(s0, s);
+      giros.push({ id: sigId++, s, cod, lat, lon, raw });
+    } else {
+      pois.push({ id: sigId++, lat, lon, ele: textoEtiqueta(raw, "ele"), nombre: textoEtiqueta(raw, "name"), desc: textoEtiqueta(raw, "desc"), raw, editado: false });
+    }
+  }
+  return { giros, pois };
+}
+
+async function abrirFichero(f) {
+  if (est.cambios && !confirm("Hay cambios sin descargar. ¿Abrir otro GPX y perderlos?")) return;
+  try {
+    const texto = await f.text(), pts = leerGPX(texto), track = new GirosOSM.Track(pts);
+    if (!(track.total > 0)) throw new Error("el track no tiene distancia");
+    const { giros, pois } = leerWpts(texto, track);
+    Object.assign(est, { texto, nombre: f.name, track, giros, pois, sel: null, pestana: "giros", modo: null, cambios: false, deshacer: [] });
+    $("nombre").textContent = f.name;
+    $("caer").classList.add("oculto");
+    ["generar", "addGiro", "addPoi", "descargar"].forEach(i => $(i).disabled = false);
+    aviso(giros.length ? `El GPX ya trae ${giros.length} giros: puedes revisarlos o generar otros.` : "Pulsa «Generar giros» para calcularlos, o añádelos a mano.");
+    prepararPerfil();
+    if (mapa) mapa.invalidateSize(false);
+    dibujarTrack(); pintar();
+  } catch (e) { aviso("No se puede abrir: " + e.message, true); }
+}
+
+// ---------- Dibujo ----------
+function dibujarTrack() {
+  if (!mapa) return;
+  capaGuias.clearLayers();
+  const t = est.track, lineas = t.pts.map(p => [p.lat, p.lon]);
+  L.polyline(lineas, { color: "#fff", weight: 7, opacity: .8, interactive: false }).addTo(capaGuias);
+  capaTrack = L.polyline(lineas, { color: "#d0006f", weight: 4, opacity: .9, interactive: false }).addTo(capaGuias);
+  mapa.fitBounds(capaTrack.getBounds(), { padding: [20, 20] });
+  dibujarSenales();
+}
+
+// Puntos kilométricos y flechas: al alejar el mapa se saltan algunos para que no se amontonen
+function dibujarSenales() {
+  if (!mapa || !est.track) return;
+  capaSenales.clearLayers();
+  const t = est.track, mpp = 156543 * Math.cos(t.lat0 * Math.PI / 180) / Math.pow(2, mapa.getZoom());
+  const salto = (paso, px) => paso * Math.max(1, Math.ceil(px * mpp / paso));
+  const marca = (s, html, cls, tam) => L.marker(t.latlon(s), { interactive: false, keyboard: false, zIndexOffset: -500,
+    icon: L.divIcon({ className: "", html: `<div class="${cls}" ${html.rot}>${html.txt}</div>`, iconSize: tam, iconAnchor: [tam[0] / 2, tam[1] / 2] }) }).addTo(capaSenales);
+  if (pasos.flecha) {
+    const d = salto(pasos.flecha, 40);
+    for (let s = pasos.flecha / 2; s < t.total; s += d) {
+      const r = GirosOSM.rumbo(t.en(s - 5), t.en(s + 5));
+      marca(s, { rot: `style="transform:rotate(${r.toFixed(0)}deg)"`, txt: "▲" }, "chevron", [12, 12]);
+    }
+  }
+  if (pasos.km) {
+    const d = salto(pasos.km, 60);
+    for (let s = d; s < t.total; s += d) marca(s, { rot: "", txt: `km ${String(s / 1000).replace(".", ",")}` }, "kmetiq", [40, 16]);
+  }
+}
+
+function iconoHTML(cod, extra = "") {
+  const t = TIPO.get(cod);
+  return `<div class="icono g-${t[3]} ${extra}" title="${esc(t[1])}">${t[2]}</div>`;
+}
+
+function dibujarMarcas() {
+  if (!mapa) return;
+  capaMarcas.clearLayers(); marcas = new Map();
+  for (const g of est.giros) {
+    const m = L.marker([g.lat, g.lon], { icon: L.divIcon({ className: est.sel === g.id ? "marca-sel" : "", html: iconoHTML(g.cod), iconSize: [26, 26], iconAnchor: [13, 13] }),
+      zIndexOffset: est.sel === g.id ? 1000 : 0, title: `km ${fmtKm(g.s)} · ${TIPO.get(g.cod)[1]}` });
+    m.on("click", e => { if (est.modo) return clicMapa(e); est.pestana = "giros"; seleccionar(g.id, false); });
+    m.addTo(capaMarcas); marcas.set(g.id, m);
+  }
+  for (const p of est.pois) {
+    const m = L.marker([p.lat, p.lon], { draggable: true, title: p.nombre || "POI",
+      icon: L.divIcon({ className: est.sel === p.id ? "marca-sel" : "", html: `<div class="icono g-poi">★</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: est.sel === p.id ? 1000 : 100 });
+    m.on("click", e => { if (est.modo) return clicMapa(e); est.pestana = "pois"; seleccionar(p.id, false); });
+    m.on("dragend", () => { guardarEstado(); const c = m.getLatLng(); p.lat = c.lat; p.lon = c.lng; p.editado = true; pintar(); });
+    m.addTo(capaMarcas); marcas.set(p.id, m);
+  }
+}
+
+function visibles() {
+  const f = $("filtro").value;
+  return f ? est.giros.filter(g => TIPO.get(g.cod)[3] === f) : est.giros;
+}
+
+function pintarLista() {
+  const lista = $("lista");
+  lista.textContent = "";
+  $("tabGiros").textContent = `Giros (${est.giros.length})`;
+  $("tabPois").textContent = `POIs (${est.pois.length})`;
+  $("tabGiros").setAttribute("aria-selected", est.pestana === "giros");
+  $("tabPois").setAttribute("aria-selected", est.pestana === "pois");
+  $("filtro").hidden = est.pestana !== "giros";
+  $("nav").hidden = est.pestana !== "giros";
+  if (est.pestana === "giros") {
+    const v = visibles();
+    if (!v.length) lista.innerHTML = `<div class="vacio">${est.track ? "No hay giros en esta vista." : ""}</div>`;
+    for (const g of v) {
+      const f = document.createElement("div");
+      f.className = "fila" + (est.sel === g.id ? " sel" : "");
+      f.dataset.id = g.id;
+      f.innerHTML = iconoHTML(g.cod, "fila-i") + `<span class="km">${fmtKm(g.s)}</span>`;
+      const sel = document.createElement("select");
+      sel.setAttribute("aria-label", "Tipo de giro");
+      for (const t of TIPOS) sel.add(new Option(t[1], t[0], false, t[0] === g.cod));
+      if (!TIPO.has(g.cod)) sel.add(new Option("Código " + g.cod, g.cod, true, true));
+      sel.onclick = e => e.stopPropagation();
+      sel.onchange = () => { guardarEstado(); g.cod = parseInt(sel.value); pintar(); };
+      const q = document.createElement("button");
+      q.className = "quitar"; q.textContent = "×"; q.title = "Quitar este giro (Supr)"; q.setAttribute("aria-label", "Quitar giro");
+      q.onclick = e => { e.stopPropagation(); quitarGiro(g.id); };
+      f.append(sel, q);
+      if (est.sel === g.id) {
+        const otros = pasadasOtras(g);
+        const x = document.createElement("div");
+        x.className = "extra";
+        x.textContent = otros.length ? `También pasas por aquí en km ${otros.join(", ")}` : "Solo pasas una vez por aquí";
+        f.append(x);
+      }
+      f.onclick = () => seleccionar(g.id, true);
+      lista.append(f);
+    }
+  } else {
+    if (!est.pois.length) lista.innerHTML = `<div class="vacio">Sin POIs. Usa «+ POI» y haz clic en el mapa. Se pueden arrastrar para moverlos.</div>`;
+    for (const p of est.pois) {
+      const f = document.createElement("div");
+      f.className = "fila poi" + (est.sel === p.id ? " sel" : "");
+      f.dataset.id = p.id;
+      f.innerHTML = `<div class="icono fila-i g-poi">★</div><span>${esc(p.nombre || "(sin nombre)")}</span>`;
+      const ed = document.createElement("button");
+      ed.className = "quitar"; ed.textContent = "✎"; ed.title = "Editar"; ed.setAttribute("aria-label", "Editar POI");
+      ed.onclick = e => { e.stopPropagation(); editarPoi(p); };
+      const q = document.createElement("button");
+      q.className = "quitar"; q.textContent = "×"; q.title = "Quitar este POI"; q.setAttribute("aria-label", "Quitar POI");
+      q.onclick = e => { e.stopPropagation(); guardarEstado(); est.pois = est.pois.filter(x => x !== p); pintar(); };
+      f.append(ed, q);
+      if (p.desc) { const x = document.createElement("div"); x.className = "extra"; x.textContent = p.desc; f.append(x); }
+      f.onclick = () => seleccionar(p.id, true);
+      lista.append(f);
+    }
+  }
+  const s = lista.querySelector(".sel");
+  if (s) s.scrollIntoView({ block: "nearest" });
+}
+
+function pasadasOtras(g) {
+  const q = GirosOSM.xy(g.lat, g.lon, est.track.lat0);
+  return est.track.pasadas(q, 15).filter(s => Math.abs(s - g.s) > 30).map(fmtKm);
+}
+
+function pintarResumen() {
+  if (!est.track) return;
+  const glor = est.giros.filter(g => TIPO.get(g.cod)[3] === "glorieta").length;
+  $("resumen").textContent = `${(est.track.total / 1000).toFixed(1)} km · ${est.giros.length} giros (${glor} glorietas) · ${est.pois.length} POIs` + (est.cambios ? " · sin descargar" : "");
+  $("deshacer").disabled = !est.deshacer.length;
+  $("addGiro").classList.toggle("activo", est.modo === "giro");
+  $("addPoi").classList.toggle("activo", est.modo === "poi");
+  $("modo").textContent = est.modo === "giro" ? "Clic en el track o en el perfil donde va el giro (Esc para salir)" : est.modo === "poi" ? "Clic en el mapa o en el perfil donde va el POI (Esc para salir)" : "";
+  $("mapa").classList.toggle("anadiendo", !!est.modo);
+}
+
+function pintar() { dibujarMarcas(); pintarLista(); pintarResumen(); dibujarPerfil(); }
+
+// ---------- Perfil de elevación ----------
+const fmtNum = (x, d = 0) => x.toFixed(d).replace(".", ",");
+const MARGEN = { izq: 42, der: 10, arr: 12, aba: 16 };
+const prf = { abierto: innerWidth >= 800, cotas: null, tiempos: false, min: 0, max: 0, sube: 0, baja: 0, puntero: null };
+try { const g = localStorage.getItem("giros-perfil"); if (g !== null) prf.abierto = g === "1"; } catch (e) {}
+
+function prepararPerfil() {
+  const t = est.track, crudas = t.pts.map(p => parseFloat(p.ele));
+  ocultarPuntero();
+  const validas = crudas.filter(Number.isFinite).length;
+  prf.cotas = null;
+  if (validas >= 2) {
+    // huecos sin altitud: se rellenan con la última conocida
+    let u = crudas.find(Number.isFinite);
+    prf.cotas = crudas.map(x => (u = Number.isFinite(x) ? x : u));
+    prf.min = Math.min(...prf.cotas); prf.max = Math.max(...prf.cotas);
+    // desnivel con umbral de 5 m para no sumar el ruido de la altitud
+    let ref = prf.cotas[0]; prf.sube = 0; prf.baja = 0;
+    for (const c of prf.cotas) {
+      if (c - ref >= 5) { prf.sube += c - ref; ref = c; }
+      else if (ref - c >= 5) { prf.baja += ref - c; ref = c; }
+    }
+  }
+  prf.tiempos = t.pts.filter(p => Number.isFinite(p.t)).length >= 2;
+  $("perfil").hidden = false;
+  $("perfilDatos").textContent = prf.cotas
+    ? `${fmtNum(prf.min)}–${fmtNum(prf.max)} m · ↑ ${fmtNum(prf.sube)} m · ↓ ${fmtNum(prf.baja)} m`
+    : "Este GPX no trae altitud";
+  $("perfilBoton").disabled = !prf.cotas;
+  aplicarPerfilAbierto();
+}
+
+function aplicarPerfilAbierto() {
+  const abierto = prf.abierto && !!prf.cotas;
+  $("perfilCuerpo").hidden = !abierto;
+  $("perfilBoton").textContent = (abierto ? "▼" : "▲") + " Perfil";
+  $("perfilBoton").setAttribute("aria-expanded", abierto);
+  $("perfilBoton").title = abierto ? "Plegar el perfil" : "Desplegar el perfil";
+  if (!abierto) ocultarPuntero();
+  if (mapa) mapa.invalidateSize(false);
+  dibujarPerfil();
+}
+
+function cotaEn(s0) {
+  const t = est.track, s = Math.max(0, Math.min(t.total, s0)), i = t.indice(s), f = (s - t.s[i]) / (t.s[i + 1] - t.s[i]);
+  return prf.cotas[i] + f * (prf.cotas[i + 1] - prf.cotas[i]);
+}
+// Pendiente media en 100 m, para que el ruido de la altitud no la dispare
+function pendienteEn(s) {
+  const t = est.track, a = Math.max(0, s - 50), b = Math.min(t.total, s + 50);
+  return b > a ? (cotaEn(b) - cotaEn(a)) / (b - a) * 100 : 0;
+}
+function tiempoEn(s0) {
+  const t = est.track, s = Math.max(0, Math.min(t.total, s0));
+  let i = t.indice(s), j = i + 1;
+  while (i > 0 && !Number.isFinite(t.pts[i].t)) i--;
+  while (j < t.pts.length - 1 && !Number.isFinite(t.pts[j].t)) j++;
+  const ini = t.pts.find(p => Number.isFinite(p.t)).t, a = t.pts[i].t, b = t.pts[j].t;
+  if (!Number.isFinite(a)) return Number.isFinite(b) ? Math.max(0, b - ini) : 0;
+  if (!Number.isFinite(b)) return a - ini;
+  return a + (b - a) * (s - t.s[i]) / (t.s[j] - t.s[i]) - ini;
+}
+function fmtTiempo(ms) {
+  const seg = Math.round(ms / 1000), h = Math.floor(seg / 3600), m = Math.floor(seg / 60) % 60, s = seg % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+function pasoBonito(rango, cuantos) {
+  const bruto = rango / cuantos, e = Math.pow(10, Math.floor(Math.log10(bruto)));
+  for (const k of [1, 2, 5, 10]) if (k * e >= bruto) return k * e;
+  return 10 * e;
+}
+function geomPerfil() {
+  const c = $("perfilLienzo"), w = c.clientWidth, h = c.clientHeight;
+  const margen = Math.max(10, (prf.max - prf.min) * 0.08), ymin = prf.min - margen, ymax = prf.max + margen;
+  const iz = MARGEN.izq, an = Math.max(1, w - MARGEN.izq - MARGEN.der), al = Math.max(1, h - MARGEN.arr - MARGEN.aba);
+  return { w, h, iz, an, al, x: s => iz + s / est.track.total * an, y: e => MARGEN.arr + (ymax - e) / (ymax - ymin) * al,
+    sDeX: x => Math.max(0, Math.min(1, (x - iz) / an)) * est.track.total, ymin, ymax };
+}
+function poiEnTrack(p) {
+  const r = est.track.pasadas(GirosOSM.xy(p.lat, p.lon, est.track.lat0), 30);
+  return r.length ? r[0] : null;
+}
+function dibujarPerfil() {
+  const c = $("perfilLienzo");
+  if (!est.track || !prf.cotas || $("perfilCuerpo").hidden || !c.clientWidth) return;
+  const dpr = devicePixelRatio || 1, g = geomPerfil();
+  c.width = Math.round(g.w * dpr); c.height = Math.round(g.h * dpr);
+  const x = c.getContext("2d"), css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
+  x.scale(dpr, dpr);
+  x.font = "11px system-ui, 'Segoe UI', sans-serif";
+  x.lineWidth = 1;
+  // rejilla de altitud
+  x.textAlign = "right"; x.textBaseline = "middle";
+  const pa = pasoBonito(g.ymax - g.ymin, g.h < 120 ? 2 : 3);
+  for (let e = Math.ceil(g.ymin / pa) * pa; e <= g.ymax; e += pa) {
+    const y = Math.round(g.y(e)) + .5;
+    x.strokeStyle = v("--borde"); x.beginPath(); x.moveTo(g.iz, y); x.lineTo(g.iz + g.an, y); x.stroke();
+    x.fillStyle = v("--suave"); x.fillText(fmtNum(e) + " m", g.iz - 4, y);
+  }
+  // kilómetros
+  x.textAlign = "center"; x.textBaseline = "top";
+  const km = pasoBonito(est.track.total / 1000, Math.max(2, Math.floor(g.an / 70)));
+  x.fillStyle = v("--suave");
+  for (let k = 0; k * 1000 <= est.track.total; k += km) x.fillText(String(k).replace(".", ","), g.x(k * 1000), g.h - MARGEN.aba + 3);
+  // silueta: una muestra por píxel
+  x.beginPath();
+  x.moveTo(g.iz, g.y(cotaEn(0)));
+  for (let px = 1; px <= g.an; px++) x.lineTo(g.iz + px, g.y(cotaEn(px / g.an * est.track.total)));
+  const base = MARGEN.arr + g.al;
+  const linea = new Path2D();
+  linea.moveTo(g.iz, g.y(cotaEn(0)));
+  for (let px = 1; px <= g.an; px++) linea.lineTo(g.iz + px, g.y(cotaEn(px / g.an * est.track.total)));
+  x.lineTo(g.iz + g.an, base); x.lineTo(g.iz, base); x.closePath();
+  x.globalAlpha = .28; x.fillStyle = v("--acento"); x.fill(); x.globalAlpha = 1;
+  x.strokeStyle = v("--acento"); x.lineWidth = 1.5; x.stroke(linea); x.lineWidth = 1;
+  // giros: marcas arriba, con el color de su tipo
+  const colores = { izq: v("--izq"), der: v("--der"), recto: v("--recto"), vuelta: v("--vuelta"), glorieta: v("--glorieta") };
+  for (const m of est.giros) {
+    const px = Math.round(g.x(m.s)) + .5, sel = m.id === est.sel;
+    x.strokeStyle = colores[TIPO.get(m.cod)[3]]; x.lineWidth = sel ? 3 : 1.5;
+    x.beginPath(); x.moveTo(px, 1); x.lineTo(px, sel ? 11 : 8); x.stroke();
+  }
+  x.lineWidth = 1;
+  // elemento seleccionado y POIs sobre la silueta
+  const elegido = est.giros.find(m => m.id === est.sel);
+  if (elegido) { const px = Math.round(g.x(elegido.s)) + .5; x.strokeStyle = "#e0b000"; x.beginPath(); x.moveTo(px, 1); x.lineTo(px, base); x.stroke(); }
+  x.textAlign = "center"; x.textBaseline = "middle"; x.font = "13px system-ui, sans-serif";
+  for (const p of est.pois) {
+    const s = poiEnTrack(p);
+    if (s === null) continue;
+    if (p.id === est.sel) { const px = Math.round(g.x(s)) + .5; x.strokeStyle = "#e0b000"; x.beginPath(); x.moveTo(px, 1); x.lineTo(px, base); x.stroke(); }
+    x.fillStyle = v("--poi"); x.fillText("★", g.x(s), g.y(cotaEn(s)) - 7);
+  }
+}
+
+function moverPuntero(ev) {
+  const r = $("perfilLienzo").getBoundingClientRect(), g = geomPerfil(), s = g.sDeX(ev.clientX - r.left);
+  const px = g.x(s), info = $("perfilInfo"), lin = $("perfilLinea");
+  lin.hidden = false; lin.style.left = px + "px";
+  const pend = pendienteEn(s), filas = [`Altitud: ${fmtNum(cotaEn(s))} m`, `Distancia: ${fmtNum(s / 1000, 2)} km`, `Pendiente: ${pend > 0 ? "+" : ""}${fmtNum(pend, 1)} %`];
+  if (prf.tiempos) filas.push(`Tiempo: ${fmtTiempo(tiempoEn(s))}`);
+  info.textContent = "";
+  for (const f of filas) { const d = document.createElement("div"); d.textContent = f; info.append(d); }
+  info.hidden = false;
+  const an = info.offsetWidth;
+  info.style.left = (px + 10 + an > g.w ? Math.max(0, px - an - 10) : px + 10) + "px";
+  if (mapa) {
+    const ll = est.track.latlon(s);
+    if (!prf.puntero) prf.puntero = L.marker(ll, { interactive: false, keyboard: false, zIndexOffset: 2000,
+      icon: L.divIcon({ className: "", html: '<div class="puntero"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(mapa);
+    else prf.puntero.setLatLng(ll);
+  }
+}
+function ocultarPuntero() {
+  $("perfilLinea").hidden = true; $("perfilInfo").hidden = true;
+  if (prf.puntero) { prf.puntero.remove(); prf.puntero = null; }
+}
+function clicPerfil(ev) {
+  if (!est.track || !prf.cotas) return;
+  const r = $("perfilLienzo").getBoundingClientRect(), s = geomPerfil().sDeX(ev.clientX - r.left), [lat, lon] = est.track.latlon(s);
+  if (est.modo === "giro") pedirTipo(s);
+  else if (est.modo === "poi") nuevoPoi(lat, lon);
+  else if (mapa) mapa.setView([lat, lon], Math.max(mapa.getZoom(), 15));
+}
+
+function seleccionar(id, centrar) {
+  est.sel = id;
+  pintar();
+  const x = est.giros.find(g => g.id === id) || est.pois.find(p => p.id === id);
+  if (x && mapa && centrar) mapa.setView([x.lat, x.lon], Math.max(mapa.getZoom(), 17));
+  else if (x && mapa && !mapa.getBounds().pad(-.1).contains([x.lat, x.lon])) mapa.panTo([x.lat, x.lon]);
+}
+
+function mover(paso) {
+  const v = visibles();
+  if (!v.length) return;
+  const i = v.findIndex(g => g.id === est.sel);
+  const j = i < 0 ? (paso > 0 ? 0 : v.length - 1) : Math.max(0, Math.min(v.length - 1, i + paso));
+  seleccionar(v[j].id, true);
+}
+
+// ---------- Edición ----------
+function foto() { return JSON.stringify({ giros: est.giros, pois: est.pois }); }
+function guardarEstado() { est.deshacer.push(foto()); if (est.deshacer.length > 200) est.deshacer.shift(); est.cambios = true; }
+function deshacer() {
+  const f = est.deshacer.pop();
+  if (!f) return;
+  const d = JSON.parse(f);
+  est.giros = d.giros; est.pois = d.pois; est.cambios = true;
+  pintar();
+}
+function quitarGiro(id) {
+  const v = visibles(), i = v.findIndex(g => g.id === id);
+  guardarEstado();
+  est.giros = est.giros.filter(g => g.id !== id);
+  if (est.sel === id) { const r = v.filter(g => g.id !== id); est.sel = r.length ? r[Math.min(i, r.length - 1)].id : null; }
+  pintar();
+}
+function nuevoGiro(s, cod) {
+  const t = est.track, [lat, lon] = t.latlon(s);
+  return { id: sigId++, s, cod, lat, lon, raw: null };
+}
+function ordenar() { est.giros.sort((a, b) => a.s - b.s); }
+
+function dialogo(html, preparar) {
+  const d = $("dlg");
+  d.innerHTML = html;
+  if (preparar) preparar(d);
+  d.showModal();
+  return d;
+}
+
+function pedirTipo(s) {
+  const botones = TIPOS.map(t => `<button data-c="${t[0]}"><div class="icono g-${t[3]}">${t[2]}</div>${esc(t[1])}</button>`).join("");
+  dialogo(`<h3>Giro en el km ${fmtKm(s)}</h3><div class="opciones">${botones}</div><div class="pie"><button data-c="">Cancelar</button></div>`, d => {
+    d.querySelectorAll("[data-c]").forEach(b => b.onclick = () => {
+      d.close();
+      if (!b.dataset.c) return;
+      guardarEstado();
+      const g = nuevoGiro(s, parseInt(b.dataset.c));
+      est.giros.push(g); ordenar(); est.sel = g.id; est.pestana = "giros"; $("filtro").value = "";
+      pintar();
+    });
+  });
+}
+
+function clicMapa(e) {
+  if (!est.track || !est.modo) return;
+  if (est.modo === "poi") { nuevoPoi(e.latlng.lat, e.latlng.lng); return; }
+  const q = GirosOSM.xy(e.latlng.lat, e.latlng.lng, est.track.lat0);
+  // radio según el zoom: unos 12 píxeles, y al menos 10 m
+  const mpp = 156543 * Math.cos(est.track.lat0 * Math.PI / 180) / Math.pow(2, mapa.getZoom());
+  const pasos = est.track.pasadas(q, Math.max(10, 12 * mpp));
+  if (!pasos.length) { aviso("Ese punto queda lejos del track: acerca el mapa y haz clic sobre la línea."); return; }
+  aviso("");
+  if (pasos.length === 1) { pedirTipo(pasos[0]); return; }
+  const botones = pasos.map(s => `<button data-s="${s}">km ${fmtKm(s)}</button>`).join("");
+  dialogo(`<h3>Pasas por aquí ${pasos.length} veces</h3><p>¿En qué pasada va el giro?</p><div class="opciones">${botones}</div><div class="pie"><button data-s="">Cancelar</button></div>`, d => {
+    d.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { d.close(); if (b.dataset.s) pedirTipo(parseFloat(b.dataset.s)); });
+  });
+}
+
+function formularioPoi(titulo, nombre, desc, alGuardar) {
+  dialogo(`<h3>${esc(titulo)}</h3><label class="campo">Nombre<input id="pNombre" value="${esc(nombre)}"></label>
+    <label class="campo">Descripción<textarea id="pDesc" rows="3">${esc(desc)}</textarea></label>
+    <div class="pie"><button id="pCan">Cancelar</button><button id="pOk" class="principal">Guardar</button></div>`, d => {
+    d.querySelector("#pCan").onclick = () => d.close();
+    d.querySelector("#pOk").onclick = () => { const n = d.querySelector("#pNombre").value.trim(), t = d.querySelector("#pDesc").value.trim(); d.close(); alGuardar(n, t); };
+  });
+}
+function nuevoPoi(lat, lon) {
+  // Sobre el track, el POI toma la altitud del track
+  const sobre = est.track.pasadas(GirosOSM.xy(lat, lon, est.track.lat0), 15);
+  const ele = sobre.length && prf.cotas ? cotaEn(sobre[0]).toFixed(1) : "";
+  formularioPoi(ele ? `Nuevo POI (${fmtNum(parseFloat(ele))} m)` : "Nuevo POI", "", "", (nombre, desc) => {
+    guardarEstado();
+    const p = { id: sigId++, lat, lon, ele, nombre, desc, raw: null, editado: true };
+    est.pois.push(p); est.sel = p.id; est.pestana = "pois";
+    pintar();
+  });
+}
+function editarPoi(p) {
+  formularioPoi("Editar POI", p.nombre, p.desc, (nombre, desc) => { guardarEstado(); p.nombre = nombre; p.desc = desc; p.editado = true; pintar(); });
+}
+
+// ---------- Generar ----------
+function empezarTrabajo() {
+  const caja = $("trabajo"), control = new AbortController(), ini = Date.now();
+  let texto = "", bytes = 0;
+  const pintarT = () => {
+    const seg = Math.floor((Date.now() - ini) / 1000);
+    const mb = bytes ? ` · ${(bytes / 1048576).toFixed(1).replace(".", ",")} MB` : "";
+    $("trabajoTexto").textContent = texto;
+    $("trabajoDatos").textContent = `${seg} s${mb}`;
+  };
+  const reloj = setInterval(pintarT, 250);
+  $("trabajoCancelar").onclick = () => control.abort();
+  caja.hidden = false;
+  return {
+    senal: control.signal,
+    avisar(t, b) { texto = t; bytes = b; pintarT(); },
+    terminar() { clearInterval(reloj); caja.hidden = true; },
+  };
+}
+
+async function generar() {
+  const btn = $("generar");
+  const lanzar = async modo => {
+    btn.disabled = true;
+    aviso("");
+    const t = est.track, trabajo = empezarTrabajo();
+    try {
+      const el = await GirosOSM.descargarOSM(t.pts, trabajo.avisar, trabajo.senal);
+      trabajo.avisar("Calculando los giros…", 0);
+      await new Promise(ok => setTimeout(ok, 30));
+      const nuevos = GirosOSM.calcular(t, el);
+      if (est.track !== t) return;    // se ha abierto otro GPX mientras tanto
+      guardarEstado();
+      let anadidos = nuevos;
+      if (modo === "faltan") {
+        anadidos = nuevos.filter(n => !est.giros.some(g => Math.abs(g.s - n.s) < 40));
+        est.giros.push(...anadidos.map(n => nuevoGiro(n.s, n.cod)));
+      } else {
+        est.giros = nuevos.map(n => nuevoGiro(n.s, n.cod));
+      }
+      ordenar(); est.sel = null; est.pestana = "giros"; $("filtro").value = "";
+      aviso(modo === "faltan" ? `Añadidos ${anadidos.length} giros que faltaban.` : `Generados ${nuevos.length} giros. Revísalos con ← → o clic en cada uno.`);
+      pintar();
+    } catch (e) {
+      if (e.name === "AbortError") aviso("Cancelado: no se ha cambiado nada.");
+      else aviso("No se pudieron descargar los caminos de Overpass: " + e.message + ". Prueba de nuevo en un rato.", true);
+    } finally {
+      trabajo.terminar();
+      btn.disabled = false;
+    }
+  };
+  if (!est.giros.length) return lanzar("todos");
+  dialogo(`<h3>Este GPX ya tiene ${est.giros.length} giros</h3><p>«Añadir los que faltan» conserva los actuales, incluidos tus retoques.</p>
+    <div class="pie"><button id="gCan">Cancelar</button><button id="gSus">Sustituirlos todos</button><button id="gFal" class="principal">Añadir los que faltan</button></div>`, d => {
+    d.querySelector("#gCan").onclick = () => d.close();
+    d.querySelector("#gSus").onclick = () => { d.close(); lanzar("todos"); };
+    d.querySelector("#gFal").onclick = () => { d.close(); lanzar("faltan"); };
+  });
+}
+
+// ---------- Exportar ----------
+function wptGiro(g) {
+  if (g.raw) return g.raw.replace(/(type="ICON"[^>]*>\s*)\d+/, `$1${g.cod}`);
+  const e = est.track.ele(g.s);
+  return `  <wpt lat="${g.lat.toFixed(6)}" lon="${g.lon.toFixed(6)}">${e ? `<ele>${esc(e)}</ele>` : ""}<extensions>\n` +
+    `   <om:oruxmapsextensions xmlns:om="http://www.oruxmaps.com/oruxmapsextensions/1/0">\n` +
+    `    <om:ext type="ICON" subtype="0">${g.cod}</om:ext>\n` +
+    `   </om:oruxmapsextensions>\n  </extensions>\n  </wpt>`;
+}
+function wptPoi(p) {
+  const etiquetas = (p.nombre ? `<name>${esc(p.nombre)}</name>` : "") + (p.desc ? `<desc>${esc(p.desc)}</desc>` : "");
+  if (!p.raw) return `  <wpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">${p.ele ? `<ele>${esc(p.ele)}</ele>` : ""}${etiquetas}</wpt>`;
+  if (!p.editado) return p.raw;
+  const abierto = p.raw.replace(/<wpt\b([^>]*?)\/>/, "<wpt$1></wpt>")
+    .replace(/\blat="[^"]+"/, `lat="${p.lat.toFixed(6)}"`).replace(/\blon="[^"]+"/, `lon="${p.lon.toFixed(6)}"`)
+    .replace(/\s*<name(?:\s[^>]*)?>[\s\S]*?<\/name>/, "").replace(/\s*<desc(?:\s[^>]*)?>[\s\S]*?<\/desc>/, "");
+  return abierto.replace(/(<wpt\b[^>]*>(?:\s*<ele>[^<]*<\/ele>)?(?:\s*<time>[^<]*<\/time>)?)/, `$1${etiquetas}`);
+}
+function exportarGPX() {
+  const sinWpt = est.texto.replace(/[ \t]*<wpt\b[^>]*?(?:\/>|>[\s\S]*?<\/wpt>)[ \t]*\r?\n?/g, "");
+  const m = sinWpt.match(/<(?:rte|trk)[\s>]/);
+  let pos = m.index;
+  const salto = sinWpt.lastIndexOf("\n", pos);
+  if (salto >= 0 && !sinWpt.slice(salto + 1, pos).trim()) pos = salto + 1;
+  const giros = [...est.giros].sort((a, b) => a.s - b.s).map(wptGiro), pois = est.pois.map(wptPoi);
+  const bloque = [...giros, ...pois].map(x => x + "\n").join("");
+  return sinWpt.slice(0, pos) + bloque + sinWpt.slice(pos);
+}
+function descargar() {
+  const base = est.nombre.replace(/\.gpx$/i, "").replace(/ (OSM|BRouter) OruxMaps$/i, "");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([exportarGPX()], { type: "application/gpx+xml" }));
+  a.download = `${base} OSM OruxMaps.gpx`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  est.cambios = false;
+  pintarResumen();
+  aviso(`Descargado «${a.download}». El GPX original no se ha tocado.`);
+}
+
+// ---------- Eventos ----------
+$("fichero").onchange = e => { if (e.target.files[0]) abrirFichero(e.target.files[0]); e.target.value = ""; };
+$("generar").onclick = generar;
+$("descargar").onclick = descargar;
+$("deshacer").onclick = deshacer;
+$("addGiro").onclick = () => { est.modo = est.modo === "giro" ? null : "giro"; pintarResumen(); };
+$("addPoi").onclick = () => { est.modo = est.modo === "poi" ? null : "poi"; pintarResumen(); };
+$("tabGiros").onclick = () => { est.pestana = "giros"; pintarLista(); };
+$("tabPois").onclick = () => { est.pestana = "pois"; pintarLista(); };
+$("filtro").onchange = () => pintarLista();
+$("perfilBoton").onclick = () => {
+  prf.abierto = !prf.abierto;
+  try { localStorage.setItem("giros-perfil", prf.abierto ? "1" : "0"); } catch (e) {}
+  aplicarPerfilAbierto();
+};
+const lienzo = $("perfilLienzo");
+lienzo.addEventListener("pointermove", e => { if (prf.cotas) moverPuntero(e); });
+lienzo.addEventListener("pointerdown", e => { if (prf.cotas) moverPuntero(e); });
+lienzo.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") ocultarPuntero(); });
+lienzo.addEventListener("click", clicPerfil);
+new ResizeObserver(() => { if (mapa) mapa.invalidateSize(false); dibujarPerfil(); }).observe($("perfilCuerpo"));
+$("ant").onclick = () => mover(-1);
+$("sig").onclick = () => mover(1);
+document.addEventListener("keydown", e => {
+  if ($("dlg").open || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  if (e.key === "Escape") { est.modo = null; pintarResumen(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); deshacer(); }
+  else if (est.pestana === "giros" && e.key === "ArrowLeft") { e.preventDefault(); mover(-1); }
+  else if (est.pestana === "giros" && e.key === "ArrowRight") { e.preventDefault(); mover(1); }
+  else if (est.pestana === "giros" && e.key === "Delete" && est.sel) quitarGiro(est.sel);
+});
+window.addEventListener("beforeunload", e => { if (est.cambios) e.preventDefault(); });
+const caer = $("caer");
+window.addEventListener("dragover", e => { e.preventDefault(); caer.classList.add("encima"); caer.classList.remove("oculto"); });
+window.addEventListener("dragleave", e => { if (!e.relatedTarget) { caer.classList.remove("encima"); if (est.track) caer.classList.add("oculto"); } });
+window.addEventListener("drop", e => {
+  e.preventDefault();
+  caer.classList.remove("encima");
+  if (est.track) caer.classList.add("oculto");
+  if (e.dataTransfer.files[0]) abrirFichero(e.dataTransfer.files[0]);
+});
+</script>
+</body>
+</html>
