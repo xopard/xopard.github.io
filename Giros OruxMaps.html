@@ -59,6 +59,9 @@ main { grid-area: mapa; display: flex; flex-direction: column; min-height: 0; mi
 .perfilCab { display: flex; align-items: center; gap: 10px; padding: 3px 8px; }
 .perfilCab button { padding: 1px 8px; white-space: nowrap; }
 #perfilDatos { color: var(--suave); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#perfilZoom { display: flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
+#perfilZoom button { padding: 1px 7px; }
+#perfilVista { color: var(--suave); font-size: 12px; margin-right: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 #perfilCuerpo { position: relative; height: 140px; }
 #perfilLienzo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: pan-y; cursor: crosshair; }
 #perfilVacio { padding: 8px 12px; color: var(--suave); }
@@ -109,6 +112,10 @@ dialog p { margin: 0 0 10px; color: var(--suave); }
   html, body { height: auto; }
   body { grid-template: auto 62vh auto / minmax(0, 1fr); grid-template-areas: "cab" "mapa" "lat"; }
   #perfilCuerpo { height: 105px; }
+  .perfilCab { flex-wrap: wrap; }
+  #perfilDatos { flex: 1 1 auto; }
+  #perfilZoom { width: 100%; justify-content: flex-end; }
+  #perfilZoom button { padding: 3px 12px; }
   #lista { flex: none; height: 45vh; }
   aside { border-right: 0; border-top: 1px solid var(--borde); }
   #nombre { flex-basis: 100%; order: 9; }
@@ -159,6 +166,14 @@ dialog p { margin: 0 0 10px; color: var(--suave); }
     <div class="perfilCab">
       <button id="perfilBoton" aria-expanded="true" aria-controls="perfilCuerpo"></button>
       <span id="perfilDatos"></span>
+      <span id="perfilZoom">
+        <span id="perfilVista"></span>
+        <button id="zMenos" title="Alejar" aria-label="Alejar el perfil">−</button>
+        <button id="zMas" title="Acercar (también con la rueda del ratón)" aria-label="Acercar el perfil">+</button>
+        <button id="zIzq" title="Mover a la izquierda (también arrastrando)" aria-label="Mover el perfil a la izquierda">‹</button>
+        <button id="zDer" title="Mover a la derecha (también arrastrando)" aria-label="Mover el perfil a la derecha">›</button>
+        <button id="zTodo" title="Ver toda la ruta">Todo</button>
+      </span>
     </div>
     <div id="perfilCuerpo">
       <canvas id="perfilLienzo"></canvas>
@@ -687,7 +702,12 @@ function pintarLista() {
     }
   }
   const s = lista.querySelector(".sel");
-  if (s) s.scrollIntoView({ block: "nearest" });
+  if (s) {
+    // solo se desplaza la lista: en el móvil, scrollIntoView movería la página y sacaría el mapa de la vista
+    const fila = s.getBoundingClientRect(), caja = lista.getBoundingClientRect();
+    if (fila.top < caja.top) lista.scrollTop -= caja.top - fila.top;
+    else if (fila.bottom > caja.bottom) lista.scrollTop += fila.bottom - caja.bottom;
+  }
 }
 
 function pasadasOtras(g) {
@@ -711,7 +731,8 @@ function pintar() { dibujarMarcas(); pintarLista(); pintarResumen(); dibujarPerf
 // ---------- Perfil de elevación ----------
 const fmtNum = (x, d = 0) => x.toFixed(d).replace(".", ",");
 const MARGEN = { izq: 42, der: 10, arr: 12, aba: 16 };
-const prf = { abierto: innerWidth >= 800, cotas: null, tiempos: false, min: 0, max: 0, sube: 0, baja: 0, puntero: null };
+const prf = { abierto: innerWidth >= 800, cotas: null, tiempos: false, min: 0, max: 0, sube: 0, baja: 0, puntero: null, v0: 0, v1: 1, yMin: 0, yMax: 0 };
+const VISTA_MINIMA = 100;   // metros de ruta con el zoom máximo
 try { const g = localStorage.getItem("giros-perfil"); if (g !== null) prf.abierto = g === "1"; } catch (e) {}
 
 function prepararPerfil() {
@@ -737,12 +758,48 @@ function prepararPerfil() {
     ? `${fmtNum(prf.min)}–${fmtNum(prf.max)} m · ↑ ${fmtNum(prf.sube)} m · ↓ ${fmtNum(prf.baja)} m`
     : "Este GPX no trae altitud";
   $("perfilBoton").disabled = !prf.cotas;
+  if (prf.cotas) ajustarVista(0, t.total, false);
   aplicarPerfilAbierto();
 }
+
+// Vista del perfil: tramo de ruta visible; la escala de altitud se adapta a ese tramo
+function ajustarVista(a, b, redibujar = true) {
+  const total = est.track.total, ancho = Math.min(total, Math.max(Math.min(VISTA_MINIMA, total), b - a));
+  const v0 = Math.max(0, Math.min(total - ancho, a));
+  prf.v0 = v0; prf.v1 = v0 + ancho;
+  const t = est.track;
+  let bajo = Math.min(cotaEn(prf.v0), cotaEn(prf.v1)), alto = Math.max(cotaEn(prf.v0), cotaEn(prf.v1));
+  for (let i = 0; i < t.s.length; i++) if (t.s[i] >= prf.v0 && t.s[i] <= prf.v1) { bajo = Math.min(bajo, prf.cotas[i]); alto = Math.max(alto, prf.cotas[i]); }
+  const margen = Math.max(5, (alto - bajo) * 0.08);
+  prf.yMin = bajo - margen; prf.yMax = alto + margen;
+  const entera = ancho >= total;
+  $("perfilVista").textContent = entera ? "" : `km ${fmtNum(prf.v0 / 1000, 2)}–${fmtNum(prf.v1 / 1000, 2)}`;
+  $("zMas").disabled = ancho <= Math.min(VISTA_MINIMA, total);
+  $("zMenos").disabled = $("zTodo").disabled = entera;
+  $("zIzq").disabled = entera || prf.v0 <= 0;
+  $("zDer").disabled = entera || prf.v1 >= total;
+  $("perfilLienzo").style.cursor = entera ? "crosshair" : "grab";
+  if (redibujar) { ocultarLineaInfo(); dibujarPerfil(); }
+}
+// Acerca o aleja manteniendo fijo el punto `s` de la ruta
+function zoomVista(factor, s = (prf.v0 + prf.v1) / 2) {
+  const ancho = prf.v1 - prf.v0, nuevo = Math.min(est.track.total, Math.max(VISTA_MINIMA, ancho * factor));
+  const a = s - (s - prf.v0) / ancho * nuevo;
+  ajustarVista(a, a + nuevo);
+}
+function moverVista(metros) { ajustarVista(prf.v0 + metros, prf.v1 + metros); }
+// Si lo seleccionado queda fuera de la vista, la vista va a buscarlo
+function verEnPerfil(s) {
+  if (s === null || !prf.cotas || (s >= prf.v0 && s <= prf.v1)) return;
+  const ancho = prf.v1 - prf.v0;
+  ajustarVista(s - ancho / 2, s + ancho / 2);
+}
+function ocultarLineaInfo() { $("perfilLinea").hidden = true; $("perfilInfo").hidden = true; }
 
 function aplicarPerfilAbierto() {
   const abierto = prf.abierto && !!prf.cotas;
   $("perfilCuerpo").hidden = !abierto;
+  $("perfilZoom").hidden = !abierto;
   $("perfilBoton").textContent = (abierto ? "▼" : "▲") + " Perfil";
   $("perfilBoton").setAttribute("aria-expanded", abierto);
   $("perfilBoton").title = abierto ? "Plegar el perfil" : "Desplegar el perfil";
@@ -781,10 +838,10 @@ function pasoBonito(rango, cuantos) {
 }
 function geomPerfil() {
   const c = $("perfilLienzo"), w = c.clientWidth, h = c.clientHeight;
-  const margen = Math.max(10, (prf.max - prf.min) * 0.08), ymin = prf.min - margen, ymax = prf.max + margen;
+  const ymin = prf.yMin, ymax = prf.yMax, v0 = prf.v0, ancho = prf.v1 - prf.v0;
   const iz = MARGEN.izq, an = Math.max(1, w - MARGEN.izq - MARGEN.der), al = Math.max(1, h - MARGEN.arr - MARGEN.aba);
-  return { w, h, iz, an, al, x: s => iz + s / est.track.total * an, y: e => MARGEN.arr + (ymax - e) / (ymax - ymin) * al,
-    sDeX: x => Math.max(0, Math.min(1, (x - iz) / an)) * est.track.total, ymin, ymax };
+  return { w, h, iz, an, al, x: s => iz + (s - v0) / ancho * an, y: e => MARGEN.arr + (ymax - e) / (ymax - ymin) * al,
+    sDeX: x => v0 + Math.max(0, Math.min(1, (x - iz) / an)) * ancho, ymin, ymax };
 }
 function poiEnTrack(p) {
   const r = est.track.pasadas(GirosOSM.xy(p.lat, p.lon, est.track.lat0), 30);
@@ -809,23 +866,27 @@ function dibujarPerfil() {
   }
   // kilómetros
   x.textAlign = "center"; x.textBaseline = "top";
-  const km = pasoBonito(est.track.total / 1000, Math.max(2, Math.floor(g.an / 70)));
+  const km = pasoBonito((prf.v1 - prf.v0) / 1000, Math.max(2, Math.floor(g.an / 70)));
   x.fillStyle = v("--suave");
-  for (let k = 0; k * 1000 <= est.track.total; k += km) x.fillText(String(k).replace(".", ","), g.x(k * 1000), g.h - MARGEN.aba + 3);
+  for (let n = Math.ceil(prf.v0 / 1000 / km); n * km * 1000 <= prf.v1 + 1e-6; n++) {
+    x.fillText(String(+(n * km).toFixed(3)).replace(".", ","), g.x(n * km * 1000), g.h - MARGEN.aba + 3);
+  }
   // silueta: una muestra por píxel
   x.beginPath();
-  x.moveTo(g.iz, g.y(cotaEn(0)));
-  for (let px = 1; px <= g.an; px++) x.lineTo(g.iz + px, g.y(cotaEn(px / g.an * est.track.total)));
+  x.moveTo(g.iz, g.y(cotaEn(prf.v0)));
+  for (let px = 1; px <= g.an; px++) x.lineTo(g.iz + px, g.y(cotaEn(g.sDeX(g.iz + px))));
   const base = MARGEN.arr + g.al;
   const linea = new Path2D();
-  linea.moveTo(g.iz, g.y(cotaEn(0)));
-  for (let px = 1; px <= g.an; px++) linea.lineTo(g.iz + px, g.y(cotaEn(px / g.an * est.track.total)));
+  linea.moveTo(g.iz, g.y(cotaEn(prf.v0)));
+  for (let px = 1; px <= g.an; px++) linea.lineTo(g.iz + px, g.y(cotaEn(g.sDeX(g.iz + px))));
   x.lineTo(g.iz + g.an, base); x.lineTo(g.iz, base); x.closePath();
   x.globalAlpha = .28; x.fillStyle = v("--acento"); x.fill(); x.globalAlpha = 1;
   x.strokeStyle = v("--acento"); x.lineWidth = 1.5; x.stroke(linea); x.lineWidth = 1;
   // giros: marcas arriba, con el color de su tipo
   const colores = { izq: v("--izq"), der: v("--der"), recto: v("--recto"), vuelta: v("--vuelta"), glorieta: v("--glorieta") };
+  const dentro = s => s >= prf.v0 && s <= prf.v1;
   for (const m of est.giros) {
+    if (!dentro(m.s)) continue;
     const px = Math.round(g.x(m.s)) + .5, sel = m.id === est.sel;
     x.strokeStyle = colores[TIPO.get(m.cod)[3]]; x.lineWidth = sel ? 3 : 1.5;
     x.beginPath(); x.moveTo(px, 1); x.lineTo(px, sel ? 11 : 8); x.stroke();
@@ -833,11 +894,11 @@ function dibujarPerfil() {
   x.lineWidth = 1;
   // elemento seleccionado y POIs sobre la silueta
   const elegido = est.giros.find(m => m.id === est.sel);
-  if (elegido) { const px = Math.round(g.x(elegido.s)) + .5; x.strokeStyle = "#e0b000"; x.beginPath(); x.moveTo(px, 1); x.lineTo(px, base); x.stroke(); }
+  if (elegido && dentro(elegido.s)) { const px = Math.round(g.x(elegido.s)) + .5; x.strokeStyle = "#e0b000"; x.beginPath(); x.moveTo(px, 1); x.lineTo(px, base); x.stroke(); }
   x.textAlign = "center"; x.textBaseline = "middle"; x.font = "13px system-ui, sans-serif";
   for (const p of est.pois) {
     const s = poiEnTrack(p);
-    if (s === null) continue;
+    if (s === null || !dentro(s)) continue;
     if (p.id === est.sel) { const px = Math.round(g.x(s)) + .5; x.strokeStyle = "#e0b000"; x.beginPath(); x.moveTo(px, 1); x.lineTo(px, base); x.stroke(); }
     x.fillStyle = v("--poi"); x.fillText("★", g.x(s), g.y(cotaEn(s)) - 7);
   }
@@ -862,11 +923,11 @@ function moverPuntero(ev) {
   }
 }
 function ocultarPuntero() {
-  $("perfilLinea").hidden = true; $("perfilInfo").hidden = true;
+  ocultarLineaInfo();
   if (prf.puntero) { prf.puntero.remove(); prf.puntero = null; }
 }
 function clicPerfil(ev) {
-  if (!est.track || !prf.cotas) return;
+  if (!est.track || !prf.cotas || gesto.arrastrado) return;
   const r = $("perfilLienzo").getBoundingClientRect(), s = geomPerfil().sDeX(ev.clientX - r.left), [lat, lon] = est.track.latlon(s);
   if (est.modo === "giro") pedirTipo(s);
   else if (est.modo === "poi") nuevoPoi(lat, lon);
@@ -875,8 +936,9 @@ function clicPerfil(ev) {
 
 function seleccionar(id, centrar) {
   est.sel = id;
-  pintar();
   const x = est.giros.find(g => g.id === id) || est.pois.find(p => p.id === id);
+  if (x && prf.cotas) verEnPerfil(x.s !== undefined ? x.s : poiEnTrack(x));
+  pintar();
   if (x && mapa && centrar) mapa.setView([x.lat, x.lon], Math.max(mapa.getZoom(), 17));
   else if (x && mapa && !mapa.getBounds().pad(-.1).contains([x.lat, x.lon])) mapa.panTo([x.lat, x.lon]);
 }
@@ -1089,10 +1151,66 @@ $("perfilBoton").onclick = () => {
   aplicarPerfilAbierto();
 };
 const lienzo = $("perfilLienzo");
-lienzo.addEventListener("pointermove", e => { if (prf.cotas) moverPuntero(e); });
-lienzo.addEventListener("pointerdown", e => { if (prf.cotas) moverPuntero(e); });
-lienzo.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") ocultarPuntero(); });
+const sEnEvento = e => geomPerfil().sDeX(e.clientX - lienzo.getBoundingClientRect().left);
+// gesto: arrastre con el ratón para mover la vista y pellizco con dos dedos para el zoom
+const gesto = { dedos: new Map(), arrastre: null, arrastrado: false, pellizco: null };
+const distDedos = () => { const [a, b] = [...gesto.dedos.values()]; return Math.abs(a - b); };
+lienzo.addEventListener("pointerdown", e => {
+  if (!prf.cotas) return;
+  gesto.arrastrado = false;
+  if (e.pointerType === "mouse") {
+    if (prf.v1 - prf.v0 < est.track.total) { gesto.arrastre = { x: e.clientX, v0: prf.v0 }; lienzo.setPointerCapture(e.pointerId); }
+  } else {
+    gesto.dedos.set(e.pointerId, e.clientX);
+    if (gesto.dedos.size === 2) {
+      const [a, b] = [...gesto.dedos.values()];
+      gesto.pellizco = { d: Math.max(20, distDedos()), ancho: prf.v1 - prf.v0, s: geomPerfil().sDeX((a + b) / 2 - lienzo.getBoundingClientRect().left) };
+      ocultarLineaInfo();
+      return;
+    }
+  }
+  moverPuntero(e);
+});
+lienzo.addEventListener("pointermove", e => {
+  if (!prf.cotas) return;
+  if (gesto.dedos.has(e.pointerId)) gesto.dedos.set(e.pointerId, e.clientX);
+  if (gesto.pellizco && gesto.dedos.size === 2) {
+    gesto.arrastrado = true;
+    const p = gesto.pellizco, nuevo = p.ancho * p.d / Math.max(20, distDedos()), f = (p.s - prf.v0) / (prf.v1 - prf.v0);
+    ajustarVista(p.s - f * nuevo, p.s + (1 - f) * nuevo);
+    return;
+  }
+  if (gesto.arrastre) {
+    const dx = e.clientX - gesto.arrastre.x;
+    if (Math.abs(dx) > 4) gesto.arrastrado = true;
+    if (gesto.arrastrado) {
+      const a = gesto.arrastre.v0 - dx / geomPerfil().an * (prf.v1 - prf.v0);
+      ajustarVista(a, a + (prf.v1 - prf.v0));
+      lienzo.style.cursor = "grabbing";
+    }
+  }
+  moverPuntero(e);
+});
+const soltar = e => {
+  gesto.dedos.delete(e.pointerId);
+  if (gesto.dedos.size < 2) gesto.pellizco = null;
+  if (gesto.arrastre) { gesto.arrastre = null; lienzo.style.cursor = "grab"; }
+};
+lienzo.addEventListener("pointerup", soltar);
+lienzo.addEventListener("pointercancel", soltar);
+lienzo.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && !gesto.arrastre) ocultarPuntero(); });
 lienzo.addEventListener("click", clicPerfil);
+lienzo.addEventListener("wheel", e => {
+  if (!prf.cotas) return;
+  e.preventDefault();
+  zoomVista(e.deltaY < 0 ? 0.75 : 1 / 0.75, sEnEvento(e));
+  moverPuntero(e);
+}, { passive: false });
+$("zMas").onclick = () => zoomVista(0.5);
+$("zMenos").onclick = () => zoomVista(2);
+$("zTodo").onclick = () => ajustarVista(0, est.track.total);
+$("zIzq").onclick = () => moverVista(-(prf.v1 - prf.v0) * 0.5);
+$("zDer").onclick = () => moverVista((prf.v1 - prf.v0) * 0.5);
 new ResizeObserver(() => { if (mapa) mapa.invalidateSize(false); dibujarPerfil(); }).observe($("perfilCuerpo"));
 $("ant").onclick = () => mover(-1);
 $("sig").onclick = () => mover(1);
