@@ -765,6 +765,8 @@ input[type=color] { width: 40px; height: 28px; padding: 1px; background: var(--p
 .zonas li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--borde); }
 .zonas li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .zonas button { padding: 2px 8px; }
+.zonas input { flex: none; }
+#filaVerTrails { margin-top: 10px; font-weight: 600; }
 .difs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; margin-top: 8px; }
 .difs .casilla { margin-top: 2px; font-size: 13px; }
 .difs small { color: var(--suave); font-variant-numeric: tabular-nums; }
@@ -879,8 +881,13 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
       </div>
       <p class="nota">Elige uno o varios KML o KMZ (los de Trailforks traen el color de su dificultad; los demás, su propio color), o GPX sueltos junto con su dificultades_ZONA.json. Se guardan solo en este navegador: no se publican con la página. Cargar otra vez una zona la sustituye.</p>
       <div id="avisoTrails" class="aviso" role="status" hidden></div>
+      <label class="casilla" id="filaVerTrails" hidden><input id="verTrails" type="checkbox">Mostrar los trails en el mapa</label>
       <ul id="zonasTrails" class="zonas"></ul>
       <div id="difsTrails" class="difs"></div>
+      <div class="fila-botones" id="botonesDifs" style="margin-top: 6px" hidden>
+        <button id="difsTodas">Todas las dificultades</button>
+        <button id="difsNinguna">Ninguna</button>
+      </div>
       <div id="bloqueListaTrails" hidden>
         <div class="filtroTrails">
           <input id="buscarTrails" type="search" placeholder="Buscar trail…" aria-label="Buscar trail por nombre" autocomplete="off">
@@ -1782,7 +1789,8 @@ const bordeDe = d => DIFICULTADES[d].borde || "#ffffff";
 let ZONAS = [];    // tal como se guardan: { zona, nombre, fecha, trails: [{ n, d, l: [[[lat, lon], …], …] }] }
 let TRAILS = [];   // preparados: { zona, n, d, tramos: [{ lat, lon, x, y }], x0, x1, y0, y1, km, dens }
 const difOcultas = new Set((prefs.leer().difOcultas || []).filter(d => DIFICULTADES[d]));
-const trailVisible = t => !difOcultas.has(t.d);
+const zonasOcultas = new Set(prefs.leer().zonasOcultas || []);
+const trailVisible = t => !difOcultas.has(t.d) && !zonasOcultas.has(t.zona);
 
 const almacen = {
   db: null,
@@ -1945,8 +1953,16 @@ function pintarPanelTrails() {
       try { await almacen.borrar(z.zona); } catch {}
       reconstruirTrails();
     });
-    return el("li", {}, el("span", {}, z.nombre + " ", el("small", { textContent: `${num(z.trails.length)} trails` })), quitar);
+    const ver = el("input", { type: "checkbox", checked: !zonasOcultas.has(z.zona), ariaLabel: `Mostrar ${z.nombre}` });
+    ver.addEventListener("change", () => {
+      if (ver.checked) zonasOcultas.delete(z.zona); else zonasOcultas.add(z.zona);
+      prefs.guardar({ zonasOcultas: [...zonasOcultas] });
+      refrescarTrails();
+    });
+    return el("li", {}, ver, el("span", {}, z.nombre + " ", el("small", { textContent: `${num(z.trails.length)} trails` })), quitar);
   });
+  $("filaVerTrails").hidden = $("botonesDifs").hidden = !TRAILS.length;
+  $("verTrails").checked = entradaTrails.activa;
   $("zonasTrails").replaceChildren(...zonas);
   const cuenta = {};
   for (const t of TRAILS) cuenta[t.d] = (cuenta[t.d] || 0) + 1;
@@ -1955,7 +1971,7 @@ function pintarPanelTrails() {
     c.addEventListener("change", () => {
       if (c.checked) difOcultas.delete(d); else difOcultas.add(d);
       prefs.guardar({ difOcultas: [...difOcultas] });
-      dibujarTrails(); pintarTrailsNueva(); pintarListaTrails(); pintarNombres();
+      refrescarTrails();
     });
     const raya = el("span", { className: "raya" });
     raya.style.background = DIFICULTADES[d].color;
@@ -1963,6 +1979,18 @@ function pintarPanelTrails() {
   });
   $("difsTrails").replaceChildren(...difs);
 }
+function refrescarTrails() { dibujarTrails(); pintarTrailsNueva(); pintarListaTrails(); pintarNombres(); }
+function ponerDificultades(ocultas) {
+  difOcultas.clear();
+  for (const d of ocultas) difOcultas.add(d);
+  prefs.guardar({ difOcultas: [...difOcultas] });
+  pintarPanelTrails(); refrescarTrails();
+}
+$("difsTodas").addEventListener("click", () => ponerDificultades([]));
+$("difsNinguna").addEventListener("click", () => ponerDificultades(Object.keys(DIFICULTADES)));
+// La casilla del panel y la de «Aspecto del mapa» son la misma capa
+$("verTrails").addEventListener("change", () => { if ($("verTrails").checked !== entradaTrails.activa) entradaTrails.casilla.click(); });
+entradaTrails.casilla.addEventListener("change", () => { $("verTrails").checked = entradaTrails.activa; });
 function reconstruirTrails() {
   TRAILS = ZONAS.flatMap(z => z.trails.map(t => prepararTrail(z.zona, t)));
   TRAILS.forEach((t, i) => { t.id = i; });
