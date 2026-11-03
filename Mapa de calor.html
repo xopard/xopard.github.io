@@ -754,6 +754,24 @@ input[type=color] { width: 40px; height: 28px; padding: 1px; background: var(--p
 #tramosNuevos { list-style: none; padding: 0; margin: 8px 0 0; max-height: 170px; overflow-y: auto; }
 #tramosNuevos button { width: 100%; padding: 3px 6px; margin-bottom: 3px; text-align: left; font-variant-numeric: tabular-nums; }
 
+/* Trails de Trailforks */
+#trailsNueva { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--borde); }
+#trailsNueva .etiqueta { margin-top: 0; }
+#listaTrailsNueva { list-style: none; padding: 0; margin: 6px 0 0; max-height: 340px; overflow-y: auto; }
+#listaTrailsNueva button { width: 100%; padding: 3px 6px; margin-bottom: 3px; text-align: left; overflow-wrap: anywhere; }
+#listaTrailsNueva button.sel { background: var(--sel); border-color: var(--acento); }
+#listaTrailsNueva small, .zonas small { color: var(--suave); font-variant-numeric: tabular-nums; }
+.zonas { list-style: none; padding: 0; margin: 8px 0 0; }
+.zonas li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--borde); }
+.zonas li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.zonas button { padding: 2px 8px; }
+.difs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; margin-top: 8px; }
+.difs .casilla { margin-top: 2px; font-size: 13px; }
+.difs small { color: var(--suave); font-variant-numeric: tabular-nums; }
+.raya { display: inline-block; width: 18px; height: 6px; border-radius: 3px; flex: none; box-shadow: 0 0 0 1px var(--borde); }
+.punto.conborde { box-shadow: 0 0 0 1px #555; }
+.pasos h3 + ul + .fila-botones + h3 { margin-top: 10px; }
+
 /* Estilo propio */
 button:disabled { opacity: .45; cursor: default; }
 button.principal { background: var(--acento); color: var(--acento-texto); border-color: var(--acento); }
@@ -833,7 +851,25 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
         <input id="minimo" class="simple" type="range" min="0" max="500" step="10" value="100">
         <label class="casilla"><input id="soloVisibles" type="checkbox">Comparar solo con las rutas filtradas</label>
         <ul id="tramosNuevos"></ul>
+        <div id="trailsNueva" hidden>
+          <div class="etiqueta"><b>Trails de Trailforks</b><span id="trailsNuevaRes"></span></div>
+          <ul id="listaTrailsNueva"></ul>
+          <p class="nota">«Completo»: al menos el 90 % del trail queda a menos de la distancia elegida arriba. Se ignoran los cruces y los roces de pocos metros.</p>
+        </div>
       </div>
+    </div>
+  </details>
+
+  <details id="panelTrails">
+    <summary id="tituloTrails">Trails de Trailforks</summary>
+    <div class="seccion">
+      <div class="fila-botones">
+        <label class="boton" id="abrirTrails" tabindex="0">Cargar trails<input id="ficheroTrails" type="file" accept=".kml,.gpx,.json,application/vnd.google-earth.kml+xml,application/gpx+xml,application/json" multiple hidden></label>
+      </div>
+      <p class="nota">Elige uno o varios KML de Trailforks (con colores), o GPX sueltos junto con su dificultades_ZONA.json. Se guardan solo en este navegador: no se publican con la página. Cargar otra vez una zona la sustituye.</p>
+      <div id="avisoTrails" class="aviso" role="status" hidden></div>
+      <ul id="zonasTrails" class="zonas"></ul>
+      <div id="difsTrails" class="difs"></div>
     </div>
   </details>
 
@@ -900,7 +936,7 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
 <main>
   <div id="mapa"></div>
   <div id="avisoMapa" role="status" hidden></div>
-  <div id="caer" hidden><div>Suelta el GPX para compararlo con tus rutas</div></div>
+  <div id="caer" hidden><div>Suelta el GPX para compararlo con tus rutas<br><small>o los KML de Trailforks para cargarlos</small></div></div>
 </main>
 <dialog id="dlgEstilo">
   <h3 id="dlgTitulo"></h3>
@@ -1447,16 +1483,16 @@ let popupAbierto = false;
 map.on("popupopen", () => { popupAbierto = true; });
 map.on("popupclose", () => { popupAbierto = false; resaltar(null); });
 map.on("click", e => {
-  if (!entradaCalor.activa) return;
   const esc = 256 * 2 ** map.getZoom(), x = mercX(e.latlng.lng), y = mercY(e.latlng.lat), tol = (tactil ? 14 : 7) / esc, tol2 = tol * tol;
-  const pasan = visibles.filter(r => {
+  const pasan = !entradaCalor.activa ? [] : visibles.filter(r => {
     if (x < r.x0 - tol || x > r.x1 + tol || y < r.y0 - tol || y > r.y1 + tol) return false;
     return r.tramos.some(t => {
       for (let k = 0; k + 1 < t.x.length; k++) if (distSeg(x, y, t.x[k], t.y[k], t.x[k + 1], t.y[k + 1]) <= tol2) return true;
       return false;
     });
   }).sort((a, b) => (b.t0 || 0) - (a.t0 || 0));
-  if (!pasan.length) return;
+  const trailsAqui = trailsEn(x, y, tol, tol2);
+  if (!pasan.length && !trailsAqui.length) return;
   // Con una ruta elegida en la lista, el botón de estilo actúa solo sobre ella
   let elegida = null;
   const estiloBtn = el("button");
@@ -1479,9 +1515,10 @@ map.on("click", e => {
   });
   const soloBtn = el("button", { textContent: pasan.length === 1 ? "Ver solo esta" : "Ver solo estas" });
   soloBtn.addEventListener("click", () => soloEstas(pasan.map(r => r.i)));
-  const caja = el("div", { className: "pasos" },
-    el("h3", { textContent: pasan.length === 1 ? "1 ruta pasó por aquí" : `${pasan.length} rutas pasaron por aquí` }),
+  const caja = el("div", { className: "pasos" });
+  if (pasan.length) caja.append(el("h3", { textContent: pasan.length === 1 ? "1 ruta pasó por aquí" : `${pasan.length} rutas pasaron por aquí` }),
     el("ul", {}, ...botones), el("div", { className: "fila-botones" }, soloBtn, estiloBtn));
+  if (trailsAqui.length) caja.append(...seccionTrailsPopup(trailsAqui, caja));
   L.popup({ maxWidth: Math.min(340, map.getSize().x - 50), minWidth: Math.min(240, map.getSize().x - 50), autoPanPadding: [12, 12], autoPanPaddingTopLeft: tactil ? [12, 12] : [56, 12] })
     .setLatLng(e.latlng).setContent(caja).openOn(map);
 });
@@ -1562,6 +1599,7 @@ function compararActual() {
     t.dist = new Float32Array(t.x.length);
     for (let k = 0; k < t.x.length; k++) t.dist[k] = Indice.distancia(t.x[k], t.y[k], permitida);
   }
+  compararTrails();
   clasificarActual();
 }
 // Separa en «recorrido» y «nuevo» sin volver a medir distancias: los controles responden al momento
@@ -1618,6 +1656,7 @@ function clasificarActual() {
     return el("li", {}, b);
   });
   $("tramosNuevos").replaceChildren(...lista);
+  pintarTrailsNueva();
 }
 // Flechas de sentido y puntos kilométricos: su densidad depende del zoom y solo se crean las de la zona visible
 const marcasNueva = L.layerGroup();
@@ -1661,6 +1700,8 @@ function pintarMarcas() {
 map.on("moveend", pintarMarcas);
 function quitarNueva() {
   actual = null;
+  resaltarTrail(null);
+  $("trailsNueva").hidden = true;
   marcasNueva.clearLayers();
   capaNueva.clearLayers();
   $("resumenNueva").hidden = true; $("avisoNueva").hidden = true;
@@ -1684,13 +1725,333 @@ window.addEventListener("drop", e => {
   if (!llevaFichero(e)) return;
   e.preventDefault();
   enArrastre = 0; $("caer").hidden = true;
-  if (e.dataTransfer.files[0]) abrirFichero(e.dataTransfer.files[0]);
+  const ficheros = [...e.dataTransfer.files];
+  if (ficheros.some(f => /\.(kml|json)$/i.test(f.name))) cargarTrails(ficheros);
+  else if (ficheros[0]) abrirFichero(ficheros[0]);
 });
+
+// ---------- Trails de Trailforks ----------
+// Se cargan de los KML (o GPX) descargados de Trailforks y se guardan solo en este navegador (IndexedDB):
+// no viajan con la página publicada. Colores y nombres según la guía de descarga (dificultades_ZONA.json).
+const DIFICULTADES = {
+  dwhite:  { nombre: "Vía verde / acceso", color: "#ffffff", borde: "#333333" },
+  dgreen:  { nombre: "Fácil", color: "#1fa83a" },
+  dblue:   { nombre: "Intermedio", color: "#1565e0" },
+  dred:    { nombre: "Difícil", color: "#e01b1b" },
+  dblack:  { nombre: "Experto", color: "#111111" },
+  dbeige:  { nombre: "Acceso secundario", color: "#d8b67a", borde: "#333333" },
+  dpurple: { nombre: "Acceso a trail", color: "#9c27b0" },
+  unknown: { nombre: "Sin clasificar", color: "#8a8a8a" },
+};
+const difDe = d => DIFICULTADES[d] ? d : "unknown";
+const bordeDe = d => DIFICULTADES[d].borde || "#ffffff";
+let ZONAS = [];    // tal como se guardan: { zona, nombre, fecha, trails: [{ n, d, l: [[[lat, lon], …], …] }] }
+let TRAILS = [];   // preparados: { zona, n, d, tramos: [{ lat, lon, x, y }], x0, x1, y0, y1, km, dens }
+const difOcultas = new Set((prefs.leer().difOcultas || []).filter(d => DIFICULTADES[d]));
+const trailVisible = t => !difOcultas.has(t.d);
+
+const almacen = {
+  db: null,
+  abrir() {
+    return this.db ??= new Promise((ok, mal) => {
+      const p = indexedDB.open("mapaCalorTrails", 1);
+      p.onupgradeneeded = () => p.result.createObjectStore("zonas", { keyPath: "zona" });
+      p.onsuccess = () => ok(p.result);
+      p.onerror = () => mal(p.error);
+    });
+  },
+  async op(modo, fn) {
+    const db = await this.abrir();
+    return new Promise((ok, mal) => {
+      const tx = db.transaction("zonas", modo), pet = fn(tx.objectStore("zonas"));
+      tx.oncomplete = () => ok(pet.result);
+      tx.onerror = tx.onabort = () => mal(tx.error);
+    });
+  },
+  todas() { return this.op("readonly", s => s.getAll()); },
+  guardar(z) { return this.op("readwrite", s => s.put(z)); },
+  borrar(id) { return this.op("readwrite", s => s.delete(id)); },
+};
+
+// «Trailforks_Muskiz-Sopuerta_43_Segmentado.kml» → «Muskiz-Sopuerta»
+const limpiarZona = t => t.replace(/\.(kml|gpx|json)$/i, "").replace(/^(Trailforks|dificultades)[_ ]+/i, "")
+  .replace(/_Segmentado$/i, "").replace(/_\d+$/, "").replace(/_/g, " ").trim() || "Trails";
+const hijoDe = (n, etq) => [...n.children].find(c => c.localName === etq);
+function leerKML(texto, nombreFichero) {
+  const doc = new DOMParser().parseFromString(texto, "application/xml");
+  if (doc.querySelector("parsererror")) throw new Error("no es un KML válido");
+  const porNombre = new Map();
+  for (const pm of doc.getElementsByTagName("Placemark")) {
+    const nombre = (hijoDe(pm, "name")?.textContent || "").trim() || "Sin nombre";
+    const estilo = (hijoDe(pm, "styleUrl")?.textContent || "").trim().replace(/^.*#/, "");
+    const lineas = [...pm.getElementsByTagName("coordinates")].map(c => c.textContent.trim().split(/\s+/).map(p => {
+      const [lo, la] = p.split(",").map(Number);
+      return [la, lo];
+    }).filter(([la, lo]) => Number.isFinite(la) && Number.isFinite(lo))).filter(l => l.length > 1);
+    if (!lineas.length) continue;
+    if (!porNombre.has(nombre)) porNombre.set(nombre, { n: nombre, d: difDe(estilo), l: [] });
+    const t = porNombre.get(nombre);
+    // El KML «Segmentado» parte cada trail en trozos de 300 m: se vuelven a unir si empalman
+    for (const l of lineas) {
+      const ult = t.l[t.l.length - 1], fin = ult && ult[ult.length - 1];
+      if (fin && fin[0] === l[0][0] && fin[1] === l[0][1]) ult.push(...l.slice(1)); else t.l.push(l);
+    }
+  }
+  if (!porNombre.size) throw new Error("no tiene trazados");
+  const nombreDoc = (doc.getElementsByTagName("Document")[0] && hijoDe(doc.getElementsByTagName("Document")[0], "name")?.textContent) || nombreFichero;
+  return { nombre: limpiarZona(nombreDoc.trim()), trails: [...porNombre.values()] };
+}
+
+function prepararTrail(zona, t) {
+  let x0 = 1, x1 = 0, y0 = 1, y1 = 0, m = 0;
+  const tramos = t.l.map(linea => {
+    const lat = linea.map(p => p[0]), lon = linea.map(p => p[1]), x = lon.map(mercX), y = lat.map(mercY);
+    for (let k = 0; k < x.length; k++) {
+      if (x[k] < x0) x0 = x[k]; if (x[k] > x1) x1 = x[k];
+      if (y[k] < y0) y0 = y[k]; if (y[k] > y1) y1 = y[k];
+      if (k) m += haversine(lat[k - 1], lon[k - 1], lat[k], lon[k]);
+    }
+    return { lat, lon, x, y };
+  });
+  return { zona, n: t.n, d: difDe(t.d), tramos, x0, x1, y0, y1, km: m / 1000, dens: null };
+}
+const lineasTrail = t => t.tramos.map(tr => tr.lat.map((la, k) => [la, tr.lon[k]]));
+
+// ---------- Dibujo ----------
+map.createPane("trails").style.zIndex = 380;
+map.getPane("trails").style.pointerEvents = "none";
+const capaTrails = L.layerGroup();
+const lienzoTrails = L.canvas({ pane: "trails", padding: .3 });
+const entradaTrails = registrarCapa("trails", "Trails de Trailforks", capaTrails);
+function dibujarTrails() {
+  capaTrails.clearLayers();
+  const lista = TRAILS.filter(trailVisible);
+  // Primero todos los bordes, para que ninguno tape el color de un trail vecino
+  for (const t of lista) capaTrails.addLayer(L.polyline(lineasTrail(t), { renderer: lienzoTrails, color: bordeDe(t.d), weight: 5.5, opacity: .85, interactive: false }));
+  for (const t of lista) capaTrails.addLayer(L.polyline(lineasTrail(t), { renderer: lienzoTrails, color: DIFICULTADES[t.d].color, weight: 3, opacity: 1, interactive: false }));
+}
+let trailResaltado = null, trailResaltadoObj = null;
+function resaltarTrail(t) {
+  if (trailResaltado) { map.removeLayer(trailResaltado); trailResaltado = null; }
+  trailResaltadoObj = t;
+  if (!t) return;
+  const l = lineasTrail(t);
+  trailResaltado = L.layerGroup([
+    L.polyline(l, { pane: "encima", color: bordeDe(t.d) === "#ffffff" ? "#111111" : "#ffffff", weight: 10, opacity: .95, interactive: false }),
+    L.polyline(l, { pane: "encima", color: DIFICULTADES[t.d].color, weight: 5, opacity: 1, interactive: false }),
+  ]).addTo(map);
+}
+map.on("popupclose", () => { if (trailResaltadoObj && !$("listaTrailsNueva").querySelector("button.sel")) resaltarTrail(null); });
+const puntoTrail = d => {
+  const p = el("span", { className: "punto" + (DIFICULTADES[d].borde ? " conborde" : ""), title: DIFICULTADES[d].nombre });
+  p.style.background = DIFICULTADES[d].color;
+  return p;
+};
+
+// ---------- Clic en el mapa: trails que pasan por ahí ----------
+function trailsEn(x, y, tol, tol2) {
+  if (!entradaTrails.activa) return [];
+  return TRAILS.filter(t => trailVisible(t) && x >= t.x0 - tol && x <= t.x1 + tol && y >= t.y0 - tol && y <= t.y1 + tol
+    && t.tramos.some(tr => {
+      for (let k = 0; k + 1 < tr.x.length; k++) if (distSeg(x, y, tr.x[k], tr.y[k], tr.x[k + 1], tr.y[k + 1]) <= tol2) return true;
+      return false;
+    }));
+}
+function seccionTrailsPopup(lista, caja) {
+  const botones = lista.map(t => {
+    const b = el("button", { title: "Resaltar este trail" }, puntoTrail(t.d), t.n + " ",
+      el("small", { textContent: `${DIFICULTADES[t.d].nombre} · ${km(t.km)} km` }));
+    b.addEventListener("click", () => {
+      const ya = b.classList.contains("sel");
+      caja.querySelectorAll("button.sel").forEach(o => o.classList.remove("sel"));
+      resaltar(null);
+      resaltarTrail(ya ? null : t);
+      if (!ya) b.classList.add("sel");
+    });
+    return el("li", {}, b);
+  });
+  return [el("h3", { textContent: lista.length === 1 ? "Trail de Trailforks" : `${lista.length} trails de Trailforks` }), el("ul", {}, ...botones)];
+}
+
+// ---------- Panel: zonas cargadas y filtro por dificultad ----------
+function pintarPanelTrails() {
+  $("tituloTrails").textContent = TRAILS.length ? `Trails de Trailforks (${num(TRAILS.length)})` : "Trails de Trailforks";
+  const zonas = ZONAS.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, "es")).map(z => {
+    const quitar = el("button", { textContent: "Quitar", title: `Borrar ${z.nombre} de este navegador` });
+    quitar.addEventListener("click", async () => {
+      ZONAS = ZONAS.filter(o => o.zona !== z.zona);
+      try { await almacen.borrar(z.zona); } catch {}
+      reconstruirTrails();
+    });
+    return el("li", {}, el("span", {}, z.nombre + " ", el("small", { textContent: `${num(z.trails.length)} trails` })), quitar);
+  });
+  $("zonasTrails").replaceChildren(...zonas);
+  const cuenta = {};
+  for (const t of TRAILS) cuenta[t.d] = (cuenta[t.d] || 0) + 1;
+  const difs = Object.keys(DIFICULTADES).filter(d => cuenta[d]).map(d => {
+    const c = el("input", { type: "checkbox", checked: !difOcultas.has(d) });
+    c.addEventListener("change", () => {
+      if (c.checked) difOcultas.delete(d); else difOcultas.add(d);
+      prefs.guardar({ difOcultas: [...difOcultas] });
+      dibujarTrails(); pintarTrailsNueva();
+    });
+    const raya = el("span", { className: "raya" });
+    raya.style.background = DIFICULTADES[d].color;
+    return el("label", { className: "casilla" }, c, raya, DIFICULTADES[d].nombre + " ", el("small", { textContent: num(cuenta[d]) }));
+  });
+  $("difsTrails").replaceChildren(...difs);
+}
+function reconstruirTrails() {
+  TRAILS = ZONAS.flatMap(z => z.trails.map(t => prepararTrail(z.zona, t)));
+  if (trailResaltadoObj) resaltarTrail(null);
+  pintarPanelTrails();
+  dibujarTrails();
+  if (actual) { compararTrails(); pintarTrailsNueva(); }
+}
+async function cargarTrails(ficheros) {
+  const aviso = $("avisoTrails"), errores = [], nuevas = [], sueltos = [];
+  let dificultades = {}, nombreJson = null;
+  for (const f of ficheros.filter(f => /\.json$/i.test(f.name))) {
+    try { dificultades = { ...dificultades, ...JSON.parse(await f.text()) }; nombreJson ??= f.name; }
+    catch { errores.push(`${f.name} (no es un JSON válido)`); }
+  }
+  for (const f of ficheros) {
+    try {
+      if (/\.kml$/i.test(f.name)) nuevas.push(leerKML(await f.text(), f.name));
+      else if (/\.gpx$/i.test(f.name)) {
+        const g = leerGPX(await f.text(), f.name);
+        sueltos.push({ n: g.nombre, d: difDe(dificultades[g.nombre]), l: g.lineas });
+      } else if (!/\.json$/i.test(f.name)) errores.push(`${f.name} (solo se admiten KML, GPX y JSON)`);
+    } catch (e) { errores.push(`${f.name} (${e.message})`); }
+  }
+  if (sueltos.length) nuevas.push({ nombre: nombreJson ? limpiarZona(nombreJson) : "GPX sueltos", trails: sueltos });
+  let sinGuardar = false, total = 0;
+  for (const n of nuevas) {
+    const z = { zona: normaliza(n.nombre), nombre: n.nombre, fecha: Date.now(), trails: n.trails };
+    ZONAS = ZONAS.filter(o => o.zona !== z.zona).concat(z);
+    total += z.trails.length;
+    try { await almacen.guardar(z); } catch { sinGuardar = true; }
+  }
+  $("ficheroTrails").value = "";
+  const partes = [];
+  if (nuevas.length) partes.push(`Cargados ${num(total)} trails de ${nuevas.map(n => n.nombre).join(", ")}.`);
+  if (sinGuardar) partes.push("No se han podido guardar en este navegador: al recargar la página habrá que cargarlos otra vez.");
+  if (errores.length) partes.push(`No se ha podido leer: ${errores.join("; ")}.`);
+  if (!nuevas.length && !errores.length) partes.push("No había ningún KML ni GPX entre los ficheros elegidos.");
+  aviso.textContent = partes.join(" ");
+  aviso.className = "aviso" + (errores.length || sinGuardar || !nuevas.length ? " error" : "");
+  aviso.hidden = false;
+  $("panelTrails").open = true;
+  if (!nuevas.length) return;
+  reconstruirTrails();
+  if (!entradaTrails.activa) entradaTrails.casilla.click();
+}
+$("ficheroTrails").addEventListener("change", () => { if ($("ficheroTrails").files.length) cargarTrails([...$("ficheroTrails").files]); });
+$("abrirTrails").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("ficheroTrails").click(); } });
+
+// ---------- Ruta nueva: qué trails recorre y cuánto ----------
+// Índice en rejilla de la ruta nueva (sus tramos ya vienen densificados cada 10 m)
+function indiceDeLineas(tramos) {
+  const c = Indice.CELDA, celdas = new Map(), sx1 = [], sy1 = [], sx2 = [], sy2 = [];
+  for (const t of tramos) for (let k = 0; k + 1 < t.x.length; k++) {
+    const id = sx1.length;
+    sx1.push(t.x[k]); sy1.push(t.y[k]); sx2.push(t.x[k + 1]); sy2.push(t.y[k + 1]);
+    for (const [x, y] of [[t.x[k], t.y[k]], [t.x[k + 1], t.y[k + 1]]]) {
+      const cl = Indice.clave(Math.floor(x / c), Math.floor(y / c)), lista = celdas.get(cl);
+      if (!lista) celdas.set(cl, [id]); else if (lista[lista.length - 1] !== id) lista.push(id);
+    }
+  }
+  return (x, y) => {
+    const ix = Math.floor(x / c), iy = Math.floor(y / c);
+    let mejor = Infinity;
+    for (let a = ix - 1; a <= ix + 1; a++) for (let b = iy - 1; b <= iy + 1; b++) {
+      const lista = celdas.get(Indice.clave(a, b));
+      if (lista) for (const id of lista) {
+        const d = distSeg(x, y, sx1[id], sy1[id], sx2[id], sy2[id]);
+        if (d < mejor) mejor = d;
+      }
+    }
+    return mejor === Infinity ? Infinity : Math.sqrt(mejor) * C_TIERRA * cosDeMercY(y);
+  };
+}
+// Distancia de cada muestra (cada 10 m) de los trails cercanos a la ruta nueva; se mide una vez por ruta
+function compararTrails() {
+  if (!actual) return;
+  actual.trails = [];
+  if (!TRAILS.length) return;
+  const distancia = indiceDeLineas(actual.tramos), margen = 6e-6;   // ~150 m, más que el umbral máximo
+  let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+  for (const t of actual.tramos) for (let k = 0; k < t.x.length; k++) {
+    if (t.x[k] < x0) x0 = t.x[k]; if (t.x[k] > x1) x1 = t.x[k];
+    if (t.y[k] < y0) y0 = t.y[k]; if (t.y[k] > y1) y1 = t.y[k];
+  }
+  for (const t of TRAILS) {
+    if (t.x1 < x0 - margen || t.x0 > x1 + margen || t.y1 < y0 - margen || t.y0 > y1 + margen) continue;
+    t.dens ??= t.tramos.map(tr => densificar(tr.lat.map((la, k) => [la, tr.lon[k]]))).filter(d => d.lat.length > 1);
+    const dist = t.dens.map(d => Float32Array.from(d.x, (x, k) => distancia(x, d.y[k])));
+    if (dist.some(a => a.some(v => v <= 100))) actual.trails.push({ t, dist });
+  }
+}
+function pintarTrailsNueva() {
+  const caja = $("trailsNueva");
+  if (!actual || !actual.trails || !TRAILS.length) { caja.hidden = true; return; }
+  const umbral = +$("umbral").value;
+  // Un tramo cubierto cuenta si es más largo que un simple cruce (o si es casi todo el trail)
+  const minTramo = Math.max(60, 2 * umbral + 20);
+  const res = [];
+  for (const { t, dist } of actual.trails) {
+    if (!trailVisible(t)) continue;
+    let total = 0, cubierto = 0;
+    t.dens.forEach((d, j) => {
+      const a = dist[j], n = d.s.length, largo = d.s[n - 1], dentro = k => a[k] <= umbral && a[k + 1] <= umbral;
+      total += largo;
+      for (let i = 0; i < n - 1; ) {
+        if (!dentro(i)) { i++; continue; }
+        let b = i;
+        while (b + 1 < n - 1 && dentro(b + 1)) b++;
+        const m = d.s[b + 1] - d.s[i];
+        if (m >= minTramo || m >= largo * .9) cubierto += m;
+        i = b + 1;
+      }
+    });
+    if (cubierto > 0 && total > 0) res.push({ t, total, cubierto, pct: Math.min(1, cubierto / total) });
+  }
+  res.sort((a, b) => b.pct - a.pct || b.cubierto - a.cubierto);
+  const completos = res.filter(r => r.pct >= .9).length;
+  $("trailsNuevaRes").textContent = !res.length ? "ninguno" : `${res.length} ${res.length === 1 ? "trail" : "trails"} · ${completos} ${completos === 1 ? "completo" : "completos"}`;
+  const items = res.map(({ t, total, cubierto, pct }) => {
+    const detalle = pct >= .9 ? `completo · ${km(total / 1000)} km` : `${Math.round(pct * 100)} % · ${num(cubierto / 1000, 1)} de ${num(total / 1000, 1)} km`;
+    const b = el("button", { title: `${DIFICULTADES[t.d].nombre}. Pulsa para verlo en el mapa` }, puntoTrail(t.d), t.n + " ", el("small", { textContent: detalle }));
+    if (trailResaltadoObj === t) b.classList.add("sel");
+    b.addEventListener("click", () => {
+      const ya = b.classList.contains("sel");
+      $("listaTrailsNueva").querySelectorAll("button.sel").forEach(o => o.classList.remove("sel"));
+      resaltarTrail(ya ? null : t);
+      if (ya) return;
+      b.classList.add("sel");
+      map.fitBounds(L.latLngBounds(lineasTrail(t).flat()), { padding: [60, 60], maxZoom: 17 });
+      if (window.matchMedia("(max-width: 800px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return el("li", {}, b);
+  });
+  $("listaTrailsNueva").replaceChildren(...(items.length ? items : [el("li", { className: "suave", textContent: "No pasa por ningún trail cargado." })]));
+  caja.hidden = false;
+}
+
+async function iniciarTrails() {
+  try { ZONAS = (await almacen.todas()) || []; }
+  catch {
+    $("avisoTrails").textContent = "Este navegador no permite guardar los trails: habrá que cargarlos cada vez.";
+    $("avisoTrails").className = "aviso error"; $("avisoTrails").hidden = false;
+  }
+  reconstruirTrails();
+}
 
 // ---------- Arranque ----------
 if (window.matchMedia("(max-width: 800px)").matches) $("panelAspecto").open = false;
 $("generado").textContent = `Generado el ${META.generado} con ${RUTAS.length} rutas. Para añadir las nuevas: Actualizar mapa.bat`;
 recalcular();
+iniciarTrails();
 </script>
 </body>
 </html>
