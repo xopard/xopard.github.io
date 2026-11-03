@@ -110,6 +110,17 @@ input[type=color] { width: 40px; height: 28px; padding: 1px; background: var(--p
 .raya { display: inline-block; width: 18px; height: 6px; border-radius: 3px; flex: none; box-shadow: 0 0 0 1px var(--borde); }
 .punto.conborde { box-shadow: 0 0 0 1px #555; }
 .pasos h3 + ul + .fila-botones + h3 { margin-top: 10px; }
+#buscarTrails { width: 100%; padding: 6px 8px; background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; }
+.filtroTrails { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
+.filtroTrails select { flex: none; max-width: 45%; }
+#listaTrails { list-style: none; padding: 0; margin: 6px 0 0; max-height: 360px; overflow-y: auto; border-top: 1px solid var(--borde); }
+#listaTrails button { width: 100%; padding: 4px 2px; border: 0; border-bottom: 1px solid var(--borde); border-radius: 0; background: none; text-align: left; overflow-wrap: anywhere; }
+#listaTrails button:hover { color: var(--acento); }
+#listaTrails button.sel { background: var(--sel); }
+#listaTrails small { display: block; color: var(--suave); font-size: 12px; font-variant-numeric: tabular-nums; }
+.nombreTrail { pointer-events: none; }
+.nombreTrail span { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 11px; font-weight: 650; color: #1c2126;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff; letter-spacing: .01em; }
 
 /* Estilo propio */
 button:disabled { opacity: .45; cursor: default; }
@@ -209,6 +220,14 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
       <div id="avisoTrails" class="aviso" role="status" hidden></div>
       <ul id="zonasTrails" class="zonas"></ul>
       <div id="difsTrails" class="difs"></div>
+      <div id="bloqueListaTrails" hidden>
+        <div class="filtroTrails">
+          <input id="buscarTrails" type="search" placeholder="Buscar trail…" aria-label="Buscar trail por nombre" autocomplete="off">
+          <select id="zonaTrails" aria-label="Zona"></select>
+        </div>
+        <div class="etiqueta"><span>Pulsa uno para verlo en el mapa</span><span id="cuentaTrails"></span></div>
+        <ul id="listaTrails"></ul>
+      </div>
     </div>
   </details>
 
@@ -1168,6 +1187,7 @@ let trailResaltado = null, trailResaltadoObj = null;
 function resaltarTrail(t) {
   if (trailResaltado) { map.removeLayer(trailResaltado); trailResaltado = null; }
   trailResaltadoObj = t;
+  document.querySelectorAll("button[data-trail]").forEach(b => b.classList.toggle("sel", !!t && +b.dataset.trail === t.id));
   if (!t) return;
   const l = lineasTrail(t);
   trailResaltado = L.layerGroup([
@@ -1175,7 +1195,20 @@ function resaltarTrail(t) {
     L.polyline(l, { pane: "encima", color: DIFICULTADES[t.d].color, weight: 5, opacity: 1, interactive: false }),
   ]).addTo(map);
 }
-map.on("popupclose", () => { if (trailResaltadoObj && !$("listaTrailsNueva").querySelector("button.sel")) resaltarTrail(null); });
+map.on("popupclose", () => { if (trailResaltadoObj && !document.querySelector("button[data-trail].sel")) resaltarTrail(null); });
+// Pulsar un trail en una lista: lo resalta y centra el mapa en él; pulsarlo otra vez lo quita
+function botonTrail(t, detalle, titulo) {
+  const b = el("button", { title: titulo }, puntoTrail(t.d), t.n + " ", el("small", { textContent: detalle }));
+  b.dataset.trail = t.id;
+  if (trailResaltadoObj === t) b.classList.add("sel");
+  b.addEventListener("click", () => {
+    if (trailResaltadoObj === t) { resaltarTrail(null); return; }
+    resaltarTrail(t);
+    map.fitBounds(L.latLngBounds(lineasTrail(t).flat()), { padding: [60, 60], maxZoom: 17 });
+    if (window.matchMedia("(max-width: 800px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  return b;
+}
 const puntoTrail = d => {
   const p = el("span", { className: "punto" + (DIFICULTADES[d].borde ? " conborde" : ""), title: DIFICULTADES[d].nombre });
   p.style.background = DIFICULTADES[d].color;
@@ -1227,7 +1260,7 @@ function pintarPanelTrails() {
     c.addEventListener("change", () => {
       if (c.checked) difOcultas.delete(d); else difOcultas.add(d);
       prefs.guardar({ difOcultas: [...difOcultas] });
-      dibujarTrails(); pintarTrailsNueva();
+      dibujarTrails(); pintarTrailsNueva(); pintarListaTrails(); pintarNombres();
     });
     const raya = el("span", { className: "raya" });
     raya.style.background = DIFICULTADES[d].color;
@@ -1237,9 +1270,12 @@ function pintarPanelTrails() {
 }
 function reconstruirTrails() {
   TRAILS = ZONAS.flatMap(z => z.trails.map(t => prepararTrail(z.zona, t)));
+  TRAILS.forEach((t, i) => { t.id = i; });
   if (trailResaltadoObj) resaltarTrail(null);
   pintarPanelTrails();
   dibujarTrails();
+  pintarListaTrails();
+  pintarNombres();
   if (actual) { compararTrails(); pintarTrailsNueva(); }
 }
 async function cargarTrails(ficheros) {
@@ -1355,22 +1391,91 @@ function pintarTrailsNueva() {
   $("trailsNuevaRes").textContent = !res.length ? "ninguno" : `${res.length} ${res.length === 1 ? "trail" : "trails"} · ${completos} ${completos === 1 ? "completo" : "completos"}`;
   const items = res.map(({ t, total, cubierto, pct }) => {
     const detalle = pct >= .9 ? `completo · ${km(total / 1000)} km` : `${Math.round(pct * 100)} % · ${num(cubierto / 1000, 1)} de ${num(total / 1000, 1)} km`;
-    const b = el("button", { title: `${DIFICULTADES[t.d].nombre}. Pulsa para verlo en el mapa` }, puntoTrail(t.d), t.n + " ", el("small", { textContent: detalle }));
-    if (trailResaltadoObj === t) b.classList.add("sel");
-    b.addEventListener("click", () => {
-      const ya = b.classList.contains("sel");
-      $("listaTrailsNueva").querySelectorAll("button.sel").forEach(o => o.classList.remove("sel"));
-      resaltarTrail(ya ? null : t);
-      if (ya) return;
-      b.classList.add("sel");
-      map.fitBounds(L.latLngBounds(lineasTrail(t).flat()), { padding: [60, 60], maxZoom: 17 });
-      if (window.matchMedia("(max-width: 800px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-    return el("li", {}, b);
+    return el("li", {}, botonTrail(t, detalle, `${DIFICULTADES[t.d].nombre}. Pulsa para verlo en el mapa`));
   });
   $("listaTrailsNueva").replaceChildren(...(items.length ? items : [el("li", { className: "suave", textContent: "No pasa por ningún trail cargado." })]));
   caja.hidden = false;
 }
+
+// ---------- Lista de todos los trails, con buscador ----------
+let condTrails = [];
+function pintarListaTrails() {
+  $("bloqueListaTrails").hidden = !TRAILS.length;
+  const sel = $("zonaTrails"), zonaSel = sel.value;
+  const zonas = ZONAS.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  sel.replaceChildren(el("option", { value: "", textContent: "Todas las zonas" }), ...zonas.map(z => el("option", { value: z.zona, textContent: z.nombre })));
+  sel.value = zonas.some(z => z.zona === zonaSel) ? zonaSel : "";
+  const nombreZona = Object.fromEntries(ZONAS.map(z => [z.zona, z.nombre]));
+  const varias = ZONAS.length > 1 && !sel.value;
+  const lista = TRAILS.filter(t => trailVisible(t) && (!sel.value || t.zona === sel.value) && condTrails.every(c => c(t.busca ??= normaliza(t.n))))
+    .sort((a, b) => a.n.localeCompare(b.n, "es"));
+  $("cuentaTrails").textContent = `${num(lista.length)} ${lista.length === 1 ? "trail" : "trails"}`;
+  $("listaTrails").replaceChildren(...(lista.length
+    ? lista.map(t => el("li", {}, botonTrail(t, `${DIFICULTADES[t.d].nombre} · ${km(t.km)} km${varias ? " · " + nombreZona[t.zona] : ""}`, "Ver en el mapa")))
+    : [el("li", { className: "vacio", textContent: "Ningún trail cumple la búsqueda." })]));
+}
+const pintarListaTrailsLuego = retrasado(pintarListaTrails);
+$("buscarTrails").addEventListener("input", () => { condTrails = condicionesBusqueda($("buscarTrails").value); pintarListaTrailsLuego(); });
+$("zonaTrails").addEventListener("change", pintarListaTrails);
+
+// ---------- Nombres de los trails sobre el mapa ----------
+// Solo al acercar: se colocan a lo largo de cada trail (uno cada ~450 px), girados como la línea
+// y sin pisarse entre ellos. Se rehacen al mover el mapa, solo para la zona visible.
+const ZOOM_NOMBRES = 14;
+const capaNombres = L.layerGroup();
+const entradaNombres = registrarCapa("nombresTrails", `Nombres de los trails (desde zoom ${ZOOM_NOMBRES})`, capaNombres);
+function metrosTramo(tr) {
+  if (!tr.s) {
+    tr.s = [0];
+    for (let k = 1; k < tr.lat.length; k++) tr.s.push(tr.s[k - 1] + haversine(tr.lat[k - 1], tr.lon[k - 1], tr.lat[k], tr.lon[k]));
+  }
+  return tr.s;
+}
+function pintarNombres() {
+  capaNombres.clearLayers();
+  if (!entradaNombres.activa || !entradaTrails.activa || !TRAILS.length || map.getZoom() < ZOOM_NOMBRES) return;
+  const zoom = map.getZoom(), esc = 256 * 2 ** zoom, zona = map.getBounds().pad(.15);
+  const vx0 = mercX(zona.getWest()), vx1 = mercX(zona.getEast()), vy0 = mercY(zona.getNorth()), vy1 = mercY(zona.getSouth());
+  const tam = map.getSize(), ocupado = new Set(), CEL = 18;
+  const libre = (puntos, marcar) => {
+    for (const [px, py] of puntos) if (ocupado.has(Math.floor(px / CEL) + "," + Math.floor(py / CEL))) return false;
+    if (marcar) for (const [px, py] of puntos) ocupado.add(Math.floor(px / CEL) + "," + Math.floor(py / CEL));
+    return true;
+  };
+  let puestos = 0;
+  // Los largos primero: son los que más se ven
+  for (const t of TRAILS.filter(t => trailVisible(t) && t.x1 >= vx0 && t.x0 <= vx1 && t.y1 >= vy0 && t.y0 <= vy1).sort((a, b) => b.km - a.km)) {
+    for (const tr of t.tramos) {
+      const s = metrosTramo(tr), largo = s[s.length - 1];
+      const metrosPixel = 156543.03 * Math.cos(tr.lat[0] * Math.PI / 180) / 2 ** zoom;
+      const paso = 450 * metrosPixel, anchoTexto = t.n.length * 6.3 + 6;
+      if (largo < anchoTexto * metrosPixel * .6) continue;          // trozo demasiado corto para su nombre
+      const n = Math.max(1, Math.floor(largo / paso));
+      for (let j = 0; j < n; j++) {
+        const d = largo * (j + .5) / n, i = indiceEn(s, d);
+        const p = map.latLngToContainerPoint([tr.lat[i], tr.lon[i]]);
+        if (p.x < -50 || p.y < -20 || p.x > tam.x + 50 || p.y > tam.y + 20) continue;
+        // Dirección de la línea en ese punto, mirando unos píxeles a cada lado
+        const margen = 25 * metrosPixel, i0 = indiceEn(s, Math.max(0, d - margen)), i1 = indiceEn(s, Math.min(largo, d + margen));
+        let ang = Math.atan2((tr.y[i1] - tr.y[i0]) * esc, (tr.x[i1] - tr.x[i0]) * esc) * 180 / Math.PI;
+        if (ang > 90) ang -= 180; else if (ang < -90) ang += 180;
+        const c = Math.cos(ang * Math.PI / 180), sn = Math.sin(ang * Math.PI / 180), puntos = [];
+        for (let u = -anchoTexto / 2; u <= anchoTexto / 2; u += CEL / 2) puntos.push([p.x + u * c, p.y + u * sn]);
+        if (!libre(puntos, true)) continue;
+        const icono = L.divIcon({ className: "nombreTrail", iconSize: [0, 0],
+          html: `<span style="transform: translate(-50%, -50%) rotate(${ang.toFixed(1)}deg)"></span>` });
+        const m = L.marker([tr.lat[i], tr.lon[i]], { icon: icono, interactive: false, keyboard: false, pane: "encima" });
+        m.on("add", () => { const e = m.getElement(); if (e) e.firstChild.textContent = t.n; });
+        capaNombres.addLayer(m);
+        if (++puestos >= 400) return;
+      }
+    }
+  }
+}
+const pintarNombresLuego = retrasado(pintarNombres);
+map.on("moveend", pintarNombresLuego);
+capaNombres.on("add", pintarNombresLuego);
+capaTrails.on("add remove", pintarNombresLuego);
 
 async function iniciarTrails() {
   try { ZONAS = (await almacen.todas()) || []; }
