@@ -1,5 +1,5 @@
 @echo off
-rem Genera "Mapa de calor.html" y los KMZ para OruxMaps a partir de los GPX de Strava
+rem Genera "Mapa de calor.html" a partir de los GPX de Strava
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
 rem pushd admite carpetas de red (\\servidor\...): les asigna una letra de unidad temporal

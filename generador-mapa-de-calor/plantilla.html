@@ -214,9 +214,9 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
     <summary id="tituloTrails">Trails de Trailforks</summary>
     <div class="seccion">
       <div class="fila-botones">
-        <label class="boton" id="abrirTrails" tabindex="0">Cargar trails<input id="ficheroTrails" type="file" accept=".kml,.gpx,.json,application/vnd.google-earth.kml+xml,application/gpx+xml,application/json" multiple hidden></label>
+        <label class="boton" id="abrirTrails" tabindex="0">Cargar trails<input id="ficheroTrails" type="file" accept=".kml,.kmz,.gpx,.json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/gpx+xml,application/json" multiple hidden></label>
       </div>
-      <p class="nota">Elige uno o varios KML de Trailforks (con colores), o GPX sueltos junto con su dificultades_ZONA.json. Se guardan solo en este navegador: no se publican con la página. Cargar otra vez una zona la sustituye.</p>
+      <p class="nota">Elige uno o varios KML o KMZ (los de Trailforks traen el color de su dificultad; los demás, su propio color), o GPX sueltos junto con su dificultades_ZONA.json. Se guardan solo en este navegador: no se publican con la página. Cargar otra vez una zona la sustituye.</p>
       <div id="avisoTrails" class="aviso" role="status" hidden></div>
       <ul id="zonasTrails" class="zonas"></ul>
       <div id="difsTrails" class="difs"></div>
@@ -266,6 +266,20 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
     </div>
   </details>
 
+  <details id="panelExportar">
+    <summary>Exportar a OruxMaps</summary>
+    <div class="seccion">
+      <p class="nota" style="margin-top: 0">Se exportan las rutas visibles ahora (filtros y casillas), con el mismo color, intensidad y grosor que en el mapa.</p>
+      <div class="fila-botones" style="margin-top: 8px">
+        <button id="exportarRutas">Rutas (KMZ)</button>
+        <button id="exportarCalor">Red de calor (KMZ)</button>
+      </div>
+      <p class="nota">Red de calor: cada camino una sola vez, coloreado según cuántas de esas rutas pasan por él.</p>
+      <div class="leyenda" id="leyendaCalor"></div>
+      <div id="avisoExportar" class="aviso" role="status" hidden></div>
+    </div>
+  </details>
+
   <details open id="panelRutas">
     <summary id="tituloRutas">Rutas</summary>
     <div class="seccion">
@@ -294,7 +308,7 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
 <main>
   <div id="mapa"></div>
   <div id="avisoMapa" role="status" hidden></div>
-  <div id="caer" hidden><div>Suelta el GPX para compararlo con tus rutas<br><small>o los KML de Trailforks para cargarlos</small></div></div>
+  <div id="caer" hidden><div>Suelta el GPX para compararlo con tus rutas<br><small>o los KML / KMZ de Trailforks para cargarlos</small></div></div>
 </main>
 <dialog id="dlgEstilo">
   <h3 id="dlgTitulo"></h3>
@@ -731,6 +745,7 @@ function pintarTotales() {
   const n = visibles.length, propios = RUTAS.filter(r => r.estilo).length;
   $("estiloVisibles").textContent = n === 1 ? "Estilo de la ruta visible" : `Estilo de las ${n} rutas visibles`;
   $("estiloVisibles").disabled = !n;
+  pintarExportar();
   $("quitarEstilos").hidden = !propios;
   if (!temporizadorQuitar) $("quitarEstilos").textContent = propios === 1 ? "Quitar el estilo propio de 1 ruta" : `Quitar los estilos propios de ${propios} rutas`;
 }
@@ -1079,7 +1094,7 @@ window.addEventListener("drop", e => {
   e.preventDefault();
   enArrastre = 0; $("caer").hidden = true;
   const ficheros = [...e.dataTransfer.files];
-  if (ficheros.some(f => /\.(kml|json)$/i.test(f.name))) cargarTrails(ficheros);
+  if (ficheros.some(f => /\.(kml|kmz|json)$/i.test(f.name))) cargarTrails(ficheros);
   else if (ficheros[0]) abrirFichero(ficheros[0]);
 });
 
@@ -1094,7 +1109,7 @@ const DIFICULTADES = {
   dblack:  { nombre: "Experto", color: "#111111" },
   dbeige:  { nombre: "Acceso secundario", color: "#d8b67a", borde: "#333333" },
   dpurple: { nombre: "Acceso a trail", color: "#9c27b0" },
-  unknown: { nombre: "Sin clasificar", color: "#8a8a8a" },
+  unknown: { nombre: "Otros / sin clasificar", color: "#8a8a8a" },
 };
 const difDe = d => DIFICULTADES[d] ? d : "unknown";
 const bordeDe = d => DIFICULTADES[d].borde || "#ffffff";
@@ -1133,7 +1148,17 @@ const hijoDe = (n, etq) => [...n.children].find(c => c.localName === etq);
 function leerKML(texto, nombreFichero) {
   const doc = new DOMParser().parseFromString(texto, "application/xml");
   if (doc.querySelector("parsererror")) throw new Error("no es un KML válido");
-  const porNombre = new Map();
+  const porNombre = new Map(), colorDeEstilo = new Map();
+  // Colores de línea del propio KML (p. ej. los de My Maps), por si no es una dificultad de Trailforks
+  for (const st of doc.getElementsByTagName("Style")) {
+    const c = (st.getElementsByTagName("LineStyle")[0]?.getElementsByTagName("color")[0]?.textContent || "").trim();
+    if (st.getAttribute("id") && /^[0-9a-f]{8}$/i.test(c)) colorDeEstilo.set(st.getAttribute("id"), "#" + c.slice(6, 8) + c.slice(4, 6) + c.slice(2, 4));
+  }
+  for (const sm of doc.getElementsByTagName("StyleMap")) {
+    const par = [...sm.getElementsByTagName("Pair")].find(p => (hijoDe(p, "key")?.textContent || "").trim() === "normal");
+    const ref = ((par && hijoDe(par, "styleUrl")?.textContent) || "").trim().replace(/^.*#/, "");
+    if (sm.getAttribute("id") && colorDeEstilo.has(ref)) colorDeEstilo.set(sm.getAttribute("id"), colorDeEstilo.get(ref));
+  }
   for (const pm of doc.getElementsByTagName("Placemark")) {
     const nombre = (hijoDe(pm, "name")?.textContent || "").trim() || "Sin nombre";
     const estilo = (hijoDe(pm, "styleUrl")?.textContent || "").trim().replace(/^.*#/, "");
@@ -1142,7 +1167,8 @@ function leerKML(texto, nombreFichero) {
       return [la, lo];
     }).filter(([la, lo]) => Number.isFinite(la) && Number.isFinite(lo))).filter(l => l.length > 1);
     if (!lineas.length) continue;
-    if (!porNombre.has(nombre)) porNombre.set(nombre, { n: nombre, d: difDe(estilo), l: [] });
+    if (!porNombre.has(nombre)) porNombre.set(nombre, { n: nombre, d: difDe(estilo), l: [],
+      ...(!DIFICULTADES[estilo] && colorDeEstilo.has(estilo) ? { c: colorDeEstilo.get(estilo) } : {}) });
     const t = porNombre.get(nombre);
     // El KML «Segmentado» parte cada trail en trozos de 300 m: se vuelven a unir si empalman
     for (const l of lineas) {
@@ -1151,6 +1177,8 @@ function leerKML(texto, nombreFichero) {
     }
   }
   if (!porNombre.size) throw new Error("no tiene trazados");
+  // Simplificados a 2,5 m, como las rutas: un KMZ de Strava con millones de puntos pesaría demasiado
+  for (const t of porNombre.values()) t.l = t.l.map(l => simplificarLL(l, 2.5));
   const nombreDoc = (doc.getElementsByTagName("Document")[0] && hijoDe(doc.getElementsByTagName("Document")[0], "name")?.textContent) || nombreFichero;
   return { nombre: limpiarZona(nombreDoc.trim()), trails: [...porNombre.values()] };
 }
@@ -1166,7 +1194,7 @@ function prepararTrail(zona, t) {
     }
     return { lat, lon, x, y };
   });
-  return { zona, n: t.n, d: difDe(t.d), tramos, x0, x1, y0, y1, km: m / 1000, dens: null };
+  return { zona, n: t.n, d: difDe(t.d), c: /^#[0-9a-f]{6}$/i.test(t.c || "") ? t.c : null, tramos, x0, x1, y0, y1, km: m / 1000, dens: null };
 }
 const lineasTrail = t => t.tramos.map(tr => tr.lat.map((la, k) => [la, tr.lon[k]]));
 
@@ -1181,7 +1209,7 @@ function dibujarTrails() {
   const lista = TRAILS.filter(trailVisible);
   // Primero todos los bordes, para que ninguno tape el color de un trail vecino
   for (const t of lista) capaTrails.addLayer(L.polyline(lineasTrail(t), { renderer: lienzoTrails, color: bordeDe(t.d), weight: 5.5, opacity: .85, interactive: false }));
-  for (const t of lista) capaTrails.addLayer(L.polyline(lineasTrail(t), { renderer: lienzoTrails, color: DIFICULTADES[t.d].color, weight: 3, opacity: 1, interactive: false }));
+  for (const t of lista) capaTrails.addLayer(L.polyline(lineasTrail(t), { renderer: lienzoTrails, color: colorTrail(t), weight: 3, opacity: 1, interactive: false }));
 }
 let trailResaltado = null, trailResaltadoObj = null;
 function resaltarTrail(t) {
@@ -1192,13 +1220,13 @@ function resaltarTrail(t) {
   const l = lineasTrail(t);
   trailResaltado = L.layerGroup([
     L.polyline(l, { pane: "encima", color: bordeDe(t.d) === "#ffffff" ? "#111111" : "#ffffff", weight: 10, opacity: .95, interactive: false }),
-    L.polyline(l, { pane: "encima", color: DIFICULTADES[t.d].color, weight: 5, opacity: 1, interactive: false }),
+    L.polyline(l, { pane: "encima", color: colorTrail(t), weight: 5, opacity: 1, interactive: false }),
   ]).addTo(map);
 }
 map.on("popupclose", () => { if (trailResaltadoObj && !document.querySelector("button[data-trail].sel")) resaltarTrail(null); });
 // Pulsar un trail en una lista: lo resalta y centra el mapa en él; pulsarlo otra vez lo quita
 function botonTrail(t, detalle, titulo) {
-  const b = el("button", { title: titulo }, puntoTrail(t.d), t.n + " ", el("small", { textContent: detalle }));
+  const b = el("button", { title: titulo }, puntoTrail(t), t.n + " ", el("small", { textContent: detalle }));
   b.dataset.trail = t.id;
   if (trailResaltadoObj === t) b.classList.add("sel");
   b.addEventListener("click", () => {
@@ -1209,9 +1237,10 @@ function botonTrail(t, detalle, titulo) {
   });
   return b;
 }
-const puntoTrail = d => {
-  const p = el("span", { className: "punto" + (DIFICULTADES[d].borde ? " conborde" : ""), title: DIFICULTADES[d].nombre });
-  p.style.background = DIFICULTADES[d].color;
+const colorTrail = t => t.c || DIFICULTADES[t.d].color;
+const puntoTrail = t => {
+  const p = el("span", { className: "punto" + (!t.c && DIFICULTADES[t.d].borde ? " conborde" : ""), title: t.c ? "Color del KML" : DIFICULTADES[t.d].nombre });
+  p.style.background = colorTrail(t);
   return p;
 };
 
@@ -1226,7 +1255,7 @@ function trailsEn(x, y, tol, tol2) {
 }
 function seccionTrailsPopup(lista, caja) {
   const botones = lista.map(t => {
-    const b = el("button", { title: "Resaltar este trail" }, puntoTrail(t.d), t.n + " ",
+    const b = el("button", { title: "Resaltar este trail" }, puntoTrail(t), t.n + " ",
       el("small", { textContent: `${DIFICULTADES[t.d].nombre} · ${km(t.km)} km` }));
     b.addEventListener("click", () => {
       const ya = b.classList.contains("sel");
@@ -1288,10 +1317,11 @@ async function cargarTrails(ficheros) {
   for (const f of ficheros) {
     try {
       if (/\.kml$/i.test(f.name)) nuevas.push(leerKML(await f.text(), f.name));
+      else if (/\.kmz$/i.test(f.name)) nuevas.push(leerKML(await kmlDeKmz(f), f.name));
       else if (/\.gpx$/i.test(f.name)) {
         const g = leerGPX(await f.text(), f.name);
         sueltos.push({ n: g.nombre, d: difDe(dificultades[g.nombre]), l: g.lineas });
-      } else if (!/\.json$/i.test(f.name)) errores.push(`${f.name} (solo se admiten KML, GPX y JSON)`);
+      } else if (!/\.json$/i.test(f.name)) errores.push(`${f.name} (solo se admiten KML, KMZ, GPX y JSON)`);
     } catch (e) { errores.push(`${f.name} (${e.message})`); }
   }
   if (sueltos.length) nuevas.push({ nombre: nombreJson ? limpiarZona(nombreJson) : "GPX sueltos", trails: sueltos });
@@ -1307,7 +1337,7 @@ async function cargarTrails(ficheros) {
   if (nuevas.length) partes.push(`Cargados ${num(total)} trails de ${nuevas.map(n => n.nombre).join(", ")}.`);
   if (sinGuardar) partes.push("No se han podido guardar en este navegador: al recargar la página habrá que cargarlos otra vez.");
   if (errores.length) partes.push(`No se ha podido leer: ${errores.join("; ")}.`);
-  if (!nuevas.length && !errores.length) partes.push("No había ningún KML ni GPX entre los ficheros elegidos.");
+  if (!nuevas.length && !errores.length) partes.push("No había ningún KML, KMZ ni GPX entre los ficheros elegidos.");
   aviso.textContent = partes.join(" ");
   aviso.className = "aviso" + (errores.length || sinGuardar || !nuevas.length ? " error" : "");
   aviso.hidden = false;
@@ -1485,6 +1515,241 @@ async function iniciarTrails() {
   }
   reconstruirTrails();
 }
+
+// ---------- KMZ: ZIP mínimo para leer y escribir (un solo doc.kml) ----------
+const TABLA_CRC = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(b) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < b.length; i++) c = TABLA_CRC[(c ^ b[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+async function transformar(datos, flujo) {
+  return new Uint8Array(await new Response(new Blob([datos]).stream().pipeThrough(flujo)).arrayBuffer());
+}
+async function crearKmz(kml) {
+  const datos = new TextEncoder().encode(kml), nombre = new TextEncoder().encode("doc.kml");
+  let metodo = 0, comp = datos;
+  if (typeof CompressionStream === "function") {
+    try { comp = await transformar(datos, new CompressionStream("deflate-raw")); metodo = 8; } catch { comp = datos; metodo = 0; }
+  }
+  const crc = crc32(datos), ahora = new Date();
+  const hora = (ahora.getHours() << 11) | (ahora.getMinutes() << 5) | (ahora.getSeconds() >> 1);
+  const dia = ((ahora.getFullYear() - 1980) << 9) | ((ahora.getMonth() + 1) << 5) | ahora.getDate();
+  const loc = new DataView(new ArrayBuffer(30)), cen = new DataView(new ArrayBuffer(46)), fin = new DataView(new ArrayBuffer(22));
+  loc.setUint32(0, 0x04034b50, true); loc.setUint16(4, 20, true); loc.setUint16(6, 0x0800, true); loc.setUint16(8, metodo, true);
+  loc.setUint16(10, hora, true); loc.setUint16(12, dia, true); loc.setUint32(14, crc, true);
+  loc.setUint32(18, comp.length, true); loc.setUint32(22, datos.length, true); loc.setUint16(26, nombre.length, true);
+  cen.setUint32(0, 0x02014b50, true); cen.setUint16(4, 20, true); cen.setUint16(6, 20, true); cen.setUint16(8, 0x0800, true);
+  cen.setUint16(10, metodo, true); cen.setUint16(12, hora, true); cen.setUint16(14, dia, true); cen.setUint32(16, crc, true);
+  cen.setUint32(20, comp.length, true); cen.setUint32(24, datos.length, true); cen.setUint16(28, nombre.length, true);
+  fin.setUint32(0, 0x06054b50, true); fin.setUint16(8, 1, true); fin.setUint16(10, 1, true);
+  fin.setUint32(12, 46 + nombre.length, true); fin.setUint32(16, 30 + nombre.length + comp.length, true);
+  return new Blob([loc, nombre, comp, cen, nombre, fin], { type: "application/vnd.google-earth.kmz" });
+}
+async function kmlDeKmz(fichero) {
+  const b = new Uint8Array(await fichero.arrayBuffer()), v = new DataView(b.buffer);
+  let e = -1;
+  for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) if (v.getUint32(i, true) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error("no es un KMZ válido");
+  const entradas = [];
+  for (let k = 0, p = v.getUint32(e + 16, true), total = v.getUint16(e + 10, true); k < total && v.getUint32(p, true) === 0x02014b50; k++) {
+    const ln = v.getUint16(p + 28, true);
+    entradas.push({ nombre: new TextDecoder().decode(b.subarray(p + 46, p + 46 + ln)), metodo: v.getUint16(p + 10, true),
+      tam: v.getUint32(p + 20, true), off: v.getUint32(p + 42, true) });
+    p += 46 + ln + v.getUint16(p + 30, true) + v.getUint16(p + 32, true);
+  }
+  const kml = entradas.find(x => /(^|\/)doc\.kml$/i.test(x.nombre)) || entradas.find(x => /\.kml$/i.test(x.nombre));
+  if (!kml) throw new Error("el KMZ no contiene ningún KML");
+  const ini = kml.off + 30 + v.getUint16(kml.off + 26, true) + v.getUint16(kml.off + 28, true), datos = b.subarray(ini, ini + kml.tam);
+  if (kml.metodo === 0) return new TextDecoder().decode(datos);
+  if (kml.metodo !== 8 || typeof DecompressionStream !== "function") throw new Error("este navegador no sabe descomprimir el KMZ");
+  return new TextDecoder().decode(await transformar(datos, new DecompressionStream("deflate-raw")));
+}
+// Douglas-Peucker sobre [[lat, lon], …] en metros locales
+function simplificarLL(pts, tol) {
+  const n = pts.length;
+  if (n < 3) return pts;
+  const f = Math.PI / 180, k = Math.cos(pts[0][0] * f) * 6371008.8 * f, kl = 6371008.8 * f;
+  const xs = pts.map(p => p[1] * k), ys = pts.map(p => p[0] * kl), marca = new Uint8Array(n), t2 = tol * tol, pila = [[0, n - 1]];
+  marca[0] = marca[n - 1] = 1;
+  while (pila.length) {
+    const [i, j] = pila.pop();
+    let peor = t2, idx = -1;
+    for (let m = i + 1; m < j; m++) {
+      const d = distSeg(xs[m], ys[m], xs[i], ys[i], xs[j], ys[j]);
+      if (d > peor) { peor = d; idx = m; }
+    }
+    if (idx >= 0) { marca[idx] = 1; pila.push([i, idx], [idx, j]); }
+  }
+  return pts.filter((_, m) => marca[m]);
+}
+
+// ---------- Exportar a OruxMaps ----------
+// Se exporta lo que se ve: las rutas visibles con su color, intensidad (transparencia del KML) y grosor
+const CLASES_CALOR = [
+  { nombre: "1 vez", min: 1, color: "#ce93d8", ancho: 2 },
+  { nombre: "2 a 5 veces", min: 2, color: "#9c27b0", ancho: 3 },
+  { nombre: "Más de 5 veces", min: 6, color: "#e6007e", ancho: 4 },
+];
+const xmlEsc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const colorKml = (hex, a = 1) => Math.round(a * 255).toString(16).padStart(2, "0") + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3);
+const coordsKml = pts => pts.map(([la, lo]) => `${lo.toFixed(5)},${la.toFixed(5)}`).join(" ");
+const documentoKml = (nombre, cuerpo) =>
+  `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${xmlEsc(nombre)}</name>${cuerpo}</Document></kml>`;
+const fechaFichero = () => { const d = new Date(), dos = v => String(v).padStart(2, "0"); return `${dos(d.getFullYear() % 100)}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}`; };
+function descargar(blob, nombre) {
+  const a = el("a", { href: URL.createObjectURL(blob), download: nombre });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+
+function kmlRutas(lista, nombre) {
+  const alfaGeneral = Math.max(calor.alfa, Math.min(1, .9 / Math.max(lista.length, 1)));
+  const estilos = new Map();
+  const estiloDe = r => {
+    const e = r.estilo || { color: calor.color, alfa: alfaGeneral, ancho: calor.ancho }, clave = colorKml(e.color, e.alfa) + "/" + e.ancho;
+    if (!estilos.has(clave)) estilos.set(clave, `e${estilos.size}`);
+    return estilos.get(clave);
+  };
+  const porAnio = new Map();
+  for (const r of lista) { if (!porAnio.has(r.anio)) porAnio.set(r.anio, []); porAnio.get(r.anio).push(r); }
+  const carpetas = [...porAnio.keys()].sort((a, b) => b - a).map(anio => {
+    // Las de estilo propio al final, como en el mapa, para que no queden tapadas
+    const rutas = porAnio.get(anio).sort((a, b) => !!a.estilo - !!b.estilo || (a.t0 || 0) - (b.t0 || 0));
+    const marcas = rutas.map(r => {
+      const lineas = latLngsDe(r).filter(l => l.length > 1);
+      if (!lineas.length) return "";
+      let geo = lineas.map(l => `<LineString><coordinates>${coordsKml(l)}</coordinates></LineString>`).join("");
+      if (lineas.length > 1) geo = `<MultiGeometry>${geo}</MultiGeometry>`;
+      const desc = `${r.d}<br>Distancia: ${km(r.km)} km<br>Desnivel: ${num(r.up)} m+` + (r.tm ? `<br>En movimiento: ${duracion(r.tm)}<br>Total: ${duracion(r.tt)}` : "");
+      return `<Placemark><name>${xmlEsc(r.n)}</name><description><![CDATA[${desc}]]></description><styleUrl>#${estiloDe(r)}</styleUrl>${geo}</Placemark>`;
+    }).join("");
+    return `<Folder><name>${anio}</name>${marcas}</Folder>`;
+  });
+  const defs = [...estilos].map(([clave, id]) => {
+    const [color, ancho] = clave.split("/");
+    return `<Style id="${id}"><LineStyle><color>${color}</color><width>${ancho}</width></LineStyle></Style>`;
+  }).join("");
+  return documentoKml(nombre, defs + carpetas.join(""));
+}
+
+// Red de caminos: cada camino una vez. Se recorren las rutas por fecha; lo que queda a menos de FUSION
+// de la red suma una pasada a esos puntos (una vez por ruta) y lo que no, se añade como camino nuevo.
+function redDeCaminos(lista) {
+  const FUSION = 15, PASO = 6, MIN_TROZO = 30, f2 = FUSION * FUSION, CERCA = Math.ceil(3 * FUSION / PASO);
+  const RT = 6371008.8, f = Math.PI / 180;
+  const rejilla = new Map(), nx = [], ny = [], nlat = [], nlon = [], cuenta = [], oRuta = [], oIdx = [], lineas = [];
+  const clave = (cx, cy) => cx * 2e6 + cy;
+  const nuevoNodo = (la, lo, x, y, ir, i) => {
+    const id = nx.length;
+    nx.push(x); ny.push(y); nlat.push(la); nlon.push(lo); cuenta.push(1); oRuta.push(ir); oIdx.push(i);
+    const k = clave(Math.floor(x / FUSION), Math.floor(y / FUSION)), l = rejilla.get(k);
+    if (l) l.push(id); else rejilla.set(k, [id]);
+    return id;
+  };
+  lista.slice().sort((a, b) => (a.t0 || 0) - (b.t0 || 0) || a.f.localeCompare(b.f)).forEach((r, ir) => {
+    const tocados = new Set();
+    let base = 0;
+    for (const t of r.tramos) {
+      const mla = [], mlo = [];
+      for (let k = 0; k + 1 < t.lat.length; k++) {
+        const n = Math.max(1, Math.ceil(haversine(t.lat[k], t.lon[k], t.lat[k + 1], t.lon[k + 1]) / PASO));
+        for (let j = 0; j < n; j++) { mla.push(t.lat[k] + (t.lat[k + 1] - t.lat[k]) * j / n); mlo.push(t.lon[k] + (t.lon[k + 1] - t.lon[k]) * j / n); }
+      }
+      if (t.lat.length) { mla.push(t.lat[t.lat.length - 1]); mlo.push(t.lon[t.lon.length - 1]); }
+      const n = mla.length, hay = new Uint8Array(n), mejor = new Int32Array(n);
+      for (let i = 0; i < n; i++) {
+        const la = mla[i], lo = mlo[i], x = lo * f * RT * Math.cos(la * f), y = la * f * RT;
+        const cx = Math.floor(x / FUSION), cy = Math.floor(y / FUSION);
+        let m = -1, md = Infinity;
+        for (let a = cx - 1; a <= cx + 1; a++) for (let b = cy - 1; b <= cy + 1; b++) {
+          const l = rejilla.get(clave(a, b));
+          if (l) for (const id of l) {
+            if (oRuta[id] === ir && base + i - oIdx[id] < CERCA) continue;   // recién puesto por esta misma ruta
+            const d2 = (nx[id] - x) ** 2 + (ny[id] - y) ** 2;
+            if (d2 <= f2) { tocados.add(id); if (d2 < md) { md = d2; m = id; } }
+          }
+        }
+        if (m >= 0) { hay[i] = 1; mejor[i] = m; }
+        else mejor[i] = nuevoNodo(la, lo, x, y, ir, base + i);   // ya, para que la vuelta de una ida y vuelta lo encuentre
+      }
+      // Trozos nuevos → caminos, unidos a la red por sus extremos
+      for (let i = 0; i < n; ) {
+        if (hay[i]) { i++; continue; }
+        let j = i;
+        while (j + 1 < n && !hay[j + 1]) j++;
+        const ids = [];
+        if (i > 0) ids.push(mejor[i - 1]);
+        for (let m = i; m <= j; m++) ids.push(mejor[m]);
+        if (j + 1 < n) ids.push(mejor[j + 1]);
+        if ((j - i + 1) * PASO >= MIN_TROZO && ids.length > 1) lineas.push(ids);
+        i = j + 1;
+      }
+      base += n;
+    }
+    for (const id of tocados) if (oRuta[id] !== ir) cuenta[id]++;
+  });
+  return { lineas, nlat, nlon, cuenta };
+}
+function kmlCalor(lista, nombre) {
+  const { lineas, nlat, nlon, cuenta } = redDeCaminos(lista);
+  const clase = c => CLASES_CALOR.reduce((acc, k, i) => c >= k.min ? i : acc, 0);
+  const trozos = CLASES_CALOR.map(() => []);
+  let metros = 0;
+  for (const ids of lineas) {
+    // Se parte cada camino donde cambia de clase; el punto de corte va en los dos trozos
+    let ini = 0;
+    for (let m = 1; m <= ids.length; m++) {
+      if (m < ids.length && clase(cuenta[ids[m]]) === clase(cuenta[ids[ini]])) continue;
+      const tramo = ids.slice(ini, m < ids.length ? m + 1 : m).map(id => [nlat[id], nlon[id]]);
+      if (tramo.length > 1) {
+        for (let k = 1; k < tramo.length; k++) metros += haversine(tramo[k - 1][0], tramo[k - 1][1], tramo[k][0], tramo[k][1]);
+        trozos[clase(cuenta[ids[ini]])].push(simplificarLL(tramo, 3));
+      }
+      ini = m;
+    }
+  }
+  const defs = CLASES_CALOR.map((k, i) => `<Style id="c${i}"><LineStyle><color>${colorKml(k.color)}</color><width>${k.ancho}</width></LineStyle></Style>`).join("");
+  // De menos a más pasadas: los caminos más usados quedan encima
+  const carpetas = CLASES_CALOR.map((k, i) => !trozos[i].length ? "" : `<Folder><name>${xmlEsc(k.nombre)}</name><Placemark><name>${xmlEsc(k.nombre)}</name>`
+    + `<styleUrl>#c${i}</styleUrl><MultiGeometry>${trozos[i].map(t => `<LineString><coordinates>${coordsKml(t)}</coordinates></LineString>`).join("")}</MultiGeometry></Placemark></Folder>`).join("");
+  return { kml: documentoKml(nombre, defs + carpetas), metros };
+}
+
+function pintarExportar() {
+  const n = visibles.length;
+  $("exportarRutas").textContent = n === 1 ? "Rutas: 1 (KMZ)" : `Rutas: ${num(n)} (KMZ)`;
+  $("exportarRutas").disabled = $("exportarCalor").disabled = !n;
+}
+async function exportar(tipo) {
+  const aviso = $("avisoExportar"), botones = [$("exportarRutas"), $("exportarCalor")];
+  const lista = visibles.slice(), nombre = `Strava_${tipo === "rutas" ? "Rutas" : "Calor"}_Bici_${fechaFichero()}`;
+  botones.forEach(b => { b.disabled = true; });
+  aviso.className = "aviso"; aviso.hidden = false;
+  aviso.textContent = tipo === "rutas" ? "Preparando el KMZ…" : "Calculando la red de caminos…";
+  await new Promise(r => setTimeout(r, 30));     // que se vea el aviso antes del cálculo
+  try {
+    let kml, detalle;
+    if (tipo === "rutas") { kml = kmlRutas(lista, nombre); detalle = `${num(lista.length)} rutas`; }
+    else { const r = kmlCalor(lista, nombre); kml = r.kml; detalle = `${km(r.metros / 1000)} km de caminos a partir de ${num(lista.length)} rutas`; }
+    const blob = await crearKmz(kml);
+    descargar(blob, nombre + ".kmz");
+    aviso.textContent = `Descargado ${nombre}.kmz (${num(blob.size / 1e6, 1)} MB): ${detalle}.`;
+  } catch (e) {
+    aviso.className = "aviso error"; aviso.textContent = `No se ha podido exportar: ${e.message}.`;
+  }
+  pintarExportar();
+}
+$("exportarRutas").addEventListener("click", () => exportar("rutas"));
+$("exportarCalor").addEventListener("click", () => exportar("calor"));
+$("leyendaCalor").replaceChildren(...CLASES_CALOR.map(k => {
+  const i = el("i"); i.style.background = k.color; i.style.height = (k.ancho + 3) + "px";
+  return el("span", {}, i, k.nombre);
+}));
 
 // ---------- Arranque ----------
 if (window.matchMedia("(max-width: 800px)").matches) $("panelAspecto").open = false;
