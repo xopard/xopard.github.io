@@ -756,7 +756,9 @@ input[type=color] { width: 40px; height: 28px; padding: 1px; background: var(--p
 
 /* Trails de Trailforks */
 #trailsNueva, #capasNueva { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--borde); }
-#trailsNueva .etiqueta, #capasNueva .etiqueta { margin-top: 0; }
+details.plegable { border-bottom: 0; }
+details.plegable > summary { padding: 2px 0; font-weight: normal; }
+details.plegable > summary span { float: right; color: var(--suave); font-variant-numeric: tabular-nums; }
 #listaTrailsNueva, #listaCapasNueva { list-style: none; padding: 0; margin: 6px 0 0; max-height: 340px; overflow-y: auto; }
 #listaTrailsNueva button, #listaCapasNueva button { width: 100%; padding: 3px 6px; margin-bottom: 3px; text-align: left; overflow-wrap: anywhere; }
 #listaTrailsNueva button.sel, #listaCapasNueva button.sel { background: var(--sel); border-color: var(--acento); }
@@ -866,15 +868,15 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
         <input id="minimo" class="simple" type="range" min="0" max="500" step="10" value="100">
         <label class="casilla"><input id="soloVisibles" type="checkbox">Comparar solo con las rutas filtradas</label>
         <ul id="tramosNuevos"></ul>
-        <div id="trailsNueva" hidden>
-          <div class="etiqueta"><b>Trails de Trailforks</b><span id="trailsNuevaRes"></span></div>
+        <details id="trailsNueva" class="plegable" open hidden>
+          <summary><b>Trails de Trailforks</b><span id="trailsNuevaRes"></span></summary>
           <ul id="listaTrailsNueva"></ul>
           <p class="nota">«Completo»: al menos el 90 % del trail queda a menos de la distancia elegida arriba. Se ignoran los cruces y los roces de pocos metros.</p>
-        </div>
-        <div id="capasNueva" hidden>
-          <div class="etiqueta"><b>Indicaciones y capas en la ruta</b><span id="capasNuevaRes"></span></div>
+        </details>
+        <details id="capasNueva" class="plegable" open hidden>
+          <summary><b>Indicaciones y capas en la ruta</b><span id="capasNuevaRes"></span></summary>
           <ul id="listaCapasNueva"></ul>
-        </div>
+        </details>
       </div>
     </div>
   </details>
@@ -2539,6 +2541,13 @@ $("leyendaCalor").replaceChildren(...CLASES_CALOR.map(k => {
   const i = el("i"); i.style.background = k.color; i.style.height = (k.ancho + 3) + "px";
   return el("span", {}, i, k.nombre);
 }));
+
+// Las listas de trails y capas de la ruta nueva se pueden plegar; se recuerda en este navegador
+for (const id of ["trailsNueva", "capasNueva"]) {
+  const d = $(id);
+  d.open = !(prefs.leer().plegados || {})[id];
+  d.addEventListener("toggle", () => prefs.guardar({ plegados: { ...(prefs.leer().plegados || {}), [id]: !d.open } }));
+}
 
 // ---------- Arranque ----------
 if (window.matchMedia("(max-width: 800px)").matches) $("panelAspecto").open = false;
