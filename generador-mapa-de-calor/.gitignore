@@ -1,3 +1,4 @@
 cache/
 Mapa de calor.html
 *.kmz
+__pycache__/
