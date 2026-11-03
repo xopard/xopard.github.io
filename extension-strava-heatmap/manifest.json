@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Mapa de calor: capa de Strava",
+  "version": "1.0",
+  "description": "Permite que Mapa de calor (xopard.github.io) muestre el mapa de calor global de Strava con tu sesión de Strava.",
+  "permissions": ["cookies", "declarativeNetRequest"],
+  "host_permissions": ["*://*.strava.com/*", "*://xopard.github.io/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Mapa de calor de Strava" },
+  "minimum_chrome_version": "111"
+}

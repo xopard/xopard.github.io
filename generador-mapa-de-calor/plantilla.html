@@ -300,10 +300,10 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
         <input id="stravaAlfa" class="simple" type="range" min="10" max="100" step="5">
         <label class="etiqueta" for="stravaModo"><span>Acceso a Strava</span></label>
         <select id="stravaModo" style="width: 100%; margin-top: 4px">
-          <option value="ext">Con la extensión «Strava Heatmap» (PC)</option>
-          <option value="cred">Pegando credenciales (cualquier navegador)</option>
+          <option value="ext">Con la extensión de esta web (Chrome o Edge en el PC)</option>
+          <option value="cred">Pegando credenciales (experimental: Strava puede rechazarlo)</option>
         </select>
-        <p class="nota" id="stravaNotaExt">Instala la extensión «Strava Heatmap» en Chrome o Firefox y entra una vez en <a href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">strava.com/maps/global-heatmap</a> con tu cuenta.</p>
+        <p class="nota" id="stravaNotaExt">Instala la extensión <a href="https://github.com/xopard/xopard.github.io/tree/main/extension-strava-heatmap" target="_blank" rel="noopener">«Mapa de calor: capa de Strava»</a> (instrucciones en el enlace) y entra una vez en <a href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">strava.com/maps/global-heatmap</a> con tu cuenta. La extensión «Strava Heatmap» de gpx.studio no sirve aquí: solo actúa en gpx.studio y OpenStreetMap. Abre esta página desde la web, no como fichero.</p>
         <div id="stravaCred" hidden>
           <p class="nota">1. Entra en <a href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">strava.com/maps/global-heatmap</a> con tu cuenta.
             2. Pulsa F12 → Aplicación → Cookies → https://www.strava.com.
@@ -1952,7 +1952,7 @@ function avisarStrava() {
   if (!mal) return;
   a.className = "aviso error";
   a.textContent = STRAVA.modo === "ext"
-    ? "No cargan las teselas de Strava. Comprueba que tienes la extensión «Strava Heatmap» y que has entrado en strava.com/maps/global-heatmap con tu cuenta. Si aun así no cargan, la extensión no actúa en esta web: usa «Pegando credenciales»."
+    ? "No cargan las teselas de Strava. Comprueba que tienes instalada la extensión «Mapa de calor: capa de Strava» (no la de gpx.studio), que su icono no muestra un «!» rojo (si lo muestra, púlsalo y entra en Strava con tu cuenta) y que abres esta página desde xopard.github.io, no como fichero."
     : credStrava.leer() ? "No cargan las teselas de Strava: las credenciales habrán caducado. Vuelve a copiarlas de strava.com." : "Pega las tres credenciales y pulsa Guardar.";
   $("ajustesStrava").open = true;
 }
