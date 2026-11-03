@@ -1,0 +1,1391 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa de calor</title>
+<style>/*__LEAFLET_CSS__*/</style>
+<style>
+:root {
+  --fondo: #f6f7f8; --panel: #ffffff; --texto: #1c2126; --suave: #5f6b76; --borde: #d9dee3;
+  --acento: #0b6e4f; --acento-texto: #ffffff; --sel: #e4f2ed; --error-fondo: #fbe4e4; --error-texto: #7c1616;
+  --recorrido: #00b8d4; --nuevo: #ffea00;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --fondo: #14181c; --panel: #1d2329; --texto: #e8ecef; --suave: #9aa6b1; --borde: #36404a;
+    --acento: #2fa37c; --acento-texto: #06140f; --sel: #1f3a31; --error-fondo: #3d1d1d; --error-texto: #f4bcbc; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--fondo); color: var(--texto); font: 14px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
+  display: grid; grid-template: auto minmax(0, 1fr) / 360px minmax(0, 1fr); grid-template-areas: "cab cab" "lat mapa"; }
+header { grid-area: cab; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--borde); }
+h1 { font-size: 16px; margin: 0; }
+#totales { flex: 1 1 200px; min-width: 0; font-variant-numeric: tabular-nums; }
+#totales b { font-weight: 650; }
+#totales .sec { color: var(--suave); }
+button, .boton, select, input { font: inherit; color: inherit; }
+button, .boton { background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; padding: 5px 10px;
+  cursor: pointer; display: inline-block; }
+button:hover:not(:disabled), .boton:hover { border-color: var(--acento); }
+.boton.principal { background: var(--acento); color: var(--acento-texto); border-color: var(--acento); }
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+aside { grid-area: lat; min-height: 0; min-width: 0; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--borde); }
+details { border-bottom: 1px solid var(--borde); }
+summary { padding: 8px 12px; font-weight: 600; cursor: pointer; user-select: none; }
+.seccion { padding: 0 12px 12px; }
+.fila-botones { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.suave { color: var(--suave); }
+.nota { color: var(--suave); font-size: 12px; margin: 6px 0 0; }
+.aviso { margin: 8px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--sel); overflow-wrap: anywhere; }
+.aviso.error { background: var(--error-fondo); color: var(--error-texto); }
+
+/* Filtros */
+.etiqueta { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.etiqueta span:last-child { color: var(--suave); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.anios { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.anios label, .casilla { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.casilla { display: flex; margin-top: 6px; }
+input[type=checkbox] { margin: 0; width: 16px; height: 16px; flex: none; accent-color: var(--acento); }
+.rango { position: relative; height: 28px; }
+.rango .pista, .rango .relleno { position: absolute; top: 12px; height: 4px; border-radius: 2px; }
+.rango .pista { left: 0; right: 0; background: var(--borde); }
+.rango .relleno { background: var(--acento); }
+.rango input { position: absolute; inset: 0; width: 100%; height: 28px; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.rango input::-webkit-slider-runnable-track { background: none; }
+.rango input::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--panel); border: 2px solid var(--acento); cursor: grab; }
+.rango input::-moz-range-track { background: none; }
+.rango input::-moz-range-thumb { pointer-events: auto; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--panel); border: 2px solid var(--acento); cursor: grab; }
+input[type=range].simple { width: 100%; margin: 4px 0 0; accent-color: var(--acento); }
+select { background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; padding: 4px; max-width: 100%; }
+
+/* Aspecto */
+.colores { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.color { width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 2px solid var(--borde); }
+.color[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--texto); }
+input[type=color] { width: 40px; height: 28px; padding: 1px; background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; }
+
+/* Lista */
+#buscar { width: 100%; padding: 6px 8px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; }
+.ordenar { display: flex; gap: 4px; margin-left: auto; min-width: 0; }
+#orden { min-width: 0; }
+#sentidoOrden { flex: none; }
+#lista { margin-top: 8px; border-top: 1px solid var(--borde); }
+.ruta { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 2px 8px; align-items: start; padding: 6px 0; border-bottom: 1px solid var(--borde); }
+.ruta input { margin-top: 3px; }
+.ruta button { display: block; width: 100%; min-width: 0; padding: 0; border: 0; background: none; text-align: left; overflow-wrap: anywhere; }
+.ruta button:hover { color: var(--acento); }
+.ruta .meta { grid-column: 2; color: var(--suave); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ruta.sel { background: var(--sel); }
+.ruta.apagada button { color: var(--suave); }
+.vacio { padding: 12px 0; color: var(--suave); }
+
+/* Ruta nueva */
+#resumenNueva { margin-top: 8px; }
+#cifra { font-size: 20px; font-weight: 650; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; }
+.leyenda span { display: inline-flex; align-items: center; gap: 5px; }
+.leyenda i { width: 20px; height: 7px; border: 1px solid #111; border-radius: 2px; display: inline-block; }
+#tramosNuevos { list-style: none; padding: 0; margin: 8px 0 0; max-height: 170px; overflow-y: auto; }
+#tramosNuevos button { width: 100%; padding: 3px 6px; margin-bottom: 3px; text-align: left; font-variant-numeric: tabular-nums; }
+
+/* Trails de Trailforks */
+#trailsNueva { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--borde); }
+#trailsNueva .etiqueta { margin-top: 0; }
+#listaTrailsNueva { list-style: none; padding: 0; margin: 6px 0 0; max-height: 340px; overflow-y: auto; }
+#listaTrailsNueva button { width: 100%; padding: 3px 6px; margin-bottom: 3px; text-align: left; overflow-wrap: anywhere; }
+#listaTrailsNueva button.sel { background: var(--sel); border-color: var(--acento); }
+#listaTrailsNueva small, .zonas small { color: var(--suave); font-variant-numeric: tabular-nums; }
+.zonas { list-style: none; padding: 0; margin: 8px 0 0; }
+.zonas li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--borde); }
+.zonas li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.zonas button { padding: 2px 8px; }
+.difs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; margin-top: 8px; }
+.difs .casilla { margin-top: 2px; font-size: 13px; }
+.difs small { color: var(--suave); font-variant-numeric: tabular-nums; }
+.raya { display: inline-block; width: 18px; height: 6px; border-radius: 3px; flex: none; box-shadow: 0 0 0 1px var(--borde); }
+.punto.conborde { box-shadow: 0 0 0 1px #555; }
+.pasos h3 + ul + .fila-botones + h3 { margin-top: 10px; }
+
+/* Estilo propio */
+button:disabled { opacity: .45; cursor: default; }
+button.principal { background: var(--acento); color: var(--acento-texto); border-color: var(--acento); }
+.punto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+dialog { background: var(--panel); color: var(--texto); border: 1px solid var(--borde); border-radius: 10px; width: min(380px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.4); }
+dialog h3 { margin: 0 0 4px; font-size: 15px; overflow-wrap: anywhere; }
+.pie { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 14px; }
+.pasos .fila-botones button { flex: 1 1 auto; }
+
+/* Marcas de la ruta nueva */
+.flecha svg { display: block; }
+.kmetiq { background: #fff; color: #222; border: 1px solid #666; border-radius: 4px; font-size: 11px; line-height: 15px; padding: 0 3px;
+  white-space: nowrap; width: max-content; font-variant-numeric: tabular-nums; }
+
+/* Mapa */
+main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolation: isolate; }
+#mapa { position: absolute; inset: 0; background: var(--fondo); }
+#caer { position: absolute; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 24px; background: color-mix(in srgb, var(--sel) 85%, transparent); pointer-events: none; }
+#caer div { border: 2px dashed var(--acento); border-radius: 12px; padding: 32px; font-size: 18px; font-weight: 600; }
+#avisoMapa { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 1000; width: max-content; max-width: calc(100% - 24px);
+  background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; padding: 4px 10px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--texto); }
+.leaflet-container { font: inherit; }
+.leaflet-popup-content { margin: 10px 12px; }
+.leaflet-container a.leaflet-popup-close-button { color: var(--suave); }
+.pasos h3 { margin: 0 18px 6px 0; font-size: 14px; }
+.pasos ul { list-style: none; padding: 0; margin: 0 0 8px; max-height: min(38vh, 240px); overflow-y: auto; }
+.pasos li button { width: 100%; padding: 3px 4px; border: 0; border-bottom: 1px solid var(--borde); border-radius: 0; background: none; text-align: left; overflow-wrap: anywhere; }
+.pasos li button:hover, .pasos li button.sel { background: var(--sel); }
+.pasos small { color: var(--suave); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 800px) {
+  html, body { height: auto; }
+  body { display: flex; flex-direction: column; }
+  header { position: sticky; top: 0; z-index: 10; padding: 6px 12px; flex-wrap: nowrap; }
+  h1, #totales .sec { display: none; }
+  main { order: 1; flex: none; height: 58vh; }
+  aside { order: 2; }
+  aside { border-right: 0; overflow: visible; }
+  @media (pointer: coarse) { #pistaNueva { display: none; } }
+  .ruta { padding: 8px 0; }
+  input[type=checkbox] { width: 20px; height: 20px; }
+  .ruta { grid-template-columns: 20px minmax(0, 1fr); }
+  .rango input::-webkit-slider-thumb { width: 24px; height: 24px; }
+  button, .boton { padding: 7px 12px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mapa de calor</h1>
+  <div id="totales" aria-live="polite"></div>
+  <button id="encuadrar" title="Encuadrar el mapa en las rutas visibles">Encuadrar</button>
+</header>
+<aside>
+  <details open id="panelNueva">
+    <summary>Ruta nueva</summary>
+    <div class="seccion">
+      <div class="fila-botones">
+        <label class="boton principal" id="abrirGpx" tabindex="0">Abrir GPX<input id="fichero" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden></label>
+        <button id="quitarNueva" hidden>Quitar</button>
+        <span id="pistaNueva" class="suave">o arrástralo al mapa</span>
+      </div>
+      <div id="avisoNueva" class="aviso" role="status" hidden></div>
+      <div id="resumenNueva" hidden>
+        <div id="nombreNueva" class="suave"></div>
+        <div id="cifra"></div>
+        <div class="leyenda">
+          <span><i style="background: var(--recorrido)"></i>Ya recorrido <b id="kmRecorridos"></b></span>
+          <span><i style="background: var(--nuevo)"></i>Nuevo</span>
+        </div>
+        <label class="etiqueta" for="umbral"><span>Recorrido si está a menos de</span><span id="umbralVal"></span></label>
+        <input id="umbral" class="simple" type="range" min="5" max="100" step="1" value="25">
+        <label class="etiqueta" for="minimo"><span>Ignorar trozos nuevos de menos de</span><span id="minimoVal"></span></label>
+        <input id="minimo" class="simple" type="range" min="0" max="500" step="10" value="100">
+        <label class="casilla"><input id="soloVisibles" type="checkbox">Comparar solo con las rutas filtradas</label>
+        <ul id="tramosNuevos"></ul>
+        <div id="trailsNueva" hidden>
+          <div class="etiqueta"><b>Trails de Trailforks</b><span id="trailsNuevaRes"></span></div>
+          <ul id="listaTrailsNueva"></ul>
+          <p class="nota">«Completo»: al menos el 90 % del trail queda a menos de la distancia elegida arriba. Se ignoran los cruces y los roces de pocos metros.</p>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details id="panelTrails">
+    <summary id="tituloTrails">Trails de Trailforks</summary>
+    <div class="seccion">
+      <div class="fila-botones">
+        <label class="boton" id="abrirTrails" tabindex="0">Cargar trails<input id="ficheroTrails" type="file" accept=".kml,.gpx,.json,application/vnd.google-earth.kml+xml,application/gpx+xml,application/json" multiple hidden></label>
+      </div>
+      <p class="nota">Elige uno o varios KML de Trailforks (con colores), o GPX sueltos junto con su dificultades_ZONA.json. Se guardan solo en este navegador: no se publican con la página. Cargar otra vez una zona la sustituye.</p>
+      <div id="avisoTrails" class="aviso" role="status" hidden></div>
+      <ul id="zonasTrails" class="zonas"></ul>
+      <div id="difsTrails" class="difs"></div>
+    </div>
+  </details>
+
+  <details open id="panelFiltros">
+    <summary>Filtros</summary>
+    <div class="seccion">
+      <div id="anios" class="anios"></div>
+      <div id="filtroKm"></div>
+      <div id="filtroUp"></div>
+      <div id="filtroDur"></div>
+      <div class="fila-botones" style="margin-top: 8px">
+        <select id="tipoDur" aria-label="Qué duración filtrar">
+          <option value="tm">Tiempo en movimiento</option>
+          <option value="tt">Tiempo total</option>
+        </select>
+        <button id="limpiar">Quitar filtros</button>
+        <button id="estiloVisibles"></button>
+      </div>
+    </div>
+  </details>
+
+  <details open id="panelAspecto">
+    <summary>Aspecto del mapa</summary>
+    <div class="seccion">
+      <label class="etiqueta" for="base" style="margin-top: 0"><span>Mapa base</span></label>
+      <select id="base" style="width: 100%; margin-top: 4px"></select>
+      <div id="capas" style="margin-top: 4px"></div>
+      <div class="etiqueta"><span>Color general</span></div>
+      <div class="colores" id="colores"></div>
+      <label class="etiqueta" for="alfa"><span>Intensidad de cada ruta</span><span id="alfaVal"></span></label>
+      <input id="alfa" class="simple" type="range" min="3" max="100" step="1">
+      <label class="etiqueta" for="ancho"><span>Grosor de línea</span><span id="anchoVal"></span></label>
+      <input id="ancho" class="simple" type="range" min="1" max="8" step="0.5">
+      <p class="nota">Las rutas con estilo propio no cambian con estos controles.</p>
+      <button id="quitarEstilos" style="margin-top: 6px" hidden></button>
+    </div>
+  </details>
+
+  <details open id="panelRutas">
+    <summary id="tituloRutas">Rutas</summary>
+    <div class="seccion">
+      <input id="buscar" type="search" placeholder="Buscar por nombre…" aria-label="Buscar ruta por nombre" autocomplete="off">
+      <div class="fila-botones">
+        <button id="todas">Todas</button>
+        <button id="ninguna">Ninguna</button>
+        <span class="ordenar">
+          <select id="orden" aria-label="Ordenar la lista por">
+            <option value="t0">Fecha</option>
+            <option value="nombre">Nombre</option>
+            <option value="km">Longitud</option>
+            <option value="up">Desnivel</option>
+            <option value="tm">Tiempo en movimiento</option>
+            <option value="tt">Tiempo total</option>
+          </select>
+          <button id="sentidoOrden"></button>
+        </span>
+      </div>
+      <p class="nota">Clic en un nombre: ver solo esa ruta. Casilla: añadirla o quitarla. En el buscador, un espacio tras una palabra indica que termina ahí: «alen » no encuentra «Maddalena».</p>
+      <div id="lista"></div>
+      <p class="nota" id="generado"></p>
+    </div>
+  </details>
+</aside>
+<main>
+  <div id="mapa"></div>
+  <div id="avisoMapa" role="status" hidden></div>
+  <div id="caer" hidden><div>Suelta el GPX para compararlo con tus rutas<br><small>o los KML de Trailforks para cargarlos</small></div></div>
+</main>
+<dialog id="dlgEstilo">
+  <h3 id="dlgTitulo"></h3>
+  <div class="etiqueta"><span>Color</span></div>
+  <div class="colores" id="dlgColores"></div>
+  <label class="etiqueta" for="dlgAlfa"><span>Intensidad de cada ruta</span><span id="dlgAlfaVal"></span></label>
+  <input id="dlgAlfa" class="simple" type="range" min="3" max="100" step="1">
+  <label class="etiqueta" for="dlgAncho"><span>Grosor de línea</span><span id="dlgAnchoVal"></span></label>
+  <input id="dlgAncho" class="simple" type="range" min="1" max="8" step="0.5">
+  <div class="pie">
+    <button id="dlgQuitar">Volver al estilo general</button>
+    <button id="dlgCancelar">Cancelar</button>
+    <button id="dlgAplicar" class="principal">Aplicar</button>
+  </div>
+</dialog>
+
+<script>/*__LEAFLET_JS__*/</script>
+<script>
+const DATOS = /*__RUTAS__*/[];
+const META = /*__META__*/{};
+
+// ---------- Utilidades ----------
+const $ = id => document.getElementById(id);
+const C_TIERRA = 40075016.686;          // metros de ecuador: pasa de mercator [0,1] a metros con cos(lat)
+const num = (v, d = 0) => v.toLocaleString("es-ES", { minimumFractionDigits: d, maximumFractionDigits: d });
+const km = v => num(v, v >= 100 ? 0 : 1);
+const duracion = s => { const m = Math.round(s / 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`; };
+const normaliza = t => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const mercX = lon => (lon + 180) / 360;
+const mercY = lat => { const s = Math.sin(lat * Math.PI / 180); return .5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
+const cosDeMercY = y => 1 / Math.cosh((1 - 2 * y) * Math.PI);    // cos(lat) a partir de y mercator
+const prefs = {
+  leer() { try { return JSON.parse(localStorage.getItem("mapaCalor") || "{}"); } catch { return {}; } },
+  guardar(v) { try { localStorage.setItem("mapaCalor", JSON.stringify({ ...this.leer(), ...v })); } catch {} },
+};
+function el(etq, props = {}, ...hijos) {
+  const n = Object.assign(document.createElement(etq), props);
+  n.append(...hijos);
+  return n;
+}
+function retrasado(fn) {
+  let pendiente = false;
+  return () => { if (!pendiente) { pendiente = true; requestAnimationFrame(() => { pendiente = false; fn(); }); } };
+}
+
+function decodificar(cad) {
+  const lat = [], lon = [];
+  let i = 0, la = 0, lo = 0;
+  while (i < cad.length) {
+    for (const eje of [0, 1]) {
+      let v = 0, s = 0, b;
+      do { b = cad.charCodeAt(i++) - 63; v |= (b & 31) << s; s += 5; } while (b >= 32);
+      const d = v & 1 ? ~(v >> 1) : v >> 1;
+      if (eje) lo += d; else la += d;
+    }
+    lat.push(la / 1e5); lon.push(lo / 1e5);
+  }
+  return { lat, lon };
+}
+
+// ---------- Datos ----------
+const RUTAS = DATOS.map((r, i) => {
+  let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+  const tramos = r.g.map(cad => {
+    const { lat, lon } = decodificar(cad), n = lat.length, x = new Float64Array(n), y = new Float64Array(n);
+    for (let k = 0; k < n; k++) {
+      x[k] = mercX(lon[k]); y[k] = mercY(lat[k]);
+      if (x[k] < x0) x0 = x[k]; if (x[k] > x1) x1 = x[k];
+      if (y[k] < y0) y0 = y[k]; if (y[k] > y1) y1 = y[k];
+    }
+    return { lat, lon, x, y };
+  });
+  // Para ordenar por nombre se ignora la fecha inicial, que casi todos llevan
+  const sinFecha = r.n.replace(/^\d{4}[-_]\d{2}[-_]\d{2}[\s_-]*/, "").replace(/_/g, " ");
+  return { ...r, i, anio: +r.d.slice(0, 4), busca: normaliza(r.n), sinFecha, tramos, x0, x1, y0, y1 };
+});
+const latLngsDe = r => r.tramos.map(t => t.lat.map((la, k) => [la, t.lon[k]]));
+const limitesDe = lista => {
+  if (!lista.length) return null;
+  const x0 = Math.min(...lista.map(r => r.x0)), x1 = Math.max(...lista.map(r => r.x1));
+  const y0 = Math.min(...lista.map(r => r.y0)), y1 = Math.max(...lista.map(r => r.y1));
+  const lat = y => Math.atan(Math.sinh((1 - 2 * y) * Math.PI)) * 180 / Math.PI, lon = x => x * 360 - 180;
+  return L.latLngBounds([lat(y1), lon(x0)], [lat(y0), lon(x1)]);
+};
+
+// ---------- Filtros ----------
+const estado = {
+  marcadas: new Set(RUTAS.map(r => r.i)), anios: new Set(RUTAS.map(r => r.anio)),
+  km: [0, 0], up: [0, 0], dur: [0, 0], tipoDur: "tm", texto: [],
+};
+const pasaFiltros = r => estado.anios.has(r.anio)
+  && r.km >= estado.km[0] && r.km <= estado.km[1]
+  && r.up >= estado.up[0] && r.up <= estado.up[1]
+  && r[estado.tipoDur] / 60 >= estado.dur[0] && r[estado.tipoDur] / 60 <= estado.dur[1]
+  && estado.texto.every(cumple => cumple(r.busca));
+let visibles = [];
+
+function rango(idCaja, titulo, min, max, paso, fmt, clave) {
+  const caja = $(idCaja);
+  const val = el("span"), pista = el("div", { className: "pista" }), relleno = el("div", { className: "relleno" });
+  const a = el("input", { type: "range", min, max, step: paso, value: min, ariaLabel: `${titulo}: mínimo` });
+  const b = el("input", { type: "range", min, max, step: paso, value: max, ariaLabel: `${titulo}: máximo` });
+  caja.append(el("div", { className: "etiqueta" }, el("span", { textContent: titulo }), val),
+    el("div", { className: "rango" }, pista, relleno, a, b));
+  const pintar = () => {
+    const va = +a.value, vb = +b.value, p = v => (v - min) / (max - min || 1) * 100;
+    relleno.style.left = p(va) + "%"; relleno.style.right = (100 - p(vb)) + "%";
+    val.textContent = `${fmt(va)} – ${fmt(vb)}`;
+    // Con las dos manillas juntas al final, la de mínimo queda encima para poder moverla
+    a.style.zIndex = va >= max - paso ? 2 : 1; b.style.zIndex = va >= max - paso ? 1 : 2;
+    estado[clave] = [va, vb];
+  };
+  a.addEventListener("input", () => { if (+a.value > +b.value) a.value = b.value; pintar(); actualizar(); });
+  b.addEventListener("input", () => { if (+b.value < +a.value) b.value = a.value; pintar(); actualizar(); });
+  pintar();
+  return { reiniciar() { a.value = min; b.value = max; pintar(); },
+    limites(mn, mx) { min = mn; max = mx; a.min = b.min = mn; a.max = b.max = mx; a.value = mn; b.value = mx; pintar(); } };
+}
+const techo = (v, p) => Math.ceil(v / p) * p;
+const maxMin = c => techo(Math.max(...RUTAS.map(r => r[c])) / 60, 15);
+const fmtDur = m => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? " " + String(m % 60).padStart(2, "0") : ""}`;
+const rangos = {
+  km: rango("filtroKm", "Longitud", 0, techo(Math.max(...RUTAS.map(r => r.km)), 5), 1, v => `${v} km`, "km"),
+  up: rango("filtroUp", "Desnivel positivo", 0, techo(Math.max(...RUTAS.map(r => r.up)), 50), 50, v => `${v} m`, "up"),
+  dur: rango("filtroDur", "Duración", 0, maxMin("tm"), 15, fmtDur, "dur"),
+};
+
+// ---------- Capa de calor ----------
+// Cada ruta es un trazo con transparencia: las superpuestas se acumulan e intensifican.
+// Una ruta no se refuerza a sí misma (un solo trazo por ruta), así que ida y vuelta cuentan como una pasada.
+const CapaCalor = L.Layer.extend({
+  color: "#e6007e", alfa: .2, ancho: 2.5,
+  onAdd(map) {
+    this._map = map;
+    this._c = L.DomUtil.create("canvas", "leaflet-zoom-animated", map.getPane("calor"));
+    this._ctx = this._c.getContext("2d");
+    this.redibujar();
+  },
+  onRemove() { L.DomUtil.remove(this._c); },
+  getEvents() { return { moveend: this.redibujar, resize: this.redibujar, zoomanim: this._zoomAnim }; },
+  _zoomAnim(e) {
+    const m = this._map;
+    L.DomUtil.setTransform(this._c, m._latLngToNewLayerPoint(this._nw, e.zoom, e.center), m.getZoomScale(e.zoom, m.getZoom()));
+  },
+  redibujar() {
+    const map = this._map;
+    if (!map) return;
+    const tam = map.getSize(), pad = tam.multiplyBy(.3).round(), an = tam.x + 2 * pad.x, al = tam.y + 2 * pad.y;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2), c = this._c, ctx = this._ctx;
+    if (c.width !== Math.round(an * dpr) || c.height !== Math.round(al * dpr)) {
+      c.width = Math.round(an * dpr); c.height = Math.round(al * dpr);
+      c.style.width = an + "px"; c.style.height = al + "px";
+    }
+    const sup = map.containerPointToLayerPoint([-pad.x, -pad.y]);
+    L.DomUtil.setPosition(c, sup);
+    this._nw = map.layerPointToLatLng(sup);
+    const esc = 256 * 2 ** map.getZoom(), org = map.project(this._nw, map.getZoom());
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, an, al);
+    ctx.lineJoin = ctx.lineCap = "round";
+    // Con pocas rutas se reforzaría poco: una sola se ve casi opaca, y a partir de 4 manda el control.
+    // Un estilo propio se respeta tal cual.
+    const alfaGeneral = Math.max(this.alfa, Math.min(1, .9 / Math.max(visibles.length, 1)));
+    const vx0 = org.x / esc, vy0 = org.y / esc, vx1 = (org.x + an) / esc, vy1 = (org.y + al) / esc;
+    // Las de estilo propio van al final, para que no queden tapadas por el conjunto
+    for (const r of [...visibles.filter(v => !v.estilo), ...visibles.filter(v => v.estilo)]) {
+      if (r.x1 < vx0 || r.x0 > vx1 || r.y1 < vy0 || r.y0 > vy1) continue;
+      ctx.strokeStyle = r.estilo ? r.estilo.color : this.color;
+      ctx.lineWidth = r.estilo ? r.estilo.ancho : this.ancho;
+      ctx.globalAlpha = r.estilo ? r.estilo.alfa : alfaGeneral;
+      ctx.beginPath();
+      for (const t of r.tramos) {
+        const n = t.x.length;
+        let ux = t.x[0] * esc - org.x, uy = t.y[0] * esc - org.y;
+        ctx.moveTo(ux, uy);
+        for (let k = 1; k < n; k++) {
+          const px = t.x[k] * esc - org.x, py = t.y[k] * esc - org.y;
+          // Se salta lo que no se ve a esta escala salvo el último punto
+          if (k < n - 1 && Math.abs(px - ux) + Math.abs(py - uy) < .7) continue;
+          ctx.lineTo(px, py); ux = px; uy = py;
+        }
+      }
+      ctx.stroke();
+    }
+  },
+});
+
+// ---------- Índice espacial de las rutas (también para futuras capas de comparación) ----------
+// Rejilla en mercator; la celda (~230 m en Bizkaia) debe superar el umbral máximo más un margen.
+const Indice = {
+  CELDA: 8e-6, celdas: null, sx1: null, sy1: null, sx2: null, sy2: null, sr: null,
+  clave: (ix, iy) => ix * 200000 + iy,
+  construir() {
+    if (this.celdas) return;
+    const total = RUTAS.reduce((s, r) => s + r.tramos.reduce((u, t) => u + t.x.length - 1, 0), 0);
+    this.sx1 = new Float64Array(total); this.sy1 = new Float64Array(total);
+    this.sx2 = new Float64Array(total); this.sy2 = new Float64Array(total); this.sr = new Int32Array(total);
+    const celdas = new Map(), c = this.CELDA;
+    let id = 0;
+    for (const r of RUTAS) for (const t of r.tramos) for (let k = 0; k + 1 < t.x.length; k++, id++) {
+      const x1 = t.x[k], y1 = t.y[k], x2 = t.x[k + 1], y2 = t.y[k + 1];
+      this.sx1[id] = x1; this.sy1[id] = y1; this.sx2[id] = x2; this.sy2[id] = y2; this.sr[id] = r.i;
+      const pasos = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (c / 2)));
+      let ultima = -1;
+      for (let p = 0; p <= pasos; p++) {
+        const u = p / pasos, cl = this.clave(Math.floor((x1 + (x2 - x1) * u) / c), Math.floor((y1 + (y2 - y1) * u) / c));
+        if (cl !== ultima) {
+          const lista = celdas.get(cl);
+          if (lista) lista.push(id); else celdas.set(cl, [id]);
+          ultima = cl;
+        }
+      }
+    }
+    this.celdas = celdas;
+  },
+  // Distancia en metros a la ruta permitida más próxima; Infinity si no hay ninguna en las celdas vecinas
+  distancia(x, y, permitida) {
+    const c = this.CELDA, ix = Math.floor(x / c), iy = Math.floor(y / c);
+    let mejor = Infinity;
+    for (let a = ix - 1; a <= ix + 1; a++) for (let b = iy - 1; b <= iy + 1; b++) {
+      const lista = this.celdas.get(this.clave(a, b));
+      if (!lista) continue;
+      for (const id of lista) {
+        if (!permitida(this.sr[id])) continue;
+        const d = distSeg(x, y, this.sx1[id], this.sy1[id], this.sx2[id], this.sy2[id]);
+        if (d < mejor) mejor = d;
+      }
+    }
+    return mejor === Infinity ? Infinity : Math.sqrt(mejor) * C_TIERRA * cosDeMercY(y);
+  },
+};
+function distSeg(px, py, ax, ay, bx, by) {     // distancia al cuadrado punto-segmento
+  const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
+  let u = l ? ((px - ax) * dx + (py - ay) * dy) / l : 0;
+  u = u < 0 ? 0 : u > 1 ? 1 : u;
+  const qx = ax + u * dx - px, qy = ay + u * dy - py;
+  return qx * qx + qy * qy;
+}
+
+// ---------- Mapa y registro de capas ----------
+const tactil = window.matchMedia("(pointer: coarse)").matches;
+// En el móvil se amplía con los dedos: los botones de zoom taparían la ventana de un clic
+const map = L.map("mapa", { zoomControl: !tactil });
+map.createPane("calor").style.zIndex = 350;
+map.getPane("calor").style.pointerEvents = "none";
+map.createPane("encima").style.zIndex = 450;
+map.getPane("encima").style.pointerEvents = "none";
+L.control.scale({ imperial: false }).addTo(map);
+
+// No usar tile.openstreetmap.org: bloquea las páginas abiertas como fichero local
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/";
+const BASES = {
+  claro: { nombre: "Esri gris claro", url: ESRI + "Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", maxNativeZoom: 16, attribution: "© Esri" },
+  oscuro: { nombre: "Esri gris oscuro", url: ESRI + "Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", maxNativeZoom: 16, attribution: "© Esri" },
+  calles: { nombre: "Esri calles", url: ESRI + "World_Street_Map/MapServer/tile/{z}/{y}/{x}", attribution: "© Esri" },
+  bici: { nombre: "CyclOSM (caminos y sendas)", url: "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png", maxZoom: 20, subdomains: "abc", attribution: "© OpenStreetMap, CyclOSM" },
+  topo: { nombre: "OpenTopoMap", url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", maxNativeZoom: 17, subdomains: "abc", attribution: "© OpenStreetMap, © OpenTopoMap (CC-BY-SA)" },
+  sat: { nombre: "Esri satélite", url: ESRI + "World_Imagery/MapServer/tile/{z}/{y}/{x}", attribution: "© Esri" },
+};
+let capaBase = null;
+function ponerBase(id) {
+  if (!BASES[id]) id = "claro";
+  if (capaBase) map.removeLayer(capaBase);
+  const b = BASES[id];
+  capaBase = L.tileLayer(b.url, { maxZoom: 19, ...b }).addTo(map);
+  capaBase.on("tileerror", () => mostrarAvisoMapa("No se carga el mapa base (¿sin conexión?). Tus rutas se ven igual."));
+  capaBase.on("tileload", () => mostrarAvisoMapa(""));
+  capaBase.bringToBack();
+  $("base").value = id;
+  prefs.guardar({ base: id });
+}
+function mostrarAvisoMapa(t) { $("avisoMapa").textContent = t; $("avisoMapa").hidden = !t; }
+
+// Capas sobre el mapa base. Para añadir otra (caminos OSM sin recorrer, mapa de calor de Strava…)
+// basta con llamar a registrarCapa: aparece su casilla en «Aspecto del mapa» y recuerda si estaba activa.
+const CAPAS = [];
+function registrarCapa(id, nombre, capa, activa = true) {
+  const guardadas = prefs.leer().capas || {};
+  const entrada = { id, nombre, capa, activa: guardadas[id] ?? activa, casilla: null };
+  CAPAS.push(entrada);
+  if (entrada.activa) capa.addTo(map);
+  const casilla = entrada.casilla = el("input", { type: "checkbox", checked: entrada.activa });
+  casilla.addEventListener("change", () => {
+    entrada.activa = casilla.checked;
+    if (casilla.checked) capa.addTo(map); else map.removeLayer(capa);
+    const todas = prefs.leer().capas || {};
+    prefs.guardar({ capas: { ...todas, [id]: casilla.checked } });
+  });
+  $("capas").append(el("label", { className: "casilla" }, casilla, nombre));
+  return entrada;
+}
+
+const calor = new CapaCalor({ pane: "calor" });
+const capaNueva = L.layerGroup();
+for (const [id, b] of Object.entries(BASES)) $("base").append(el("option", { value: id, textContent: b.nombre }));
+$("base").addEventListener("change", () => ponerBase($("base").value));
+const guardado = prefs.leer();
+calor.color = /^#[0-9a-f]{6}$/i.test(guardado.color) ? guardado.color : calor.color;
+calor.alfa = guardado.alfa ?? calor.alfa;
+calor.ancho = guardado.ancho ?? calor.ancho;
+visibles = RUTAS.slice();
+// Vista inicial: la zona habitual (rutas a menos de 30 km de la mediana), sin las excursiones lejanas
+const mediana = v => v.slice().sort((a, b) => a - b)[v.length >> 1];
+const centroX = r => (r.x0 + r.x1) / 2, centroY = r => (r.y0 + r.y1) / 2;
+const zonaX = mediana(RUTAS.map(centroX)), zonaY = mediana(RUTAS.map(centroY));
+const inicio = limitesDe(RUTAS.filter(r => Math.hypot(centroX(r) - zonaX, centroY(r) - zonaY) * C_TIERRA * cosDeMercY(zonaY) < 30000));
+map.setView(inicio ? inicio.getCenter() : [43.3, -3.0], 11);
+// Si la página se carga oculta el mapa aún no tiene tamaño: se encuadra cuando lo tenga
+function encuadreInicial() {
+  const t = map.getSize();
+  if (t.x > 40 && t.y > 40) map.fitBounds(inicio, { padding: [16, 16], animate: false });
+  else map.once("resize", encuadreInicial);
+}
+new ResizeObserver(() => map.invalidateSize({ animate: false })).observe($("mapa"));
+if (inicio) encuadreInicial();
+ponerBase(guardado.base);
+const entradaCalor = registrarCapa("calor", "Mapa de calor", calor);
+const entradaNueva = registrarCapa("nueva", "Ruta nueva", capaNueva);
+
+// ---------- Aspecto ----------
+const COLORES = ["#e6007e", "#fc4c02", "#d50000", "#1a3fd6", "#000000"];
+const entradaColor = el("input", { type: "color", ariaLabel: "Otro color" });
+function ponerColor(c) {
+  calor.color = c; entradaColor.value = c;
+  document.querySelectorAll("#colores .color").forEach(b => b.setAttribute("aria-pressed", b.dataset.c === c));
+  prefs.guardar({ color: c });
+  calor.redibujar();
+}
+for (const c of COLORES) {
+  const b = el("button", { className: "color", ariaLabel: `Color ${c}` });
+  b.dataset.c = c; b.style.background = c;
+  b.addEventListener("click", () => ponerColor(c));
+  $("colores").append(b);
+}
+$("colores").append(entradaColor);
+entradaColor.addEventListener("input", () => ponerColor(entradaColor.value));
+function ponerAlfa() { $("alfaVal").textContent = $("alfa").value + " %"; calor.alfa = $("alfa").value / 100; }
+function ponerAncho() { $("anchoVal").textContent = num(+$("ancho").value, 1) + " px"; calor.ancho = +$("ancho").value; }
+const redibujarCalor = retrasado(() => calor.redibujar());
+$("alfa").value = Math.round(calor.alfa * 100); $("ancho").value = calor.ancho;
+ponerAlfa(); ponerAncho(); ponerColor(calor.color);
+$("alfa").addEventListener("input", () => { ponerAlfa(); prefs.guardar({ alfa: calor.alfa }); redibujarCalor(); });
+$("ancho").addEventListener("input", () => { ponerAncho(); prefs.guardar({ ancho: calor.ancho }); redibujarCalor(); });
+
+// ---------- Estilo propio de un grupo de rutas ----------
+// Se guarda en este navegador, por nombre de fichero: sobrevive a Actualizar mapa.bat pero no pasa a otro equipo
+const colorValido = c => /^#[0-9a-f]{6}$/i.test(c);
+for (const r of RUTAS) {
+  const e = (guardado.estilos || {})[r.f];
+  if (e && colorValido(e.color) && e.alfa >= .03 && e.alfa <= 1 && e.ancho >= 1 && e.ancho <= 8) r.estilo = e;
+}
+function guardarEstilos() {
+  const estilos = {};
+  for (const r of RUTAS) if (r.estilo) estilos[r.f] = r.estilo;
+  prefs.guardar({ estilos });
+}
+let rutasDialogo = [];
+const dlgColor = el("input", { type: "color", ariaLabel: "Otro color" });
+function marcarColorDialogo() {
+  document.querySelectorAll("#dlgColores .color").forEach(b => b.setAttribute("aria-pressed", b.dataset.c === dlgColor.value));
+}
+for (const c of COLORES) {
+  const b = el("button", { className: "color", ariaLabel: `Color ${c}`, type: "button" });
+  b.dataset.c = c; b.style.background = c;
+  b.addEventListener("click", () => { dlgColor.value = c; marcarColorDialogo(); });
+  $("dlgColores").append(b);
+}
+$("dlgColores").append(dlgColor);
+dlgColor.addEventListener("input", marcarColorDialogo);
+function pintarValoresDialogo() {
+  $("dlgAlfaVal").textContent = $("dlgAlfa").value + " %";
+  $("dlgAnchoVal").textContent = num(+$("dlgAncho").value, 1) + " px";
+}
+$("dlgAlfa").addEventListener("input", pintarValoresDialogo);
+$("dlgAncho").addEventListener("input", pintarValoresDialogo);
+function abrirEstilo(rutas) {
+  if (!rutas.length) return;
+  rutasDialogo = rutas;
+  const base = (rutas.find(r => r.estilo) || {}).estilo || calor;
+  $("dlgTitulo").textContent = rutas.length === 1 ? `Estilo de «${rutas[0].n}»` : `Estilo de ${rutas.length} rutas`;
+  dlgColor.value = base.color;
+  $("dlgAlfa").value = Math.round(base.alfa * 100);
+  $("dlgAncho").value = base.ancho;
+  $("dlgQuitar").disabled = !rutas.some(r => r.estilo);
+  marcarColorDialogo(); pintarValoresDialogo();
+  $("dlgEstilo").showModal();
+}
+$("dlgAplicar").addEventListener("click", () => {
+  const estilo = { color: dlgColor.value, alfa: $("dlgAlfa").value / 100, ancho: +$("dlgAncho").value };
+  for (const r of rutasDialogo) r.estilo = { ...estilo };
+  guardarEstilos(); $("dlgEstilo").close(); recalcular();
+});
+$("dlgQuitar").addEventListener("click", () => {
+  for (const r of rutasDialogo) delete r.estilo;
+  guardarEstilos(); $("dlgEstilo").close(); recalcular();
+});
+$("dlgCancelar").addEventListener("click", () => $("dlgEstilo").close());
+$("estiloVisibles").addEventListener("click", () => abrirEstilo(visibles));
+// Dos pulsaciones: borrar todos los estilos no se puede deshacer
+let temporizadorQuitar = null;
+$("quitarEstilos").addEventListener("click", () => {
+  if (!temporizadorQuitar) {
+    $("quitarEstilos").textContent = "¿Seguro? Pulsa otra vez";
+    temporizadorQuitar = setTimeout(() => { temporizadorQuitar = null; pintarTotales(); }, 3000);
+    return;
+  }
+  clearTimeout(temporizadorQuitar); temporizadorQuitar = null;
+  for (const r of RUTAS) delete r.estilo;
+  guardarEstilos(); recalcular();
+});
+
+// ---------- Resaltar una ruta ----------
+let resaltada = null, resaltadaIdx = null;
+function resaltar(i) {
+  if (resaltada) { map.removeLayer(resaltada); resaltada = null; }
+  resaltadaIdx = i;
+  document.querySelectorAll(".ruta.sel").forEach(f => f.classList.remove("sel"));
+  if (i === null) return;
+  const lineas = latLngsDe(RUTAS[i]);
+  resaltada = L.layerGroup([
+    L.polyline(lineas, { pane: "encima", color: "#fff", weight: 6, opacity: .95, interactive: false }),
+    L.polyline(lineas, { pane: "encima", color: "#0d47a1", weight: 3, opacity: 1, interactive: false }),
+  ]).addTo(map);
+  const fila = document.querySelector(`.ruta[data-i="${i}"]`);
+  if (fila) fila.classList.add("sel");
+}
+
+// ---------- Lista y totales ----------
+function pintarTotales() {
+  const k = visibles.reduce((s, r) => s + r.km, 0), u = visibles.reduce((s, r) => s + r.up, 0), t = visibles.reduce((s, r) => s + r.tm, 0);
+  const b = t => el("b", { textContent: t });
+  $("totales").replaceChildren(b(num(visibles.length)), ` de ${RUTAS.length} rutas · `, b(km(k)), " km",
+    el("span", { className: "sec", textContent: ` · ${num(u)} m+ · ${duracion(t)} en movimiento` }));
+  const n = visibles.length, propios = RUTAS.filter(r => r.estilo).length;
+  $("estiloVisibles").textContent = n === 1 ? "Estilo de la ruta visible" : `Estilo de las ${n} rutas visibles`;
+  $("estiloVisibles").disabled = !n;
+  $("quitarEstilos").hidden = !propios;
+  if (!temporizadorQuitar) $("quitarEstilos").textContent = propios === 1 ? "Quitar el estilo propio de 1 ruta" : `Quitar los estilos propios de ${propios} rutas`;
+}
+let ordenAscendente = false;
+function pintarLista() {
+  const orden = $("orden").value, signo = ordenAscendente ? 1 : -1;
+  const lista = RUTAS.filter(pasaFiltros);
+  if (orden === "nombre") lista.sort((a, b) => signo * a.sinFecha.localeCompare(b.sinFecha, "es") || (b.t0 || 0) - (a.t0 || 0));
+  else lista.sort((a, b) => signo * ((a[orden] || 0) - (b[orden] || 0)));
+  $("sentidoOrden").textContent = ordenAscendente ? "↑" : "↓";
+  $("sentidoOrden").title = ordenAscendente ? "Orden ascendente: pulsa para invertir" : "Orden descendente: pulsa para invertir";
+  $("sentidoOrden").ariaLabel = $("sentidoOrden").title;
+  $("tituloRutas").textContent = `Rutas (${lista.length})`;
+  const filas = lista.map(r => {
+    const casilla = el("input", { type: "checkbox", checked: estado.marcadas.has(r.i), ariaLabel: `Incluir ${r.n}` });
+    casilla.addEventListener("change", () => {
+      if (casilla.checked) estado.marcadas.add(r.i); else estado.marcadas.delete(r.i);
+      fila.classList.toggle("apagada", !casilla.checked);
+      actualizar();
+    });
+    const nombre = el("button", { textContent: r.n, title: "Ver solo esta ruta" });
+    nombre.addEventListener("click", () => soloEstas([r.i], true));
+    const trozos = [`${km(r.km)} km`, `${num(r.up)} m+`, duracion(r.tm)];
+    if (!r.n.startsWith(r.d)) trozos.unshift(r.d);
+    const meta = el("div", { className: "meta" }, trozos.join(" · "));
+    if (r.estilo) {
+      const punto = el("span", { className: "punto", title: "Tiene estilo propio" });
+      punto.style.background = r.estilo.color;
+      meta.prepend(punto);
+    }
+    const fila = el("div", { className: "ruta" + (estado.marcadas.has(r.i) ? "" : " apagada") + (resaltadaIdx === r.i ? " sel" : "") },
+      casilla, nombre, meta);
+    fila.dataset.i = r.i;
+    fila.addEventListener("mouseenter", () => { if (!popupAbierto) resaltar(r.i); });
+    fila.addEventListener("mouseleave", () => { if (!popupAbierto) resaltar(null); });
+    return fila;
+  });
+  $("lista").replaceChildren(...(filas.length ? filas : [el("div", { className: "vacio", textContent: "Ninguna ruta cumple los filtros." })]));
+}
+function soloEstas(ids, encuadrar) {
+  estado.marcadas = new Set(ids);
+  resaltar(null);
+  map.closePopup();
+  actualizar();
+  if (encuadrar) {
+    const b = limitesDe(ids.map(i => RUTAS[i]));
+    if (b) map.fitBounds(b, { padding: [24, 24] });
+    if (window.matchMedia("(max-width: 800px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
+function recalcular() {
+  visibles = RUTAS.filter(r => estado.marcadas.has(r.i) && pasaFiltros(r));
+  pintarTotales();
+  pintarLista();
+  calor.redibujar();
+  if (actual && $("soloVisibles").checked) compararActual();
+}
+const actualizar = retrasado(recalcular);
+
+// Años
+for (const a of [...new Set(RUTAS.map(r => r.anio))].sort()) {
+  const n = RUTAS.filter(r => r.anio === a).length;
+  const c = el("input", { type: "checkbox", checked: true, value: a });
+  c.addEventListener("change", () => { if (c.checked) estado.anios.add(a); else estado.anios.delete(a); actualizar(); });
+  $("anios").append(el("label", { title: `${n} rutas` }, c, String(a)));
+}
+$("tipoDur").addEventListener("change", () => {
+  estado.tipoDur = $("tipoDur").value;
+  rangos.dur.limites(0, maxMin(estado.tipoDur));
+  actualizar();
+});
+$("limpiar").addEventListener("click", () => {
+  estado.anios = new Set(RUTAS.map(r => r.anio));
+  document.querySelectorAll("#anios input").forEach(c => { c.checked = true; });
+  rangos.km.reiniciar(); rangos.up.reiniciar(); rangos.dur.reiniciar();
+  $("buscar").value = ""; estado.texto = [];
+  actualizar();
+});
+// Cada palabra debe aparecer en el nombre; si le sigue un espacio, tiene que terminar ahí
+function condicionesBusqueda(texto) {
+  return [...normaliza(texto).matchAll(/(\S+)(\s*)/g)].map(([, palabra, espacio]) => {
+    if (!espacio) return nombre => nombre.includes(palabra);
+    const fin = new RegExp(palabra.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\p{L}\\p{N}])", "u");
+    return nombre => fin.test(nombre);
+  });
+}
+$("buscar").addEventListener("input", () => { estado.texto = condicionesBusqueda($("buscar").value); actualizar(); });
+$("orden").addEventListener("change", () => {
+  // Nombre empieza de la A a la Z; fechas y cifras, por lo más reciente o lo mayor
+  ordenAscendente = $("orden").value === "nombre";
+  pintarLista();
+});
+$("sentidoOrden").addEventListener("click", () => { ordenAscendente = !ordenAscendente; pintarLista(); });
+$("todas").addEventListener("click", () => soloEstas(RUTAS.map(r => r.i)));
+$("ninguna").addEventListener("click", () => soloEstas([]));
+$("encuadrar").addEventListener("click", () => {
+  const b = actual ? actual.limites : limitesDe(visibles);
+  if (b) map.fitBounds(b, { padding: [24, 24] });
+});
+
+// ---------- Clic en un camino: qué rutas pasaron por ahí ----------
+let popupAbierto = false;
+map.on("popupopen", () => { popupAbierto = true; });
+map.on("popupclose", () => { popupAbierto = false; resaltar(null); });
+map.on("click", e => {
+  const esc = 256 * 2 ** map.getZoom(), x = mercX(e.latlng.lng), y = mercY(e.latlng.lat), tol = (tactil ? 14 : 7) / esc, tol2 = tol * tol;
+  const pasan = !entradaCalor.activa ? [] : visibles.filter(r => {
+    if (x < r.x0 - tol || x > r.x1 + tol || y < r.y0 - tol || y > r.y1 + tol) return false;
+    return r.tramos.some(t => {
+      for (let k = 0; k + 1 < t.x.length; k++) if (distSeg(x, y, t.x[k], t.y[k], t.x[k + 1], t.y[k + 1]) <= tol2) return true;
+      return false;
+    });
+  }).sort((a, b) => (b.t0 || 0) - (a.t0 || 0));
+  const trailsAqui = trailsEn(x, y, tol, tol2);
+  if (!pasan.length && !trailsAqui.length) return;
+  // Con una ruta elegida en la lista, el botón de estilo actúa solo sobre ella
+  let elegida = null;
+  const estiloBtn = el("button");
+  const rotularEstilo = () => {
+    estiloBtn.textContent = elegida || pasan.length === 1 ? "Estilo de esta ruta" : `Estilo de estas ${pasan.length}`;
+  };
+  rotularEstilo();
+  estiloBtn.addEventListener("click", () => abrirEstilo(elegida ? [elegida] : pasan));
+  const botones = pasan.map(r => {
+    const b = el("button", {}, r.n + " ", el("small", { textContent: `${km(r.km)} km` }));
+    b.addEventListener("click", () => {
+      const ya = b.classList.contains("sel");
+      caja.querySelectorAll("button.sel").forEach(o => o.classList.remove("sel"));
+      resaltar(ya ? null : r.i);
+      if (!ya) b.classList.add("sel");
+      elegida = ya ? null : r;
+      rotularEstilo();
+    });
+    return el("li", {}, b);
+  });
+  const soloBtn = el("button", { textContent: pasan.length === 1 ? "Ver solo esta" : "Ver solo estas" });
+  soloBtn.addEventListener("click", () => soloEstas(pasan.map(r => r.i)));
+  const caja = el("div", { className: "pasos" });
+  if (pasan.length) caja.append(el("h3", { textContent: pasan.length === 1 ? "1 ruta pasó por aquí" : `${pasan.length} rutas pasaron por aquí` }),
+    el("ul", {}, ...botones), el("div", { className: "fila-botones" }, soloBtn, estiloBtn));
+  if (trailsAqui.length) caja.append(...seccionTrailsPopup(trailsAqui, caja));
+  L.popup({ maxWidth: Math.min(340, map.getSize().x - 50), minWidth: Math.min(240, map.getSize().x - 50), autoPanPadding: [12, 12], autoPanPaddingTopLeft: tactil ? [12, 12] : [56, 12] })
+    .setLatLng(e.latlng).setContent(caja).openOn(map);
+});
+
+// ---------- Ruta nueva ----------
+// actual: { nombre, tramos: [{x, y, lat, lon, s}], dist: [Float32Array por tramo], excluida, limites }
+let actual = null;
+const PASO_M = 10;
+function haversine(la1, lo1, la2, lo2) {
+  const f = Math.PI / 180, a = Math.sin((la2 - la1) * f / 2) ** 2 + Math.cos(la1 * f) * Math.cos(la2 * f) * Math.sin((lo2 - lo1) * f / 2) ** 2;
+  return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+function leerGPX(texto, nombreFichero) {
+  const doc = new DOMParser().parseFromString(texto, "application/xml");
+  if (doc.querySelector("parsererror")) throw new Error("el fichero no es un GPX válido");
+  const hijo = (n, etq) => [...n.children].find(c => c.localName === etq);
+  let grupos = [...doc.getElementsByTagName("trkseg")].map(s => [...s.children].filter(c => c.localName === "trkpt"));
+  grupos = grupos.filter(g => g.length > 1);
+  if (!grupos.length) grupos = [...doc.getElementsByTagName("rte")].map(s => [...s.children].filter(c => c.localName === "rtept")).filter(g => g.length > 1);
+  if (!grupos.length) throw new Error("el GPX no tiene track");
+  let t0 = null;
+  const lineas = grupos.map(g => g.map(n => {
+    if (t0 === null) { const h = hijo(n, "time"); if (h) t0 = Date.parse(h.textContent.trim()) / 1000; }
+    return [parseFloat(n.getAttribute("lat")), parseFloat(n.getAttribute("lon"))];
+  }));
+  const trk = doc.getElementsByTagName("trk")[0] || doc.getElementsByTagName("rte")[0], md = doc.getElementsByTagName("metadata")[0];
+  const nn = (trk && hijo(trk, "name")) || (md && hijo(md, "name"));
+  return { nombre: nn ? nn.textContent.trim() : nombreFichero.replace(/\.gpx$/i, ""), t0: Number.isNaN(t0) ? null : t0, lineas };
+}
+// Añade puntos para que no haya tramos de más de PASO_M: la comparación se hace por muestras
+function densificar(linea) {
+  const lat = [linea[0][0]], lon = [linea[0][1]], s = [0];
+  for (let k = 1; k < linea.length; k++) {
+    const [la0, lo0] = linea[k - 1], [la1, lo1] = linea[k], d = haversine(la0, lo0, la1, lo1);
+    if (d === 0) continue;
+    const n = Math.max(1, Math.ceil(d / PASO_M));
+    for (let j = 1; j <= n; j++) {
+      lat.push(la0 + (la1 - la0) * j / n); lon.push(lo0 + (lo1 - lo0) * j / n); s.push(s[s.length - 1] + d / n);
+    }
+  }
+  return { lat, lon, s, x: lat.map((_, i) => mercX(lon[i])), y: lat.map(mercY) };
+}
+function buscarEnColeccion(g, nombreFichero) {
+  const fich = normaliza(nombreFichero), nom = normaliza(g.nombre);
+  return RUTAS.find(r => (g.t0 !== null && r.t0 !== null && Math.abs(r.t0 - g.t0) <= 5)
+    || normaliza(r.f) === fich || (g.t0 !== null && normaliza(r.n) === nom));
+}
+async function abrirFichero(f) {
+  const aviso = $("avisoNueva");
+  try {
+    const g = leerGPX(await f.text(), f.name);
+    const propia = buscarEnColeccion(g, f.name);
+    const tramos = g.lineas.map(densificar).filter(t => t.lat.length > 1);
+    if (!tramos.length) throw new Error("el GPX no tiene track");
+    actual = { nombre: g.nombre, tramos, excluida: propia ? propia.i : -1,
+      limites: L.latLngBounds(g.lineas.flat()) };
+    aviso.hidden = !propia; aviso.className = "aviso";
+    if (propia) aviso.textContent = `Ya está en tu colección («${propia.n}»): no se compara consigo misma.`;
+    $("quitarNueva").hidden = false; $("pistaNueva").hidden = true; $("resumenNueva").hidden = false;
+    $("nombreNueva").textContent = g.nombre;
+    $("panelNueva").open = true;
+    compararActual();
+    if (!entradaNueva.activa) entradaNueva.casilla.click();
+    map.fitBounds(actual.limites, { padding: [24, 24] });
+    if (window.matchMedia("(max-width: 800px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (e) {
+    aviso.hidden = false; aviso.className = "aviso error";
+    aviso.textContent = `No se ha podido leer ${f.name}: ${e.message}.`;
+  }
+}
+function compararActual() {
+  if (!actual) return;
+  Indice.construir();
+  const soloVis = $("soloVisibles").checked, permitidas = new Uint8Array(RUTAS.length);
+  for (const r of soloVis ? visibles : RUTAS) if (r.i !== actual.excluida) permitidas[r.i] = 1;
+  const permitida = i => permitidas[i] === 1;
+  for (const t of actual.tramos) {
+    t.dist = new Float32Array(t.x.length);
+    for (let k = 0; k < t.x.length; k++) t.dist[k] = Indice.distancia(t.x[k], t.y[k], permitida);
+  }
+  compararTrails();
+  clasificarActual();
+}
+// Separa en «recorrido» y «nuevo» sin volver a medir distancias: los controles responden al momento
+function clasificarActual() {
+  if (!actual) return;
+  const umbral = +$("umbral").value, minimo = +$("minimo").value;
+  $("umbralVal").textContent = `${umbral} m`; $("minimoVal").textContent = `${minimo} m`;
+  let total = 0, nuevos = 0, base = 0;
+  const trozos = [];
+  for (const t of actual.tramos) {
+    const n = t.lat.length;
+    // Un intervalo es nuevo si alguno de sus extremos queda fuera del umbral
+    const esNuevo = new Uint8Array(n - 1);
+    for (let k = 0; k + 1 < n; k++) esNuevo[k] = t.dist[k] > umbral || t.dist[k + 1] > umbral ? 1 : 0;
+    // Los trozos nuevos cortos pasan a recorridos
+    for (let a = 0; a < n - 1; ) {
+      let b = a;
+      while (b + 1 < n - 1 && esNuevo[b + 1] === esNuevo[a]) b++;
+      if (esNuevo[a] && t.s[b + 1] - t.s[a] < minimo) esNuevo.fill(0, a, b + 1);
+      a = b + 1;
+    }
+    for (let a = 0; a < n - 1; ) {
+      let b = a;
+      while (b + 1 < n - 1 && esNuevo[b + 1] === esNuevo[a]) b++;
+      const pts = [];
+      for (let k = a; k <= b + 1; k++) pts.push([t.lat[k], t.lon[k]]);
+      const metros = t.s[b + 1] - t.s[a];
+      trozos.push({ nuevo: !!esNuevo[a], pts, metros, desde: base + t.s[a], hasta: base + t.s[b + 1] });
+      if (esNuevo[a]) nuevos += metros;
+      a = b + 1;
+    }
+    total += t.s[n - 1];
+    base += t.s[n - 1];
+  }
+  capaNueva.clearLayers();
+  capaNueva.addLayer(marcasNueva);
+  pintarMarcas();
+  const dibujar = (pts, color) => {
+    capaNueva.addLayer(L.polyline(pts, { pane: "encima", color: "#111", weight: 7, opacity: .85, interactive: false }));
+    capaNueva.addLayer(L.polyline(pts, { pane: "encima", color, weight: 4, opacity: 1, interactive: false }));
+  };
+  const css = getComputedStyle(document.documentElement);
+  const cRec = css.getPropertyValue("--recorrido").trim(), cNue = css.getPropertyValue("--nuevo").trim();
+  for (const p of trozos.filter(p => !p.nuevo)) dibujar(p.pts, cRec);
+  for (const p of trozos.filter(p => p.nuevo)) dibujar(p.pts, cNue);
+  $("cifra").textContent = `${km(nuevos / 1000)} km nuevos de ${km(total / 1000)} km`;
+  $("kmRecorridos").textContent = `${km((total - nuevos) / 1000)} km`;
+  const lista = trozos.filter(p => p.nuevo).map(p => {
+    const b = el("button", { textContent: `km ${km(p.desde / 1000)} → ${km(p.hasta / 1000)} (${num(p.metros / 1000, 1)} km)`, title: "Ver este tramo en el mapa" });
+    b.addEventListener("click", () => {
+      map.fitBounds(L.latLngBounds(p.pts), { padding: [60, 60], maxZoom: 17 });
+      if (window.matchMedia("(max-width: 800px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return el("li", {}, b);
+  });
+  $("tramosNuevos").replaceChildren(...lista);
+  pintarTrailsNueva();
+}
+// Flechas de sentido y puntos kilométricos: su densidad depende del zoom y solo se crean las de la zona visible
+const marcasNueva = L.layerGroup();
+const svgFlecha = (ang, trazo, ancho) => `<path d="M3 11 8 5 13 11" fill="none" stroke="${trazo}" stroke-width="${ancho}" stroke-linecap="round" stroke-linejoin="round" transform="rotate(${ang.toFixed(0)} 8 8)"/>`;
+function indiceEn(s, v) {     // primer índice con s[i] >= v
+  let a = 0, b = s.length - 1;
+  while (a < b) { const m = (a + b) >> 1; if (s[m] < v) a = m + 1; else b = m; }
+  return a;
+}
+function pintarMarcas() {
+  marcasNueva.clearLayers();
+  if (!actual) return;
+  const metrosPixel = 156543.03 * Math.cos(actual.tramos[0].lat[0] * Math.PI / 180) / 2 ** map.getZoom();
+  const pasoFlecha = Math.max(50, 90 * metrosPixel);
+  const pasoKm = [1, 2, 5, 10, 20, 50].find(k => k * 1000 / metrosPixel >= 80) ?? 100;
+  const zona = map.getBounds().pad(.3);
+  let base = 0;
+  for (const t of actual.tramos) {
+    const largo = t.s[t.s.length - 1];
+    const primero = paso => Math.ceil(base / paso) * paso;
+    for (let d = primero(pasoFlecha) + pasoFlecha / 2; d < base + largo; d += pasoFlecha) {
+      const s = d - base, i = indiceEn(t.s, s);
+      if (!zona.contains([t.lat[i], t.lon[i]])) continue;
+      const i0 = indiceEn(t.s, s - 15), i1 = indiceEn(t.s, s + 15), dx = t.x[i1] - t.x[i0], dy = t.y[i1] - t.y[i0];
+      if (!dx && !dy) continue;
+      const ang = Math.atan2(dx, -dy) * 180 / Math.PI;
+      marcasNueva.addLayer(L.marker([t.lat[i], t.lon[i]], { interactive: false, keyboard: false, icon: L.divIcon({
+        className: "flecha", iconSize: [16, 16], iconAnchor: [8, 8],
+        html: `<svg width="16" height="16" viewBox="0 0 16 16">${svgFlecha(ang, "#fff", 5)}${svgFlecha(ang, "#111", 2.5)}</svg>` }) }));
+    }
+    const pasoM = pasoKm * 1000;
+    for (let d = Math.max(primero(pasoM), pasoM); d <= base + largo; d += pasoM) {
+      const i = indiceEn(t.s, d - base);
+      if (!zona.contains([t.lat[i], t.lon[i]])) continue;
+      marcasNueva.addLayer(L.marker([t.lat[i], t.lon[i]], { interactive: false, keyboard: false, zIndexOffset: 500, icon: L.divIcon({
+        className: "kmetiq", iconSize: null, iconAnchor: [-7, 9], html: `${Math.round(d / 1000)} km` }) }));
+    }
+    base += largo;
+  }
+}
+map.on("moveend", pintarMarcas);
+function quitarNueva() {
+  actual = null;
+  resaltarTrail(null);
+  $("trailsNueva").hidden = true;
+  marcasNueva.clearLayers();
+  capaNueva.clearLayers();
+  $("resumenNueva").hidden = true; $("avisoNueva").hidden = true;
+  $("quitarNueva").hidden = true; $("pistaNueva").hidden = false;
+  $("fichero").value = "";
+}
+$("fichero").addEventListener("change", () => { if ($("fichero").files[0]) abrirFichero($("fichero").files[0]); });
+$("quitarNueva").addEventListener("click", quitarNueva);
+$("abrirGpx").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("fichero").click(); } });
+const clasificarLuego = retrasado(clasificarActual);
+$("umbral").addEventListener("input", clasificarLuego);
+$("minimo").addEventListener("input", clasificarLuego);
+$("soloVisibles").addEventListener("change", compararActual);
+
+let enArrastre = 0;
+const llevaFichero = e => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+window.addEventListener("dragenter", e => { if (llevaFichero(e)) { enArrastre++; $("caer").hidden = false; } });
+window.addEventListener("dragover", e => { if (llevaFichero(e)) e.preventDefault(); });
+window.addEventListener("dragleave", e => { if (llevaFichero(e) && --enArrastre <= 0) { enArrastre = 0; $("caer").hidden = true; } });
+window.addEventListener("drop", e => {
+  if (!llevaFichero(e)) return;
+  e.preventDefault();
+  enArrastre = 0; $("caer").hidden = true;
+  const ficheros = [...e.dataTransfer.files];
+  if (ficheros.some(f => /\.(kml|json)$/i.test(f.name))) cargarTrails(ficheros);
+  else if (ficheros[0]) abrirFichero(ficheros[0]);
+});
+
+// ---------- Trails de Trailforks ----------
+// Se cargan de los KML (o GPX) descargados de Trailforks y se guardan solo en este navegador (IndexedDB):
+// no viajan con la página publicada. Colores y nombres según la guía de descarga (dificultades_ZONA.json).
+const DIFICULTADES = {
+  dwhite:  { nombre: "Vía verde / acceso", color: "#ffffff", borde: "#333333" },
+  dgreen:  { nombre: "Fácil", color: "#1fa83a" },
+  dblue:   { nombre: "Intermedio", color: "#1565e0" },
+  dred:    { nombre: "Difícil", color: "#e01b1b" },
+  dblack:  { nombre: "Experto", color: "#111111" },
+  dbeige:  { nombre: "Acceso secundario", color: "#d8b67a", borde: "#333333" },
+  dpurple: { nombre: "Acceso a trail", color: "#9c27b0" },
+  unknown: { nombre: "Sin clasificar", color: "#8a8a8a" },
+};
+const difDe = d => DIFICULTADES[d] ? d : "unknown";
+const bordeDe = d => DIFICULTADES[d].borde || "#ffffff";
+let ZONAS = [];    // tal como se guardan: { zona, nombre, fecha, trails: [{ n, d, l: [[[lat, lon], …], …] }] }
+let TRAILS = [];   // preparados: { zona, n, d, tramos: [{ lat, lon, x, y }], x0, x1, y0, y1, km, dens }
+const difOcultas = new Set((prefs.leer().difOcultas || []).filter(d => DIFICULTADES[d]));
+const trailVisible = t => !difOcultas.has(t.d);
+
+const almacen = {
+  db: null,
+  abrir() {
+    return this.db ??= new Promise((ok, mal) => {
+      const p = indexedDB.open("mapaCalorTrails", 1);
+      p.onupgradeneeded = () => p.result.createObjectStore("zonas", { keyPath: "zona" });
+      p.onsuccess = () => ok(p.result);
+      p.onerror = () => mal(p.error);
+    });
+  },
+  async op(modo, fn) {
+    const db = await this.abrir();
+    return new Promise((ok, mal) => {
+      const tx = db.transaction("zonas", modo), pet = fn(tx.objectStore("zonas"));
+      tx.oncomplete = () => ok(pet.result);
+      tx.onerror = tx.onabort = () => mal(tx.error);
+    });
+  },
+  todas() { return this.op("readonly", s => s.getAll()); },
+  guardar(z) { return this.op("readwrite", s => s.put(z)); },
+  borrar(id) { return this.op("readwrite", s => s.delete(id)); },
+};
+
+// «Trailforks_Muskiz-Sopuerta_43_Segmentado.kml» → «Muskiz-Sopuerta»
+const limpiarZona = t => t.replace(/\.(kml|gpx|json)$/i, "").replace(/^(Trailforks|dificultades)[_ ]+/i, "")
+  .replace(/_Segmentado$/i, "").replace(/_\d+$/, "").replace(/_/g, " ").trim() || "Trails";
+const hijoDe = (n, etq) => [...n.children].find(c => c.localName === etq);
+function leerKML(texto, nombreFichero) {
+  const doc = new DOMParser().parseFromString(texto, "application/xml");
+  if (doc.querySelector("parsererror")) throw new Error("no es un KML válido");
+  const porNombre = new Map();
+  for (const pm of doc.getElementsByTagName("Placemark")) {
+    const nombre = (hijoDe(pm, "name")?.textContent || "").trim() || "Sin nombre";
+    const estilo = (hijoDe(pm, "styleUrl")?.textContent || "").trim().replace(/^.*#/, "");
+    const lineas = [...pm.getElementsByTagName("coordinates")].map(c => c.textContent.trim().split(/\s+/).map(p => {
+      const [lo, la] = p.split(",").map(Number);
+      return [la, lo];
+    }).filter(([la, lo]) => Number.isFinite(la) && Number.isFinite(lo))).filter(l => l.length > 1);
+    if (!lineas.length) continue;
+    if (!porNombre.has(nombre)) porNombre.set(nombre, { n: nombre, d: difDe(estilo), l: [] });
+    const t = porNombre.get(nombre);
+    // El KML «Segmentado» parte cada trail en trozos de 300 m: se vuelven a unir si empalman
+    for (const l of lineas) {
+      const ult = t.l[t.l.length - 1], fin = ult && ult[ult.length - 1];
+      if (fin && fin[0] === l[0][0] && fin[1] === l[0][1]) ult.push(...l.slice(1)); else t.l.push(l);
+    }
+  }
+  if (!porNombre.size) throw new Error("no tiene trazados");
+  const nombreDoc = (doc.getElementsByTagName("Document")[0] && hijoDe(doc.getElementsByTagName("Document")[0], "name")?.textContent) || nombreFichero;
+  return { nombre: limpiarZona(nombreDoc.trim()), trails: [...porNombre.values()] };
+}
+
+function prepararTrail(zona, t) {
+  let x0 = 1, x1 = 0, y0 = 1, y1 = 0, m = 0;
+  const tramos = t.l.map(linea => {
+    const lat = linea.map(p => p[0]), lon = linea.map(p => p[1]), x = lon.map(mercX), y = lat.map(mercY);
+    for (let k = 0; k < x.length; k++) {
+      if (x[k] < x0) x0 = x[k]; if (x[k] > x1) x1 = x[k];
+      if (y[k] < y0) y0 = y[k]; if (y[k] > y1) y1 = y[k];
+      if (k) m += haversine(lat[k - 1], lon[k - 1], lat[k], lon[k]);
+    }
+    return { lat, lon, x, y };
+  });
+  return { zona, n: t.n, d: difDe(t.d), tramos, x0, x1, y0, y1, km: m / 1000, dens: null };
+}
+const lineasTrail = t => t.tramos.map(tr => tr.lat.map((la, k) => [la, tr.lon[k]]));
+
+// ---------- Dibujo ----------
+map.createPane("trails").style.zIndex = 380;
+map.getPane("trails").style.pointerEvents = "none";
+const capaTrails = L.layerGroup();
+const lienzoTrails = L.canvas({ pane: "trails", padding: .3 });
+const entradaTrails = registrarCapa("trails", "Trails de Trailforks", capaTrails);
+function dibujarTrails() {
+  capaTrails.clearLayers();
+  const lista = TRAILS.filter(trailVisible);
+  // Primero todos los bordes, para que ninguno tape el color de un trail vecino
+  for (const t of lista) capaTrails.addLayer(L.polyline(lineasTrail(t), { renderer: lienzoTrails, color: bordeDe(t.d), weight: 5.5, opacity: .85, interactive: false }));
+  for (const t of lista) capaTrails.addLayer(L.polyline(lineasTrail(t), { renderer: lienzoTrails, color: DIFICULTADES[t.d].color, weight: 3, opacity: 1, interactive: false }));
+}
+let trailResaltado = null, trailResaltadoObj = null;
+function resaltarTrail(t) {
+  if (trailResaltado) { map.removeLayer(trailResaltado); trailResaltado = null; }
+  trailResaltadoObj = t;
+  if (!t) return;
+  const l = lineasTrail(t);
+  trailResaltado = L.layerGroup([
+    L.polyline(l, { pane: "encima", color: bordeDe(t.d) === "#ffffff" ? "#111111" : "#ffffff", weight: 10, opacity: .95, interactive: false }),
+    L.polyline(l, { pane: "encima", color: DIFICULTADES[t.d].color, weight: 5, opacity: 1, interactive: false }),
+  ]).addTo(map);
+}
+map.on("popupclose", () => { if (trailResaltadoObj && !$("listaTrailsNueva").querySelector("button.sel")) resaltarTrail(null); });
+const puntoTrail = d => {
+  const p = el("span", { className: "punto" + (DIFICULTADES[d].borde ? " conborde" : ""), title: DIFICULTADES[d].nombre });
+  p.style.background = DIFICULTADES[d].color;
+  return p;
+};
+
+// ---------- Clic en el mapa: trails que pasan por ahí ----------
+function trailsEn(x, y, tol, tol2) {
+  if (!entradaTrails.activa) return [];
+  return TRAILS.filter(t => trailVisible(t) && x >= t.x0 - tol && x <= t.x1 + tol && y >= t.y0 - tol && y <= t.y1 + tol
+    && t.tramos.some(tr => {
+      for (let k = 0; k + 1 < tr.x.length; k++) if (distSeg(x, y, tr.x[k], tr.y[k], tr.x[k + 1], tr.y[k + 1]) <= tol2) return true;
+      return false;
+    }));
+}
+function seccionTrailsPopup(lista, caja) {
+  const botones = lista.map(t => {
+    const b = el("button", { title: "Resaltar este trail" }, puntoTrail(t.d), t.n + " ",
+      el("small", { textContent: `${DIFICULTADES[t.d].nombre} · ${km(t.km)} km` }));
+    b.addEventListener("click", () => {
+      const ya = b.classList.contains("sel");
+      caja.querySelectorAll("button.sel").forEach(o => o.classList.remove("sel"));
+      resaltar(null);
+      resaltarTrail(ya ? null : t);
+      if (!ya) b.classList.add("sel");
+    });
+    return el("li", {}, b);
+  });
+  return [el("h3", { textContent: lista.length === 1 ? "Trail de Trailforks" : `${lista.length} trails de Trailforks` }), el("ul", {}, ...botones)];
+}
+
+// ---------- Panel: zonas cargadas y filtro por dificultad ----------
+function pintarPanelTrails() {
+  $("tituloTrails").textContent = TRAILS.length ? `Trails de Trailforks (${num(TRAILS.length)})` : "Trails de Trailforks";
+  const zonas = ZONAS.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, "es")).map(z => {
+    const quitar = el("button", { textContent: "Quitar", title: `Borrar ${z.nombre} de este navegador` });
+    quitar.addEventListener("click", async () => {
+      ZONAS = ZONAS.filter(o => o.zona !== z.zona);
+      try { await almacen.borrar(z.zona); } catch {}
+      reconstruirTrails();
+    });
+    return el("li", {}, el("span", {}, z.nombre + " ", el("small", { textContent: `${num(z.trails.length)} trails` })), quitar);
+  });
+  $("zonasTrails").replaceChildren(...zonas);
+  const cuenta = {};
+  for (const t of TRAILS) cuenta[t.d] = (cuenta[t.d] || 0) + 1;
+  const difs = Object.keys(DIFICULTADES).filter(d => cuenta[d]).map(d => {
+    const c = el("input", { type: "checkbox", checked: !difOcultas.has(d) });
+    c.addEventListener("change", () => {
+      if (c.checked) difOcultas.delete(d); else difOcultas.add(d);
+      prefs.guardar({ difOcultas: [...difOcultas] });
+      dibujarTrails(); pintarTrailsNueva();
+    });
+    const raya = el("span", { className: "raya" });
+    raya.style.background = DIFICULTADES[d].color;
+    return el("label", { className: "casilla" }, c, raya, DIFICULTADES[d].nombre + " ", el("small", { textContent: num(cuenta[d]) }));
+  });
+  $("difsTrails").replaceChildren(...difs);
+}
+function reconstruirTrails() {
+  TRAILS = ZONAS.flatMap(z => z.trails.map(t => prepararTrail(z.zona, t)));
+  if (trailResaltadoObj) resaltarTrail(null);
+  pintarPanelTrails();
+  dibujarTrails();
+  if (actual) { compararTrails(); pintarTrailsNueva(); }
+}
+async function cargarTrails(ficheros) {
+  const aviso = $("avisoTrails"), errores = [], nuevas = [], sueltos = [];
+  let dificultades = {}, nombreJson = null;
+  for (const f of ficheros.filter(f => /\.json$/i.test(f.name))) {
+    try { dificultades = { ...dificultades, ...JSON.parse(await f.text()) }; nombreJson ??= f.name; }
+    catch { errores.push(`${f.name} (no es un JSON válido)`); }
+  }
+  for (const f of ficheros) {
+    try {
+      if (/\.kml$/i.test(f.name)) nuevas.push(leerKML(await f.text(), f.name));
+      else if (/\.gpx$/i.test(f.name)) {
+        const g = leerGPX(await f.text(), f.name);
+        sueltos.push({ n: g.nombre, d: difDe(dificultades[g.nombre]), l: g.lineas });
+      } else if (!/\.json$/i.test(f.name)) errores.push(`${f.name} (solo se admiten KML, GPX y JSON)`);
+    } catch (e) { errores.push(`${f.name} (${e.message})`); }
+  }
+  if (sueltos.length) nuevas.push({ nombre: nombreJson ? limpiarZona(nombreJson) : "GPX sueltos", trails: sueltos });
+  let sinGuardar = false, total = 0;
+  for (const n of nuevas) {
+    const z = { zona: normaliza(n.nombre), nombre: n.nombre, fecha: Date.now(), trails: n.trails };
+    ZONAS = ZONAS.filter(o => o.zona !== z.zona).concat(z);
+    total += z.trails.length;
+    try { await almacen.guardar(z); } catch { sinGuardar = true; }
+  }
+  $("ficheroTrails").value = "";
+  const partes = [];
+  if (nuevas.length) partes.push(`Cargados ${num(total)} trails de ${nuevas.map(n => n.nombre).join(", ")}.`);
+  if (sinGuardar) partes.push("No se han podido guardar en este navegador: al recargar la página habrá que cargarlos otra vez.");
+  if (errores.length) partes.push(`No se ha podido leer: ${errores.join("; ")}.`);
+  if (!nuevas.length && !errores.length) partes.push("No había ningún KML ni GPX entre los ficheros elegidos.");
+  aviso.textContent = partes.join(" ");
+  aviso.className = "aviso" + (errores.length || sinGuardar || !nuevas.length ? " error" : "");
+  aviso.hidden = false;
+  $("panelTrails").open = true;
+  if (!nuevas.length) return;
+  reconstruirTrails();
+  if (!entradaTrails.activa) entradaTrails.casilla.click();
+}
+$("ficheroTrails").addEventListener("change", () => { if ($("ficheroTrails").files.length) cargarTrails([...$("ficheroTrails").files]); });
+$("abrirTrails").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("ficheroTrails").click(); } });
+
+// ---------- Ruta nueva: qué trails recorre y cuánto ----------
+// Índice en rejilla de la ruta nueva (sus tramos ya vienen densificados cada 10 m)
+function indiceDeLineas(tramos) {
+  const c = Indice.CELDA, celdas = new Map(), sx1 = [], sy1 = [], sx2 = [], sy2 = [];
+  for (const t of tramos) for (let k = 0; k + 1 < t.x.length; k++) {
+    const id = sx1.length;
+    sx1.push(t.x[k]); sy1.push(t.y[k]); sx2.push(t.x[k + 1]); sy2.push(t.y[k + 1]);
+    for (const [x, y] of [[t.x[k], t.y[k]], [t.x[k + 1], t.y[k + 1]]]) {
+      const cl = Indice.clave(Math.floor(x / c), Math.floor(y / c)), lista = celdas.get(cl);
+      if (!lista) celdas.set(cl, [id]); else if (lista[lista.length - 1] !== id) lista.push(id);
+    }
+  }
+  return (x, y) => {
+    const ix = Math.floor(x / c), iy = Math.floor(y / c);
+    let mejor = Infinity;
+    for (let a = ix - 1; a <= ix + 1; a++) for (let b = iy - 1; b <= iy + 1; b++) {
+      const lista = celdas.get(Indice.clave(a, b));
+      if (lista) for (const id of lista) {
+        const d = distSeg(x, y, sx1[id], sy1[id], sx2[id], sy2[id]);
+        if (d < mejor) mejor = d;
+      }
+    }
+    return mejor === Infinity ? Infinity : Math.sqrt(mejor) * C_TIERRA * cosDeMercY(y);
+  };
+}
+// Distancia de cada muestra (cada 10 m) de los trails cercanos a la ruta nueva; se mide una vez por ruta
+function compararTrails() {
+  if (!actual) return;
+  actual.trails = [];
+  if (!TRAILS.length) return;
+  const distancia = indiceDeLineas(actual.tramos), margen = 6e-6;   // ~150 m, más que el umbral máximo
+  let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+  for (const t of actual.tramos) for (let k = 0; k < t.x.length; k++) {
+    if (t.x[k] < x0) x0 = t.x[k]; if (t.x[k] > x1) x1 = t.x[k];
+    if (t.y[k] < y0) y0 = t.y[k]; if (t.y[k] > y1) y1 = t.y[k];
+  }
+  for (const t of TRAILS) {
+    if (t.x1 < x0 - margen || t.x0 > x1 + margen || t.y1 < y0 - margen || t.y0 > y1 + margen) continue;
+    t.dens ??= t.tramos.map(tr => densificar(tr.lat.map((la, k) => [la, tr.lon[k]]))).filter(d => d.lat.length > 1);
+    const dist = t.dens.map(d => Float32Array.from(d.x, (x, k) => distancia(x, d.y[k])));
+    if (dist.some(a => a.some(v => v <= 100))) actual.trails.push({ t, dist });
+  }
+}
+function pintarTrailsNueva() {
+  const caja = $("trailsNueva");
+  if (!actual || !actual.trails || !TRAILS.length) { caja.hidden = true; return; }
+  const umbral = +$("umbral").value;
+  // Un tramo cubierto cuenta si es más largo que un simple cruce (o si es casi todo el trail)
+  const minTramo = Math.max(60, 2 * umbral + 20);
+  const res = [];
+  for (const { t, dist } of actual.trails) {
+    if (!trailVisible(t)) continue;
+    let total = 0, cubierto = 0;
+    t.dens.forEach((d, j) => {
+      const a = dist[j], n = d.s.length, largo = d.s[n - 1], dentro = k => a[k] <= umbral && a[k + 1] <= umbral;
+      total += largo;
+      for (let i = 0; i < n - 1; ) {
+        if (!dentro(i)) { i++; continue; }
+        let b = i;
+        while (b + 1 < n - 1 && dentro(b + 1)) b++;
+        const m = d.s[b + 1] - d.s[i];
+        if (m >= minTramo || m >= largo * .9) cubierto += m;
+        i = b + 1;
+      }
+    });
+    if (cubierto > 0 && total > 0) res.push({ t, total, cubierto, pct: Math.min(1, cubierto / total) });
+  }
+  res.sort((a, b) => b.pct - a.pct || b.cubierto - a.cubierto);
+  const completos = res.filter(r => r.pct >= .9).length;
+  $("trailsNuevaRes").textContent = !res.length ? "ninguno" : `${res.length} ${res.length === 1 ? "trail" : "trails"} · ${completos} ${completos === 1 ? "completo" : "completos"}`;
+  const items = res.map(({ t, total, cubierto, pct }) => {
+    const detalle = pct >= .9 ? `completo · ${km(total / 1000)} km` : `${Math.round(pct * 100)} % · ${num(cubierto / 1000, 1)} de ${num(total / 1000, 1)} km`;
+    const b = el("button", { title: `${DIFICULTADES[t.d].nombre}. Pulsa para verlo en el mapa` }, puntoTrail(t.d), t.n + " ", el("small", { textContent: detalle }));
+    if (trailResaltadoObj === t) b.classList.add("sel");
+    b.addEventListener("click", () => {
+      const ya = b.classList.contains("sel");
+      $("listaTrailsNueva").querySelectorAll("button.sel").forEach(o => o.classList.remove("sel"));
+      resaltarTrail(ya ? null : t);
+      if (ya) return;
+      b.classList.add("sel");
+      map.fitBounds(L.latLngBounds(lineasTrail(t).flat()), { padding: [60, 60], maxZoom: 17 });
+      if (window.matchMedia("(max-width: 800px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return el("li", {}, b);
+  });
+  $("listaTrailsNueva").replaceChildren(...(items.length ? items : [el("li", { className: "suave", textContent: "No pasa por ningún trail cargado." })]));
+  caja.hidden = false;
+}
+
+async function iniciarTrails() {
+  try { ZONAS = (await almacen.todas()) || []; }
+  catch {
+    $("avisoTrails").textContent = "Este navegador no permite guardar los trails: habrá que cargarlos cada vez.";
+    $("avisoTrails").className = "aviso error"; $("avisoTrails").hidden = false;
+  }
+  reconstruirTrails();
+}
+
+// ---------- Arranque ----------
+if (window.matchMedia("(max-width: 800px)").matches) $("panelAspecto").open = false;
+$("generado").textContent = `Generado el ${META.generado} con ${RUTAS.length} rutas. Para añadir las nuevas: Actualizar mapa.bat`;
+recalcular();
+iniciarTrails();
+</script>
+</body>
+</html>
