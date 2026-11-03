@@ -191,6 +191,7 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
       <div class="fila-botones">
         <label class="boton principal" id="abrirGpx" tabindex="0">Abrir GPX<input id="fichero" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden></label>
         <button id="quitarNueva" hidden>Quitar</button>
+        <button id="girosNueva" hidden title="Abre Giros OruxMaps con esta misma ruta (funciona desde la web, no con el fichero abierto en el PC)">Preparar giros</button>
         <span id="pistaNueva" class="suave">o arrástralo al mapa</span>
       </div>
       <div id="avisoNueva" class="aviso" role="status" hidden></div>
@@ -952,15 +953,15 @@ function buscarEnColeccion(g, nombreFichero) {
 async function abrirFichero(f) {
   const aviso = $("avisoNueva");
   try {
-    const g = leerGPX(await f.text(), f.name);
+    const texto = await f.text(), g = leerGPX(texto, f.name);
     const propia = buscarEnColeccion(g, f.name);
     const tramos = g.lineas.map(densificar).filter(t => t.lat.length > 1);
     if (!tramos.length) throw new Error("el GPX no tiene track");
-    actual = { nombre: g.nombre, tramos, excluida: propia ? propia.i : -1,
+    actual = { nombre: g.nombre, tramos, excluida: propia ? propia.i : -1, gpx: { nombre: f.name, texto },
       limites: L.latLngBounds(g.lineas.flat()) };
     aviso.hidden = !propia; aviso.className = "aviso";
     if (propia) aviso.textContent = `Ya está en tu colección («${propia.n}»): no se compara consigo misma.`;
-    $("quitarNueva").hidden = false; $("pistaNueva").hidden = true; $("resumenNueva").hidden = false;
+    $("quitarNueva").hidden = $("girosNueva").hidden = false; $("pistaNueva").hidden = true; $("resumenNueva").hidden = false;
     $("nombreNueva").textContent = g.nombre;
     $("panelNueva").open = true;
     compararActual();
@@ -1088,7 +1089,7 @@ function quitarNueva() {
   marcasNueva.clearLayers();
   capaNueva.clearLayers();
   $("resumenNueva").hidden = true; $("avisoNueva").hidden = true;
-  $("quitarNueva").hidden = true; $("pistaNueva").hidden = false;
+  $("quitarNueva").hidden = $("girosNueva").hidden = true; $("pistaNueva").hidden = false;
   $("fichero").value = "";
 }
 $("fichero").addEventListener("change", () => { if ($("fichero").files[0]) abrirFichero($("fichero").files[0]); });
@@ -1882,6 +1883,32 @@ for (const id of ["trailsNueva", "capasNueva"]) {
   d.open = !(prefs.leer().plegados || {})[id];
   d.addEventListener("toggle", () => prefs.guardar({ plegados: { ...(prefs.leer().plegados || {}), [id]: !d.open } }));
 }
+
+// ---------- Preparar giros: abre Giros OruxMaps con la ruta nueva ----------
+// Las dos páginas están en la misma web y comparten el almacén del navegador: el GPX se deja ahí y Giros lo recoge.
+async function prepararGiros() {
+  if (!actual || !actual.gpx) return;
+  const url = "Giros%20OruxMaps.html#desde-mapa";
+  try {
+    const db = await new Promise((ok, mal) => {
+      const p = indexedDB.open("mapaCalorIntercambio", 1);
+      p.onupgradeneeded = () => p.result.createObjectStore("ficheros", { keyPath: "id" });
+      p.onsuccess = () => ok(p.result); p.onerror = () => mal(p.error);
+    });
+    await new Promise((ok, mal) => {
+      const tx = db.transaction("ficheros", "readwrite");
+      tx.objectStore("ficheros").put({ id: "giros", nombre: actual.gpx.nombre, texto: actual.gpx.texto, fecha: Date.now() });
+      tx.oncomplete = ok; tx.onerror = tx.onabort = () => mal(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    $("avisoNueva").hidden = false; $("avisoNueva").className = "aviso error";
+    $("avisoNueva").textContent = `No se ha podido pasar la ruta a Giros OruxMaps: ${e.message}. Ábrela allí con «Abrir GPX».`;
+    return;
+  }
+  if (!window.open(url, "_blank")) location.href = url;
+}
+$("girosNueva").addEventListener("click", prepararGiros);
 
 // ---------- Arranque ----------
 if (window.matchMedia("(max-width: 800px)").matches) $("panelAspecto").open = false;

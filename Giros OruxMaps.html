@@ -129,6 +129,7 @@ dialog p { margin: 0 0 10px; color: var(--suave); }
   <button id="generar" disabled>Generar giros</button>
   <button id="addGiro" disabled>+ Giro</button>
   <button id="addPoi" disabled>+ POI</button>
+  <button id="addTrails" disabled title="Añade un POI al entrar en cada trail de Trailforks guardado en Mapa de calor">+ Trails</button>
   <button id="deshacer" disabled title="Ctrl+Z">Deshacer</button>
   <button id="descargar" class="principal" disabled>Descargar GPX</button>
   <span id="nombre"></span>
@@ -577,7 +578,7 @@ async function abrirFichero(f) {
     Object.assign(est, { texto, nombre: f.name, track, giros, pois, sel: null, pestana: "giros", modo: null, cambios: false, deshacer: [] });
     $("nombre").textContent = f.name;
     $("caer").classList.add("oculto");
-    ["generar", "addGiro", "addPoi", "descargar"].forEach(i => $(i).disabled = false);
+    ["generar", "addGiro", "addPoi", "addTrails", "descargar"].forEach(i => $(i).disabled = false);
     aviso(giros.length ? `El GPX ya trae ${giros.length} giros: puedes revisarlos o generar otros.` : "Pulsa «Generar giros» para calcularlos, o añádelos a mano.");
     prepararPerfil();
     if (mapa) mapa.invalidateSize(false);
@@ -1232,6 +1233,125 @@ window.addEventListener("drop", e => {
   if (est.track) caer.classList.add("oculto");
   if (e.dataTransfer.files[0]) abrirFichero(e.dataTransfer.files[0]);
 });
+
+// ---------- Trails de Trailforks guardados por Mapa de calor ----------
+// Las dos páginas están en la misma web, así que comparten el almacén del navegador (solo desde la web,
+// no con los ficheros abiertos en el PC). Se respetan las zonas y dificultades ocultas en Mapa de calor.
+function abrirBD(nombre, almacen, clave) {
+  return new Promise((ok, mal) => {
+    const p = indexedDB.open(nombre, 1);
+    p.onupgradeneeded = () => p.result.createObjectStore(almacen, { keyPath: clave });
+    p.onsuccess = () => ok(p.result); p.onerror = () => mal(p.error);
+  });
+}
+async function usarBD(nombre, almacen, clave, fn) {
+  const db = await abrirBD(nombre, almacen, clave);
+  try {
+    return await new Promise((ok, mal) => {
+      const tx = db.transaction(almacen, "readwrite"), pet = fn(tx.objectStore(almacen));
+      tx.oncomplete = () => ok(pet.result); tx.onerror = tx.onabort = () => mal(tx.error);
+    });
+  } finally { db.close(); }
+}
+const NOMBRES_DIF = { dwhite: "Vía verde / acceso", dgreen: "Fácil", dblue: "Intermedio", dred: "Difícil", dblack: "Experto", dbeige: "Acceso secundario", dpurple: "Acceso a trail" };
+async function trailsGuardados() {
+  const zonas = (await usarBD("mapaCalorTrails", "zonas", "zona", s => s.getAll())) || [];
+  let pref = {};
+  try { pref = JSON.parse(localStorage.getItem("mapaCalor") || "{}"); } catch (e) {}
+  const zOcultas = new Set(pref.zonasOcultas || []), dOcultas = new Set(pref.difOcultas || []), res = [];
+  for (const z of zonas) {
+    // Solo las zonas de Trailforks (las que tienen dificultades), no las capas de My Maps
+    if (zOcultas.has(z.zona) || !z.trails.some(t => NOMBRES_DIF[t.d])) continue;
+    for (const t of z.trails) if (!t.p && !dOcultas.has(t.d)) res.push({ n: t.n, d: t.d, l: t.l, zona: z.nombre });
+  }
+  return res;
+}
+function distSeg2(c, a, b) {      // distancia al cuadrado de c al segmento ab (metros locales)
+  const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy;
+  const t = l ? Math.max(0, Math.min(1, ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / l)) : 0;
+  const x = a[0] + t * dx - c[0], y = a[1] + t * dy - c[1];
+  return x * x + y * y;
+}
+// Dónde entra la ruta en cada trail: tramos seguidos de la ruta (cada 10 m) cuyo trail más cercano,
+// a menos de 25 m, es el mismo. Se ignoran los cruces y roces cortos.
+function entradasEnTrails(trails, track) {
+  const U = 25, PASO = 10, CEL = 50, MIN = 60, UNIR = 150, xy = GirosOSM.xy, lat0 = track.lat0;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const q of track.xs) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+  x0 -= 100; x1 += 100; y0 -= 100; y1 += 100;
+  const segs = [], rej = new Map(), clave = (a, b) => a + "," + b;
+  trails.forEach((t, it) => {
+    const lineas = t.l.map(l => l.map(p => xy(p[0], p[1], lat0)));
+    t.largo = 0;
+    if (!lineas.some(l => l.some(q => q[0] > x0 && q[0] < x1 && q[1] > y0 && q[1] < y1))) return;
+    for (const l of lineas) for (let k = 0; k + 1 < l.length; k++) {
+      const a = l[k], b = l[k + 1], id = segs.length;
+      t.largo += GirosOSM.dist(a, b);
+      segs.push([a, b, it]);
+      for (let cx = Math.floor(Math.min(a[0], b[0]) / CEL); cx <= Math.floor(Math.max(a[0], b[0]) / CEL); cx++)
+        for (let cy = Math.floor(Math.min(a[1], b[1]) / CEL); cy <= Math.floor(Math.max(a[1], b[1]) / CEL); cy++) {
+          const k2 = clave(cx, cy);
+          if (!rej.has(k2)) rej.set(k2, []);
+          rej.get(k2).push(id);
+        }
+    }
+  });
+  const cercano = q => {
+    const cx = Math.floor(q[0] / CEL), cy = Math.floor(q[1] / CEL);
+    let m = -1, md = U * U;
+    for (let a = cx - 1; a <= cx + 1; a++) for (let b = cy - 1; b <= cy + 1; b++)
+      for (const id of rej.get(clave(a, b)) || []) { const d = distSeg2(q, segs[id][0], segs[id][1]); if (d <= md) { md = d; m = segs[id][2]; } }
+    return m;
+  };
+  const tramos = [];
+  for (let s = 0; s <= track.total; s += PASO) {
+    const it = cercano(track.en(s));
+    if (it < 0) continue;
+    const u = tramos[tramos.length - 1];
+    if (u && u.it === it && s - u.fin <= 2 * PASO) u.fin = s; else tramos.push({ it, ini: s, fin: s });
+  }
+  const validos = [];
+  for (const r of tramos) {
+    if (r.fin - r.ini < Math.min(MIN, .9 * trails[r.it].largo)) continue;
+    const u = validos[validos.length - 1];
+    if (u && u.it === r.it && r.ini - u.fin <= UNIR) u.fin = r.fin; else validos.push({ ...r });
+  }
+  return validos.map(r => ({ s: r.ini, t: trails[r.it], metros: r.fin - r.ini }));
+}
+async function anadirTrails() {
+  if (!est.track) return;
+  let trails;
+  try { trails = await trailsGuardados(); }
+  catch (e) { aviso("No se pueden leer los trails guardados: " + e.message, true); return; }
+  if (!trails.length) {
+    aviso("No hay trails de Trailforks guardados en este navegador. Cárgalos en Mapa de calor (abierto desde esta misma web) y vuelve a probar.", true);
+    return;
+  }
+  const entradas = entradasEnTrails(trails, est.track), lat0 = est.track.lat0, nuevos = [];
+  for (const e of entradas) {
+    const [lat, lon] = est.track.latlon(e.s), nombre = `Trail: ${e.t.n}`, q = GirosOSM.xy(lat, lon, lat0);
+    if (est.pois.some(p => p.nombre === nombre && GirosOSM.dist(GirosOSM.xy(p.lat, p.lon, lat0), q) < 50)) continue;
+    const desc = `Km ${fmtNum(e.s / 1000, 1)} de la ruta. ${NOMBRES_DIF[e.t.d] || "Sin clasificar"} · ${fmtNum(e.t.largo / 1000, 1)} km de trail · ${e.t.zona}`;
+    nuevos.push({ id: sigId++, lat, lon, ele: est.track.ele(e.s) || "", nombre, desc, raw: null, editado: true });
+  }
+  if (!nuevos.length) { aviso(entradas.length ? "Los POIs de los trails ya estaban añadidos." : "La ruta no pasa por ningún trail guardado.", !entradas.length); return; }
+  guardarEstado();
+  est.pois.push(...nuevos);
+  est.pestana = "pois";
+  pintar();
+  aviso(`Añadidos ${nuevos.length} POIs, uno al entrar en cada trail de Trailforks.`);
+}
+$("addTrails").onclick = anadirTrails;
+
+// Abierto desde Mapa de calor («Preparar giros»): recoge la ruta que dejó allí
+if (location.hash === "#desde-mapa") {
+  history.replaceState(null, "", location.pathname + location.search);
+  usarBD("mapaCalorIntercambio", "ficheros", "id", s => s.get("giros")).then(r => {
+    if (!r) { aviso("No ha llegado la ruta desde Mapa de calor: ábrela con «Abrir GPX».", true); return; }
+    usarBD("mapaCalorIntercambio", "ficheros", "id", s => s.delete("giros")).catch(() => {});
+    abrirFichero({ name: r.nombre, text: async () => r.texto });
+  }).catch(e => aviso("No se puede recibir la ruta desde Mapa de calor: " + e.message, true));
+}
 </script>
 </body>
 </html>
