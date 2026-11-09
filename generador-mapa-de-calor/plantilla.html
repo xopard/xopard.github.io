@@ -96,6 +96,8 @@ input[type=color] { width: 40px; height: 28px; padding: 1px; background: var(--p
 /* Mapa de calor de Strava */
 #ajustesStrava { margin-top: 6px; }
 #ajustesStrava .fila-botones select { flex: 1 1 40%; min-width: 0; }
+.bloque-orux { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--borde); }
+.bloque-orux .etiqueta:first-child { margin-top: 0; }
 
 /* Trails de Trailforks */
 #trailsNueva, #capasNueva { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--borde); }
@@ -298,6 +300,21 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
         <label class="etiqueta" for="stravaAlfa"><span>Intensidad</span><span id="stravaAlfaVal"></span></label>
         <input id="stravaAlfa" class="simple" type="range" min="10" max="100" step="5">
         <p class="nota">Necesita la extensión <a href="https://github.com/xopard/xopard.github.io/tree/main/extension-strava-heatmap" target="_blank" rel="noopener">«Mapa de calor: capa de Strava»</a> en Chrome o Edge del PC (instrucciones en el enlace) y haber entrado en <a href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">strava.com/maps/global-heatmap</a> con tu cuenta. Solo desde la web, no con la página abierta como fichero.</p>
+        <div class="bloque-orux">
+          <div class="etiqueta"><b>Llevar a OruxMaps</b></div>
+          <label class="etiqueta" for="oruxZona"><span>Zona a descargar (zooms 10 a 15)</span></label>
+          <select id="oruxZona" style="width: 100%; margin-top: 4px">
+            <option value="vista">Lo que se ve ahora en el mapa</option>
+            <option value="rutas">La zona de las rutas visibles</option>
+          </select>
+          <p class="nota" id="oruxCalculo"></p>
+          <div class="fila-botones">
+            <button id="oruxDescargar">Descargar para OruxMaps (MBTiles)</button>
+            <button id="oruxCancelar" hidden>Cancelar</button>
+          </div>
+          <div id="oruxProgreso" class="aviso" role="status" hidden></div>
+          <p class="nota">En el móvil: copia el fichero, añádelo en OruxMaps como mapa offline («Otras fuentes») y crea un «Mapa compuesto» con tu mapa base debajo y este encima, con transparencia. Usa la actividad y el color elegidos arriba.</p>
+        </div>
         <div id="avisoStrava" class="aviso" role="status" hidden></div>
       </details>
       <div class="etiqueta"><span>Color general</span></div>
@@ -1879,6 +1896,7 @@ function pintarExportar() {
   const n = visibles.length;
   $("exportarRutas").textContent = n === 1 ? "Rutas: 1 (KMZ)" : `Rutas: ${num(n)} (KMZ)`;
   $("exportarRutas").disabled = $("exportarCalor").disabled = !n;
+  if ($("ajustesStrava").open && !descargaOrux) pintarCalculoOrux();
 }
 async function exportar(tipo) {
   const aviso = $("avisoExportar"), botones = [$("exportarRutas"), $("exportarCalor")];
@@ -1945,6 +1963,114 @@ $("stravaColor").addEventListener("change", () => { STRAVA.color = $("stravaColo
 $("stravaAlfa").addEventListener("input", () => { STRAVA.alfa = $("stravaAlfa").value / 100; aplicarStrava(); });
 entradaStrava.casilla.addEventListener("change", avisarStrava);
 aplicarStrava();
+
+// ---------- Llevar el mapa de calor de Strava a OruxMaps (MBTiles) ----------
+// Con la extensión activa la página puede leer las teselas: se descargan las de la zona elegida y se
+// empaquetan en un MBTiles (SQLite, con sql.js) para usarlo offline en OruxMaps como mapa superpuesto.
+const ORUX = { zmin: 10, zmax: 15, maxTeselas: 15000, kbTesela: 8 };
+const teselaX = (lon, z) => Math.min(2 ** z - 1, Math.max(0, Math.floor((lon + 180) / 360 * 2 ** z)));
+const teselaY = (lat, z) => Math.min(2 ** z - 1, Math.max(0, Math.floor(mercY(Math.max(-85, Math.min(85, lat))) * 2 ** z)));
+const zonaOrux = () => $("oruxZona").value === "rutas" ? limitesDe(visibles) : map.getBounds();
+function rangosOrux(b) {
+  const r = [];
+  for (let z = ORUX.zmin; z <= ORUX.zmax; z++)
+    r.push({ z, x0: teselaX(b.getWest(), z), x1: teselaX(b.getEast(), z), y0: teselaY(b.getNorth(), z), y1: teselaY(b.getSouth(), z) });
+  return r;
+}
+const cuentaOrux = rangos => rangos.reduce((s, r) => s + (r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1), 0);
+function pintarCalculoOrux() {
+  const b = zonaOrux(), nota = $("oruxCalculo");
+  if (!b) { nota.textContent = "No hay rutas visibles."; $("oruxDescargar").disabled = true; return; }
+  const n = cuentaOrux(rangosOrux(b)), grande = n > ORUX.maxTeselas;
+  nota.textContent = grande
+    ? `Zona demasiado grande: ${num(n)} teselas (máximo ${num(ORUX.maxTeselas)}). Acerca el mapa o filtra las rutas.`
+    : `${num(n)} teselas, unos ${num(Math.max(1, n * ORUX.kbTesela / 1000))} MB (depende de cuántos caminos haya).`;
+  $("oruxDescargar").disabled = grande || !!descargaOrux;
+}
+let sqlJs = null;
+function cargarSqlJs() {
+  return sqlJs ??= new Promise((ok, mal) => {
+    const base = "https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/", s = document.createElement("script");
+    s.src = base + "sql-wasm.js";
+    s.onload = () => initSqlJs({ locateFile: f => base + f }).then(ok, mal);
+    s.onerror = () => { sqlJs = null; mal(new Error("no se ha podido cargar la librería sql.js (¿sin conexión?)")); };
+    document.head.append(s);
+  });
+}
+let descargaOrux = null;
+async function descargarOrux() {
+  const b = zonaOrux();
+  if (!b) return;
+  const lista = rangosOrux(b).flatMap(r => {
+    const t = [];
+    for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) t.push([r.z, x, y]);
+    return t;
+  });
+  if (!lista.length || lista.length > ORUX.maxTeselas) return;
+  const ctrl = descargaOrux = new AbortController(), aviso = $("oruxProgreso");
+  $("oruxDescargar").disabled = true; $("oruxCancelar").hidden = false;
+  aviso.hidden = false; aviso.className = "aviso";
+  const datos = new Array(lista.length), base = `https://content-a.strava.com/identified/globalheat/${STRAVA.act}/${STRAVA.color}/`;
+  let sig = 0, hechas = 0, bytes = 0, fallos = 0, sinSesion = false;
+  const pintar = () => { aviso.textContent = `Descargando teselas de Strava: ${num(hechas)} de ${num(lista.length)} (${num(bytes / 1e6, 1)} MB)…`; };
+  async function trabajador() {
+    while (sig < lista.length && !ctrl.signal.aborted && !sinSesion) {
+      const i = sig++, [z, x, y] = lista[i];
+      for (let intento = 0; intento < 3; intento++) {
+        try {
+          const r = await fetch(`${base}${z}/${x}/${y}.png?v=19`, { signal: ctrl.signal });
+          if (r.status === 401 || r.status === 403) { sinSesion = true; break; }
+          if (r.ok) { const d = new Uint8Array(await r.arrayBuffer()); if (d.length) { datos[i] = d; bytes += d.length; } }
+          break;       // 404 y similares: no hay datos en esa tesela
+        } catch (e) {
+          if (ctrl.signal.aborted) return;
+          if (intento === 2) fallos++; else await new Promise(r => setTimeout(r, 600 * (intento + 1)));
+        }
+      }
+      if (++hechas % 25 === 0) pintar();
+    }
+  }
+  pintar();
+  await Promise.all(Array.from({ length: 6 }, trabajador));
+  try {
+    if (ctrl.signal.aborted) throw new Error("cancelado");
+    const n = datos.filter(Boolean).length;
+    if (sinSesion || !n) throw new Error("Strava no deja descargar las teselas. Comprueba que la extensión está instalada y con sesión (su icono sin «!») y que abres la página desde la web.");
+    aviso.textContent = `Empaquetando ${num(n)} teselas…`;
+    const SQL = await cargarSqlJs(), db = new SQL.Database(), fecha = fechaFichero();
+    db.run("CREATE TABLE metadata (name TEXT, value TEXT); CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB);"
+      + " CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row);");
+    const meta = { name: `Strava ${$("stravaAct").selectedOptions[0].textContent} ${fecha}`, type: "overlay", version: "1.1",
+      description: "Mapa de calor global de Strava", format: "png", minzoom: String(ORUX.zmin), maxzoom: String(ORUX.zmax),
+      bounds: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(5)).join(","),
+      center: `${b.getCenter().lng.toFixed(5)},${b.getCenter().lat.toFixed(5)},${ORUX.zmin + 2}`, attribution: "© Strava" };
+    const pm = db.prepare("INSERT INTO metadata VALUES (?, ?)");
+    for (const kv of Object.entries(meta)) pm.run(kv);
+    pm.free();
+    db.run("BEGIN");
+    const pt = db.prepare("INSERT INTO tiles VALUES (?, ?, ?, ?)");
+    lista.forEach(([z, x, y], i) => { if (datos[i]) pt.run([z, x, 2 ** z - 1 - y, datos[i]]); });    // MBTiles cuenta las filas desde el sur
+    pt.free();
+    db.run("COMMIT");
+    const bin = db.export();
+    db.close();
+    const nombre = `Strava_Calor_${STRAVA.act.replace(/^sport_/, "")}_${fecha}.mbtiles`;
+    descargar(new Blob([bin], { type: "application/vnd.sqlite3" }), nombre);
+    aviso.textContent = `Descargado ${nombre} (${num(bin.length / 1e6, 1)} MB, ${num(n)} teselas con datos).` + (fallos ? ` ${num(fallos)} teselas no se pudieron descargar.` : "");
+  } catch (e) {
+    aviso.className = "aviso error";
+    aviso.textContent = e.message === "cancelado" ? "Descarga cancelada." : `No se ha podido preparar el MBTiles: ${e.message}`;
+  }
+  descargaOrux = null;
+  $("oruxCancelar").hidden = true;
+  pintarCalculoOrux();
+}
+$("oruxDescargar").addEventListener("click", descargarOrux);
+$("oruxCancelar").addEventListener("click", () => { if (descargaOrux) descargaOrux.abort(); });
+$("oruxZona").addEventListener("change", pintarCalculoOrux);
+$("ajustesStrava").addEventListener("toggle", () => { if ($("ajustesStrava").open) pintarCalculoOrux(); });
+map.on("moveend", () => { if ($("ajustesStrava").open && !descargaOrux) pintarCalculoOrux(); });
+pintarCalculoOrux();
 
 // Las listas de trails y capas de la ruta nueva se pueden plegar; se recuerda en este navegador
 for (const id of ["trailsNueva", "capasNueva"]) {
