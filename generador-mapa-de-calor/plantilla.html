@@ -167,14 +167,24 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
 .pasos li button:hover, .pasos li button.sel { background: var(--sel); }
 .pasos small { color: var(--suave); font-variant-numeric: tabular-nums; }
 
+/* Móvil: barra de secciones bajo el mapa; se abre una sección cada vez y el resto de la pantalla es mapa */
+#pestanas { display: none; }
 @media (max-width: 800px) {
-  html, body { height: auto; }
+  html, body { height: 100%; height: 100dvh; overflow: hidden; }
   body { display: flex; flex-direction: column; }
-  header { position: sticky; top: 0; z-index: 10; padding: 6px 12px; flex-wrap: nowrap; }
+  header { padding: 6px 12px; flex-wrap: nowrap; }
   h1, #totales .sec { display: none; }
-  main { order: 1; flex: none; height: 58vh; }
-  aside { order: 2; }
-  aside { border-right: 0; overflow: visible; }
+  main { order: 1; flex: 1 1 auto; min-height: 140px; }
+  #pestanas { order: 2; display: flex; gap: 3px; padding: 5px 6px; overflow-x: auto; scrollbar-width: none; flex: none;
+    background: var(--panel); border-top: 1px solid var(--borde); }
+  #pestanas button { flex: 1 0 auto; padding: 5px 6px; font-size: 12.5px; border-radius: 999px; }
+  #pestanas button[aria-pressed="true"] { background: var(--sel); border-color: var(--acento); font-weight: 600; }
+  aside { order: 3; flex: none; max-height: 50dvh; border-right: 0; border-top: 1px solid var(--borde); }
+  aside:not(.con-panel) { display: none; }
+  aside > details { display: none; border-bottom: 0; }
+  aside > details.activo { display: block; }
+  aside > details > summary { display: none; }
+  aside > details > .seccion { padding-top: 10px; }
   @media (pointer: coarse) { #pistaNueva { display: none; } }
   .ruta { padding: 8px 0; }
   input[type=checkbox] { width: 20px; height: 20px; }
@@ -190,6 +200,7 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
   <div id="totales" aria-live="polite"></div>
   <button id="encuadrar" title="Encuadrar el mapa en las rutas visibles">Encuadrar</button>
 </header>
+<nav id="pestanas" aria-label="Secciones"></nav>
 <aside>
   <details open id="panelNueva">
     <summary>Ruta nueva</summary>
@@ -334,10 +345,7 @@ main { grid-area: mapa; position: relative; min-height: 0; min-width: 0; isolati
       <p class="nota" style="margin-top: 0">Se exportan las rutas visibles ahora (filtros y casillas), con el mismo color, intensidad y grosor que en el mapa.</p>
       <div class="fila-botones" style="margin-top: 8px">
         <button id="exportarRutas">Rutas (KMZ)</button>
-        <button id="exportarCalor">Red de calor (KMZ)</button>
       </div>
-      <p class="nota">Red de calor: cada camino una sola vez, coloreado según cuántas de esas rutas pasan por él.</p>
-      <div class="leyenda" id="leyendaCalor"></div>
       <div id="avisoExportar" class="aviso" role="status" hidden></div>
     </div>
   </details>
@@ -394,6 +402,32 @@ const META = /*__META__*/{};
 
 // ---------- Utilidades ----------
 const $ = id => document.getElementById(id);
+
+// ---------- Secciones en el móvil ----------
+// En pantallas estrechas las secciones se eligen en una barra bajo el mapa: solo se ve una a la vez
+// y, sin ninguna elegida, todo es mapa. Pulsar la sección abierta la cierra.
+const movil = window.matchMedia("(max-width: 800px)");
+const PESTANAS = [["panelNueva", "Ruta nueva"], ["panelTrails", "Trails"], ["panelFiltros", "Filtros"],
+  ["panelAspecto", "Aspecto"], ["panelExportar", "Exportar"], ["panelRutas", "Rutas"]];
+let pestanaActiva = null;
+function activarPestana(id) {
+  pestanaActiva = id;
+  for (const [p] of PESTANAS) $(p).classList.toggle("activo", p === id);
+  document.querySelectorAll("#pestanas button").forEach(b => b.setAttribute("aria-pressed", b.dataset.panel === id));
+  if (id) { $(id).open = true; document.querySelector("aside").scrollTop = 0; }
+  document.querySelector("aside").classList.toggle("con-panel", !!id);
+}
+// Para abrir una sección desde el código (al cargar una ruta o unos trails)
+function mostrarPanel(id) {
+  $(id).open = true;
+  if (movil.matches) activarPestana(id);
+}
+for (const [id, texto] of PESTANAS) {
+  const b = document.createElement("button");
+  b.textContent = texto; b.dataset.panel = id; b.setAttribute("aria-pressed", "false");
+  b.addEventListener("click", () => activarPestana(pestanaActiva === id ? null : id));
+  $("pestanas").append(b);
+}
 const C_TIERRA = 40075016.686;          // metros de ecuador: pasa de mercator [0,1] a metros con cos(lat)
 const num = (v, d = 0) => v.toLocaleString("es-ES", { minimumFractionDigits: d, maximumFractionDigits: d });
 const km = v => num(v, v >= 100 ? 0 : 1);
@@ -1009,7 +1043,7 @@ async function abrirFichero(f) {
     if (propia) aviso.textContent = `Ya está en tu colección («${propia.n}»): no se compara consigo misma.`;
     $("quitarNueva").hidden = $("girosNueva").hidden = false; $("pistaNueva").hidden = true; $("resumenNueva").hidden = false;
     $("nombreNueva").textContent = g.nombre;
-    $("panelNueva").open = true;
+    mostrarPanel("panelNueva");
     compararActual();
     if (!entradaNueva.activa) entradaNueva.casilla.click();
     map.fitBounds(actual.limites, { padding: [24, 24] });
@@ -1481,7 +1515,7 @@ async function cargarTrails(ficheros) {
   aviso.textContent = partes.join(" ");
   aviso.className = "aviso" + (errores.length || sinGuardar || !nuevas.length ? " error" : "");
   aviso.hidden = false;
-  $("panelTrails").open = true;
+  mostrarPanel("panelTrails");
   if (!nuevas.length) return;
   reconstruirTrails();
   if (!entradaTrails.activa) entradaTrails.casilla.click();
@@ -1762,11 +1796,6 @@ function simplificarLL(pts, tol) {
 
 // ---------- Exportar a OruxMaps ----------
 // Se exporta lo que se ve: las rutas visibles con su color, intensidad (transparencia del KML) y grosor
-const CLASES_CALOR = [
-  { nombre: "1 vez", min: 1, color: "#ce93d8", ancho: 2 },
-  { nombre: "2 a 5 veces", min: 2, color: "#9c27b0", ancho: 3 },
-  { nombre: "Más de 5 veces", min: 6, color: "#e6007e", ancho: 4 },
-];
 const xmlEsc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const colorKml = (hex, a = 1) => Math.round(a * 255).toString(16).padStart(2, "0") + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3);
 const coordsKml = pts => pts.map(([la, lo]) => `${lo.toFixed(5)},${la.toFixed(5)}`).join(" ");
@@ -1809,120 +1838,28 @@ function kmlRutas(lista, nombre) {
   return documentoKml(nombre, defs + carpetas.join(""));
 }
 
-// Red de caminos: cada camino una vez. Se recorren las rutas por fecha; lo que queda a menos de FUSION
-// de la red suma una pasada a esos puntos (una vez por ruta) y lo que no, se añade como camino nuevo.
-function redDeCaminos(lista) {
-  const FUSION = 15, PASO = 6, MIN_TROZO = 30, f2 = FUSION * FUSION, CERCA = Math.ceil(3 * FUSION / PASO);
-  const RT = 6371008.8, f = Math.PI / 180;
-  const rejilla = new Map(), nx = [], ny = [], nlat = [], nlon = [], cuenta = [], oRuta = [], oIdx = [], lineas = [];
-  const clave = (cx, cy) => cx * 2e6 + cy;
-  const nuevoNodo = (la, lo, x, y, ir, i) => {
-    const id = nx.length;
-    nx.push(x); ny.push(y); nlat.push(la); nlon.push(lo); cuenta.push(1); oRuta.push(ir); oIdx.push(i);
-    const k = clave(Math.floor(x / FUSION), Math.floor(y / FUSION)), l = rejilla.get(k);
-    if (l) l.push(id); else rejilla.set(k, [id]);
-    return id;
-  };
-  lista.slice().sort((a, b) => (a.t0 || 0) - (b.t0 || 0) || a.f.localeCompare(b.f)).forEach((r, ir) => {
-    const tocados = new Set();
-    let base = 0;
-    for (const t of r.tramos) {
-      const mla = [], mlo = [];
-      for (let k = 0; k + 1 < t.lat.length; k++) {
-        const n = Math.max(1, Math.ceil(haversine(t.lat[k], t.lon[k], t.lat[k + 1], t.lon[k + 1]) / PASO));
-        for (let j = 0; j < n; j++) { mla.push(t.lat[k] + (t.lat[k + 1] - t.lat[k]) * j / n); mlo.push(t.lon[k] + (t.lon[k + 1] - t.lon[k]) * j / n); }
-      }
-      if (t.lat.length) { mla.push(t.lat[t.lat.length - 1]); mlo.push(t.lon[t.lon.length - 1]); }
-      const n = mla.length, hay = new Uint8Array(n), mejor = new Int32Array(n);
-      for (let i = 0; i < n; i++) {
-        const la = mla[i], lo = mlo[i], x = lo * f * RT * Math.cos(la * f), y = la * f * RT;
-        const cx = Math.floor(x / FUSION), cy = Math.floor(y / FUSION);
-        let m = -1, md = Infinity;
-        for (let a = cx - 1; a <= cx + 1; a++) for (let b = cy - 1; b <= cy + 1; b++) {
-          const l = rejilla.get(clave(a, b));
-          if (l) for (const id of l) {
-            if (oRuta[id] === ir && base + i - oIdx[id] < CERCA) continue;   // recién puesto por esta misma ruta
-            const d2 = (nx[id] - x) ** 2 + (ny[id] - y) ** 2;
-            if (d2 <= f2) { tocados.add(id); if (d2 < md) { md = d2; m = id; } }
-          }
-        }
-        if (m >= 0) { hay[i] = 1; mejor[i] = m; }
-        else mejor[i] = nuevoNodo(la, lo, x, y, ir, base + i);   // ya, para que la vuelta de una ida y vuelta lo encuentre
-      }
-      // Trozos nuevos → caminos, unidos a la red por sus extremos
-      for (let i = 0; i < n; ) {
-        if (hay[i]) { i++; continue; }
-        let j = i;
-        while (j + 1 < n && !hay[j + 1]) j++;
-        const ids = [];
-        if (i > 0) ids.push(mejor[i - 1]);
-        for (let m = i; m <= j; m++) ids.push(mejor[m]);
-        if (j + 1 < n) ids.push(mejor[j + 1]);
-        if ((j - i + 1) * PASO >= MIN_TROZO && ids.length > 1) lineas.push(ids);
-        i = j + 1;
-      }
-      base += n;
-    }
-    for (const id of tocados) if (oRuta[id] !== ir) cuenta[id]++;
-  });
-  return { lineas, nlat, nlon, cuenta };
-}
-function kmlCalor(lista, nombre) {
-  const { lineas, nlat, nlon, cuenta } = redDeCaminos(lista);
-  const clase = c => CLASES_CALOR.reduce((acc, k, i) => c >= k.min ? i : acc, 0);
-  const trozos = CLASES_CALOR.map(() => []);
-  let metros = 0;
-  for (const ids of lineas) {
-    // Se parte cada camino donde cambia de clase; el punto de corte va en los dos trozos
-    let ini = 0;
-    for (let m = 1; m <= ids.length; m++) {
-      if (m < ids.length && clase(cuenta[ids[m]]) === clase(cuenta[ids[ini]])) continue;
-      const tramo = ids.slice(ini, m < ids.length ? m + 1 : m).map(id => [nlat[id], nlon[id]]);
-      if (tramo.length > 1) {
-        for (let k = 1; k < tramo.length; k++) metros += haversine(tramo[k - 1][0], tramo[k - 1][1], tramo[k][0], tramo[k][1]);
-        trozos[clase(cuenta[ids[ini]])].push(simplificarLL(tramo, 3));
-      }
-      ini = m;
-    }
-  }
-  const defs = CLASES_CALOR.map((k, i) => `<Style id="c${i}"><LineStyle><color>${colorKml(k.color)}</color><width>${k.ancho}</width></LineStyle></Style>`).join("");
-  // De menos a más pasadas: los caminos más usados quedan encima
-  const carpetas = CLASES_CALOR.map((k, i) => !trozos[i].length ? "" : `<Folder><name>${xmlEsc(k.nombre)}</name><Placemark><name>${xmlEsc(k.nombre)}</name>`
-    + `<styleUrl>#c${i}</styleUrl><MultiGeometry>${trozos[i].map(t => `<LineString><coordinates>${coordsKml(t)}</coordinates></LineString>`).join("")}</MultiGeometry></Placemark></Folder>`).join("");
-  return { kml: documentoKml(nombre, defs + carpetas), metros };
-}
-
 function pintarExportar() {
   const n = visibles.length;
   $("exportarRutas").textContent = n === 1 ? "Rutas: 1 (KMZ)" : `Rutas: ${num(n)} (KMZ)`;
-  $("exportarRutas").disabled = $("exportarCalor").disabled = !n;
+  $("exportarRutas").disabled = !n;
   if ($("ajustesStrava").open && !descargaOrux) pintarCalculoOrux();
 }
-async function exportar(tipo) {
-  const aviso = $("avisoExportar"), botones = [$("exportarRutas"), $("exportarCalor")];
-  const lista = visibles.slice(), nombre = `Strava_${tipo === "rutas" ? "Rutas" : "Calor"}_Bici_${fechaFichero()}`;
-  botones.forEach(b => { b.disabled = true; });
+async function exportarRutas() {
+  const aviso = $("avisoExportar"), lista = visibles.slice(), nombre = `Strava_Rutas_Bici_${fechaFichero()}`;
+  $("exportarRutas").disabled = true;
   aviso.className = "aviso"; aviso.hidden = false;
-  aviso.textContent = tipo === "rutas" ? "Preparando el KMZ…" : "Calculando la red de caminos…";
+  aviso.textContent = "Preparando el KMZ…";
   await new Promise(r => setTimeout(r, 30));     // que se vea el aviso antes del cálculo
   try {
-    let kml, detalle;
-    if (tipo === "rutas") { kml = kmlRutas(lista, nombre); detalle = `${num(lista.length)} rutas`; }
-    else { const r = kmlCalor(lista, nombre); kml = r.kml; detalle = `${km(r.metros / 1000)} km de caminos a partir de ${num(lista.length)} rutas`; }
-    const blob = await crearKmz(kml);
+    const blob = await crearKmz(kmlRutas(lista, nombre));
     descargar(blob, nombre + ".kmz");
-    aviso.textContent = `Descargado ${nombre}.kmz (${num(blob.size / 1e6, 1)} MB): ${detalle}.`;
+    aviso.textContent = `Descargado ${nombre}.kmz (${num(blob.size / 1e6, 1)} MB): ${num(lista.length)} rutas.`;
   } catch (e) {
     aviso.className = "aviso error"; aviso.textContent = `No se ha podido exportar: ${e.message}.`;
   }
   pintarExportar();
 }
-$("exportarRutas").addEventListener("click", () => exportar("rutas"));
-$("exportarCalor").addEventListener("click", () => exportar("calor"));
-$("leyendaCalor").replaceChildren(...CLASES_CALOR.map(k => {
-  const i = el("i"); i.style.background = k.color; i.style.height = (k.ancho + 3) + "px";
-  return el("span", {}, i, k.nombre);
-}));
+$("exportarRutas").addEventListener("click", exportarRutas);
 
 // ---------- Mapa de calor global de Strava (capa de fondo) ----------
 // Teselas de content-a.strava.com, que solo se sirven con la sesión de Strava: la extensión
